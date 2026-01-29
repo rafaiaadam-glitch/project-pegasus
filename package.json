@@ -1,0 +1,11 @@
+{
+  "name": "pegasus-lecture-copilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pegasus Lecture Copilot core schemas, processing pipeline, and UI scaffolding.",
+  "type": "module",
+  "scripts": {
+    "lint": "echo \"No lint configured\"",
+    "test": "echo \"No tests configured\""
+  }
+}
