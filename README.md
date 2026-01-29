@@ -66,3 +66,61 @@ So Pegasus doesn’t just store notes. It maintains:
 
 ## Repository structure (planned)
 
+
+> This structure is a placeholder until we choose the stack (Python/Node, DB, framework).
+
+---
+
+## Tech assumptions (can change)
+
+Pegasus can be implemented in multiple stacks. A likely baseline:
+
+- **Backend**: Python (FastAPI) or Node (Express/Nest)
+- **Storage**: Postgres (structured), object storage (audio), vector DB for retrieval
+- **Transcription**: Whisper or equivalent
+- **LLM layer**: prompt + structured outputs, tool calling
+- **Frontend (optional)**: web app + mobile
+
+---
+
+## Design goals
+
+- **Explainability**: recommendations should have reasons (“why this, why now”)
+- **Continuity**: sessions connect into threads, not note silos
+- **Overload-aware**: adapt output density to user state and history
+- **Social-science friendly**: handles arguments, claims, evidence, authors, schools of thought
+- **Modularity**: ingestion, extraction, threading, and study-planning are separable
+
+---
+
+## Getting started
+
+This repo is currently a scaffold. Suggested first step:
+
+1. Add basic docs (`docs/architecture.md`, `docs/roadmap.md`)
+2. Decide stack (Python vs Node, DB choice)
+3. Implement MVP pipeline:
+   - `ingest` → `transcribe` → `segment` → `extract` → `store` → `export`
+
+---
+
+## Contributing
+
+Until the first scaffold lands:
+
+- Use issues to propose features / decisions
+- Keep PRs small and modular
+- Prefer structured outputs (JSON schemas) for extraction steps
+
+---
+
+## License
+
+TBD.
+
+---
+
+## Project status
+
+🚧 **Early scaffold / repo bootstrap phase**  
+Next milestone: define architecture + implement ingestion + transcription pipeline.
