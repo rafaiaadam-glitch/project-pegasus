@@ -5,7 +5,15 @@
   "description": "Pegasus Lecture Copilot core schemas, processing pipeline, and UI scaffolding.",
   "type": "module",
   "scripts": {
+    "dev": "node --loader ts-node/esm src/server.ts",
     "lint": "echo \"No lint configured\"",
     "test": "echo \"No tests configured\""
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.4"
   }
 }

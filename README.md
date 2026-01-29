@@ -13,11 +13,20 @@ Pegasus Lecture Copilot is an AI-powered study assistant for university students
 - Scoring engine for gravity, confidence, and priority (`src/scoring.ts`).
 - Processing helpers for lecture ingestion and thread updates (`src/pipeline.ts`).
 - API helper contracts for uploads and daily study plans (`src/api.ts` + `src/endpoints.ts`).
+- A lightweight Express server exposing MVP endpoints (`src/server.ts`).
 - UI scaffolding for the “What to Study Today” view (`src/ui.tsx`).
 - SQL schema aligned to the thread-first architecture (`db/schema.sql`).
 
 ## MVP scope
 The MVP implements lecture upload, transcription ingestion, thread creation & extension, scoring, and the daily study view in green/yellow/orange layers.
+
+## Running the API server
+Install dependencies and start the server:
+
+```bash
+npm install
+npm run dev
+```
 
 ## Non-goals
 - Full essay drafting.
