@@ -180,7 +180,7 @@ index 55ec65bcc749ade573c995dcd34752a65c26e79b..3dbc334dc61720203eb3f7dbc025a5e4
    "confidence": 0.82,
    "source_segment_id": "seg_014"
  }
-+```
+```
 +
 +**Notes**
 +- Outputs must be schema-driven for downstream stability
