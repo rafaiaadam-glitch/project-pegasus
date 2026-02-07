@@ -78,6 +78,8 @@ class FakeDB:
         if limit is not None:
             rows = rows[:limit]
         return rows
+    def fetch_artifacts(self, lecture_id: str):
+        return [row for row in self.artifacts.values() if row["lecture_id"] == lecture_id]
 
     def upsert_thread(self, payload: dict) -> None:
         self.threads[payload["id"]] = payload

@@ -30,6 +30,7 @@ Migrations are applied from `backend/migrations` on startup.
 Ensure the API and worker services use the same `DATABASE_URL`, `REDIS_URL`,
 OpenAI, and storage-related environment variables so jobs can be enqueued and
 processed consistently.
+Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis/RQ.
 
 ## Environment
 
@@ -51,4 +52,8 @@ processed consistently.
 - `GET /exports/{lecture_id}/{export_type}`
 - `GET /lectures/{lecture_id}/artifacts` (query params: `artifact_type`, `preset_id`, `limit`, `offset`)
 - `GET /lectures/{lecture_id}/summary`
+- `POST /lectures/{lecture_id}/generate`
+- `POST /lectures/{lecture_id}/export`
+- `GET /exports/{lecture_id}/{export_type}`
+- `GET /lectures/{lecture_id}/artifacts`
 - `GET /jobs/{job_id}`
