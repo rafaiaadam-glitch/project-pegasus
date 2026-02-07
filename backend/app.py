@@ -113,7 +113,11 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
     )
     db = get_database()
     job = db.fetch_job(job_id)
-    return {"jobId": job_id, "status": job["status"] if job else "queued"}
+    return {
+        "jobId": job_id,
+        "status": job["status"] if job else "queued",
+        "jobType": job.get("job_type") if job else "transcription",
+    }
 
 
 @app.post("/lectures/{lecture_id}/generate")
@@ -129,7 +133,11 @@ def generate_artifacts(lecture_id: str, course_id: str, preset_id: str) -> dict:
     )
     db = get_database()
     job = db.fetch_job(job_id)
-    return {"jobId": job_id, "status": job["status"] if job else "queued"}
+    return {
+        "jobId": job_id,
+        "status": job["status"] if job else "queued",
+        "jobType": job.get("job_type") if job else "generation",
+    }
 
 
 @app.post("/lectures/{lecture_id}/export")
@@ -137,7 +145,11 @@ def export_lecture(lecture_id: str) -> dict:
     job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
     db = get_database()
     job = db.fetch_job(job_id)
-    return {"jobId": job_id, "status": job["status"] if job else "queued"}
+    return {
+        "jobId": job_id,
+        "status": job["status"] if job else "queued",
+        "jobType": job.get("job_type") if job else "export",
+    }
 
 
 @app.get("/jobs/{job_id}")
@@ -149,6 +161,7 @@ def get_job(job_id: str) -> dict:
     return {
         "id": job["id"],
         "status": job["status"],
+        "jobType": job.get("job_type"),
         "result": job.get("result"),
         "error": job.get("error"),
     }

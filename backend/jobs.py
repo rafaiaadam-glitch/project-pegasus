@@ -71,7 +71,7 @@ def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs)
     job_id = str(uuid.uuid4())
     _create_job_record(job_id, job_type, lecture_id)
     queue = _get_queue()
-    queue.enqueue(task, job_id, *args, job_id=job_id, **kwargs)
+    queue.enqueue(task, job_id, *args, **kwargs)
     return job_id
 
 

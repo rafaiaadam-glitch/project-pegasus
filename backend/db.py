@@ -47,6 +47,12 @@ class Database:
                     );
                     """
                 )
+                cur.execute(
+                    """
+                    create index if not exists jobs_lecture_id_idx
+                    on jobs (lecture_id);
+                    """
+                )
 
     def upsert_lecture(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:

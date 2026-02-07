@@ -22,6 +22,8 @@ uvicorn backend.app:app --reload --port 8000
 python -m backend.worker
 ```
 
+Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis/RQ.
+
 ## Environment
 
 - `OPENAI_API_KEY` (required for LLM-backed generation)
