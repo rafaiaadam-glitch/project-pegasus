@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+from typing import Optional
+
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +36,7 @@ STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
 class GenerateRequest(BaseModel):
     course_id: str
     preset_id: str
+    openai_model: Optional[str] = None
     openai_model: str | None = None
 
 
@@ -297,6 +303,10 @@ def download_export(lecture_id: str, export_type: str):
 @app.get("/lectures/{lecture_id}/artifacts")
 def review_artifacts(
     lecture_id: str,
+    artifact_type: Optional[str] = None,
+    preset_id: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
     artifact_type: str | None = None,
     preset_id: str | None = None,
     limit: int | None = None,
