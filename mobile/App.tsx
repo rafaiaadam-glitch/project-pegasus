@@ -1,11 +1,15 @@
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
+import { useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import {
   ActivityIndicator,
   Alert,
   Linking,
+import {
+  ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -107,6 +111,8 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  const [loading, setLoading] = useState(false);
 
   const runGenerate = async () => {
     setLoading(true);
@@ -277,6 +283,16 @@ export default function App() {
       ) : (
         <Text style={styles.previewBody}>Run generation to see questions.</Text>
       )}
+  const renderArtifactPreview = (
+    label: string,
+    value: unknown,
+    fallback: string
+  ) => (
+    <View style={styles.previewCard}>
+      <Text style={styles.previewTitle}>{label}</Text>
+      <Text style={styles.previewBody}>
+        {value ? JSON.stringify(value, null, 2) : fallback}
+      </Text>
     </View>
   );
 
@@ -317,6 +333,8 @@ export default function App() {
           )}
         </TouchableOpacity>
 
+        </View>
+
         <TouchableOpacity style={styles.button} onPress={runGenerate}>
           {loading ? (
             <ActivityIndicator color="#fff" />
@@ -344,6 +362,26 @@ export default function App() {
             {renderOutline()}
             {renderFlashcards()}
             {renderQuestions()}
+            {renderArtifactPreview(
+              "Summary",
+              artifacts.summary,
+              "Run generation to see summary."
+            )}
+            {renderArtifactPreview(
+              "Outline",
+              artifacts.outline,
+              "Run generation to see outline."
+            )}
+            {renderArtifactPreview(
+              "Flashcards",
+              artifacts.flashcards,
+              "Run generation to see flashcards."
+            )}
+            {renderArtifactPreview(
+              "Exam Questions",
+              artifacts.examQuestions,
+              "Run generation to see questions."
+            )}
           </View>
         )}
 

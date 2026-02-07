@@ -26,6 +26,7 @@ Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis
 with retry/backoff defaults.
 
 Migrations are applied from `backend/migrations` on startup.
+Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis/RQ.
 
 ## Environment
 
@@ -47,4 +48,8 @@ Migrations are applied from `backend/migrations` on startup.
 - `GET /exports/{lecture_id}/{export_type}`
 - `GET /lectures/{lecture_id}/artifacts` (query params: `artifact_type`, `preset_id`, `limit`, `offset`)
 - `GET /lectures/{lecture_id}/summary`
+- `POST /lectures/{lecture_id}/generate`
+- `POST /lectures/{lecture_id}/export`
+- `GET /exports/{lecture_id}/{export_type}`
+- `GET /lectures/{lecture_id}/artifacts`
 - `GET /jobs/{job_id}`
