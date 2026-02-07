@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pegasus.local/schemas/thread.schema.json",
+  "title": "Thread",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "courseId",
+    "title",
+    "summary",
+    "status",
+    "complexityLevel",
+    "lectureRefs"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "courseId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["foundational", "advanced"]
+    },
+    "complexityLevel": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "lectureRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "evolutionNotes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lectureId", "changeType", "note"],
+        "properties": {
+          "lectureId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "changeType": {
+            "type": "string",
+            "enum": ["refinement", "contradiction", "complexity"]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}
