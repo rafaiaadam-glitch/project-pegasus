@@ -26,6 +26,10 @@ Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis
 with retry/backoff defaults.
 
 Migrations are applied from `backend/migrations` on startup.
+
+Ensure the API and worker services use the same `DATABASE_URL`, `REDIS_URL`,
+OpenAI, and storage-related environment variables so jobs can be enqueued and
+processed consistently.
 Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis/RQ.
 
 ## Environment

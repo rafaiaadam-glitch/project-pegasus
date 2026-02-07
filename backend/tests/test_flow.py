@@ -66,6 +66,13 @@ class FakeDB:
     def upsert_thread(self, payload: dict) -> None:
         self.threads[payload["id"]] = payload
 
+    def fetch_threads(self, lecture_id: str):
+        return [
+            row
+            for row in self.threads.values()
+            if lecture_id in (row.get("lecture_refs") or [])
+        ]
+
     def upsert_export(self, payload: dict) -> None:
         self.exports[payload["id"]] = payload
 

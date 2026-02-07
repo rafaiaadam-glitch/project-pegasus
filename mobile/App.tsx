@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
+import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import {
@@ -35,6 +36,13 @@ export default function App() {
   const [exportRecords, setExportRecords] = useState<
     { export_type: string; storage_path: string }[]
   >([]);
+  const [summaryStatus, setSummaryStatus] = useState<{
+    lecture?: { id?: string; title?: string; status?: string };
+    artifactCount: number;
+    exportCount: number;
+    artifactTypes: string[];
+    exportTypes: string[];
+  } | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -192,6 +200,66 @@ export default function App() {
     }
   };
 
+  const loadSummary = async () => {
+    setLoading(true);
+    try {
+      const resp = await fetch(
+        `${API_BASE_URL}/lectures/${lectureId}/summary`
+      );
+      if (!resp.ok) {
+        const detail = await resp.text();
+        throw new Error(detail || "Failed to load lecture summary");
+      }
+      const data = await resp.json();
+      setSummaryStatus({
+        lecture: data.lecture,
+        artifactCount: data.artifactCount ?? 0,
+        exportCount: data.exportCount ?? 0,
+        artifactTypes: data.artifactTypes ?? [],
+        exportTypes: data.exportTypes ?? [],
+      });
+    } catch (error) {
+      Alert.alert("Error", `${error}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyToClipboard = async (url: string) => {
+    await Clipboard.setStringAsync(url);
+    Alert.alert("Copied", "Export link copied to clipboard.");
+  };
+
+  const openExport = async (exportType: string) => {
+    const url = `${API_BASE_URL}/exports/${lectureId}/${exportType}`;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) {
+        const detail = await resp.text();
+        throw new Error(detail || "Export unavailable");
+      }
+      let targetUrl = url;
+      const contentType = resp.headers.get("content-type") ?? "";
+      if (contentType.includes("application/json")) {
+        const data = await resp.json();
+        if (data?.downloadUrl) {
+          targetUrl = data.downloadUrl;
+        }
+      }
+
+      const canOpen = await Linking.canOpenURL(targetUrl);
+      if (!canOpen) {
+        await copyToClipboard(targetUrl);
+        return;
+      }
+      try {
+        await Linking.openURL(targetUrl);
+      } catch (error) {
+        await copyToClipboard(targetUrl);
+      }
+    } catch (error) {
+      Alert.alert("Error", `${error}`);
+    }
   const openExport = async (exportType: string) => {
     const url = `${API_BASE_URL}/exports/${lectureId}/${exportType}`;
     const canOpen = await Linking.canOpenURL(url);
@@ -213,6 +281,14 @@ export default function App() {
     | null;
   const examQuestions = (artifacts?.examQuestions ?? null) as
     | { questions?: { question?: string; answer?: string }[] }
+    | null;
+  const threads = (artifacts?.threads ?? null) as
+    | {
+        title?: string;
+        summary?: string;
+        status?: string;
+        complexity_level?: number;
+      }[]
     | null;
 
   const renderSummary = () => (
@@ -283,6 +359,30 @@ export default function App() {
       ) : (
         <Text style={styles.previewBody}>Run generation to see questions.</Text>
       )}
+    </View>
+  );
+
+  const renderThreads = () => (
+    <View style={styles.previewCard}>
+      <Text style={styles.previewTitle}>Thread Summary</Text>
+      {threads?.length ? (
+        threads.slice(0, 5).map((thread, idx) => (
+          <View key={`${thread.title}-${idx}`} style={styles.previewSection}>
+            <Text style={styles.previewSubtitle}>
+              {thread.title ?? "Thread"}
+            </Text>
+            <Text style={styles.previewBody}>
+              {thread.summary ?? "No summary available."}
+            </Text>
+            <Text style={styles.previewBody}>
+              Status: {thread.status ?? "unknown"} • Complexity:{" "}
+              {thread.complexity_level ?? "n/a"}
+            </Text>
+          </View>
+        ))
+      ) : (
+        <Text style={styles.previewBody}>No thread records yet.</Text>
+      )}
   const renderArtifactPreview = (
     label: string,
     value: unknown,
@@ -351,6 +451,42 @@ export default function App() {
           <Text style={styles.secondaryButtonText}>Queue Export</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity style={styles.secondaryButton} onPress={loadSummary}>
+          <Text style={styles.secondaryButtonText}>Load Lecture Status</Text>
+        </TouchableOpacity>
+
+        {summaryStatus && (
+          <View style={styles.statusCard}>
+            <Text style={styles.sectionTitle}>Lecture Status</Text>
+            <Text style={styles.previewBody}>
+              {summaryStatus.lecture?.title ?? "Lecture"} •{" "}
+              {summaryStatus.lecture?.status ?? "unknown"}
+            </Text>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Artifacts</Text>
+              <Text style={styles.statusValue}>
+                {summaryStatus.artifactCount}
+              </Text>
+            </View>
+            <Text style={styles.previewBody}>
+              Types:{" "}
+              {summaryStatus.artifactTypes.length
+                ? summaryStatus.artifactTypes.join(", ")
+                : "None yet"}
+            </Text>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Exports</Text>
+              <Text style={styles.statusValue}>{summaryStatus.exportCount}</Text>
+            </View>
+            <Text style={styles.previewBody}>
+              Types:{" "}
+              {summaryStatus.exportTypes.length
+                ? summaryStatus.exportTypes.join(", ")
+                : "None yet"}
+            </Text>
+          </View>
+        )}
+
         <TouchableOpacity style={styles.secondaryButton} onPress={loadArtifacts}>
           <Text style={styles.secondaryButtonText}>Review Artifacts</Text>
         </TouchableOpacity>
@@ -362,6 +498,7 @@ export default function App() {
             {renderOutline()}
             {renderFlashcards()}
             {renderQuestions()}
+            {renderThreads()}
             {renderArtifactPreview(
               "Summary",
               artifacts.summary,
@@ -474,6 +611,28 @@ const styles = StyleSheet.create({
   },
   reviewSection: {
     gap: 12,
+  },
+  statusCard: {
+    backgroundColor: "#0b1120",
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+    borderColor: "#1d4ed8",
+    borderWidth: 1,
+  },
+  statusRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  statusLabel: {
+    color: "#93c5fd",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  statusValue: {
+    color: "#f8fafc",
+    fontSize: 13,
+    fontWeight: "600",
   },
   sectionTitle: {
     color: "#f8fafc",

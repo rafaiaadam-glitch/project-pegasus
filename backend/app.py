@@ -324,6 +324,9 @@ def review_artifacts(
             payload[artifact_type_key] = json.loads(path.read_text(encoding="utf-8"))
         else:
             payload[artifact_type_key] = None
+    threads = db.fetch_threads(lecture_id)
+    if threads:
+        payload.setdefault("threads", threads)
     artifact_dir = Path("pipeline/output") / lecture_id
     if artifact_dir.exists():
         threads_path = artifact_dir / "threads.json"

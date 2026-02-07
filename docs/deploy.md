@@ -56,6 +56,45 @@ Worker services:
 - Railway: deploy a second service using `railway.worker.toml` with
   `python -m backend.worker`.
 
+Ensure the API and worker services share identical values for `DATABASE_URL`,
+`REDIS_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, and storage settings (`STORAGE_MODE`,
+`S3_BUCKET`, `S3_PREFIX`, `PLC_STORAGE_DIR`). This keeps job enqueueing and
+processing aligned across services.
+
+### Managed Postgres + Redis provisioning
+
+Use managed services for durability. Provision Postgres + Redis in your target
+platform and inject the connection strings into both the API and worker
+services:
+
+- Render: create a Postgres instance and a Redis instance in the Render
+  dashboard, then set `DATABASE_URL` and `REDIS_URL` in both `pegasus-api` and
+  `pegasus-worker` env vars.
+- Fly.io: provision a Postgres cluster with `fly postgres create` and a Redis
+  instance (e.g., `fly redis create` or Upstash), then set `DATABASE_URL` and
+  `REDIS_URL` secrets for the app and worker process group.
+- Railway: add a Postgres plugin and a Redis plugin to the project, then wire
+  the generated `DATABASE_URL`/`REDIS_URL` env vars into both services.
+
+### Secrets & env var management
+
+Use your provider’s secrets tooling to store sensitive values:
+- `DATABASE_URL`, `REDIS_URL`
+- `OPENAI_API_KEY`
+- `S3_BUCKET`, `S3_PREFIX`, plus any storage credentials required by your S3
+  provider (or Supabase Storage keys)
+
+Ensure the API and worker services both receive the same `DATABASE_URL`,
+`REDIS_URL`, storage, and OpenAI settings so jobs can enqueue and execute
+consistently.
+
+## Migration startup check
+
+Database migrations are applied on startup from `backend/db.py` via
+`get_database()`, which runs `Database.migrate()` before returning a connection.
+Both the API (`backend.app`) and worker (`backend.worker`) call `get_database()`,
+so migrations should run in each service on boot.
+
 ## Mobile
 
 Use EAS Build (Expo) for iOS/Android distribution.
