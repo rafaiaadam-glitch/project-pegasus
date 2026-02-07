@@ -9,6 +9,9 @@ from typing import Any, Dict, Optional
 
 from redis import Redis
 from rq import Queue, Retry
+
+from backend.db import get_database
+from backend.storage import save_artifact_file, save_export, save_export_file, save_transcript
 from rq import Queue
 
 from backend.db import get_database
@@ -199,6 +202,7 @@ def run_generation_job(
                 continue
             payload = json.loads(path.read_text(encoding="utf-8"))
             artifact_type = payload.get("artifactType", filename.replace(".json", ""))
+            stored_path = save_artifact_file(path, f"{lecture_id}/{filename}")
             overview = payload.get("overview") if artifact_type == "summary" else None
             section_count = (
                 len(payload.get("sections", [])) if artifact_type == "summary" else None
@@ -210,12 +214,14 @@ def run_generation_job(
                     "course_id": course_id,
                     "preset_id": preset_id,
                     "artifact_type": artifact_type,
+                    "storage_path": stored_path,
                     "storage_path": str(path),
                     "summary_overview": overview,
                     "summary_section_count": section_count,
                     "created_at": now,
                 }
             )
+            artifact_paths[artifact_type] = stored_path
             artifact_paths[artifact_type] = str(path)
 
         threads_path = artifacts_dir / "threads.json"
@@ -262,6 +268,15 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
         )
         db = get_database()
         now = _iso_now()
+        export_files = {
+            "markdown": export_dir / f"{lecture_id}.md",
+            "anki": export_dir / f"{lecture_id}.csv",
+            "pdf": export_dir / f"{lecture_id}.pdf",
+        }
+        export_paths = {}
+        for export_type, path in export_files.items():
+            stored_path = save_export_file(path, f"{lecture_id}/{path.name}")
+            export_paths[export_type] = stored_path
         export_paths = {
             "markdown": str(export_dir / f"{lecture_id}.md"),
             "anki": str(export_dir / f"{lecture_id}.csv"),
@@ -273,6 +288,7 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
                     "id": f"{lecture_id}-{export_type}",
                     "lecture_id": lecture_id,
                     "export_type": export_type,
+                    "storage_path": stored_path,
                     "storage_path": path,
                     "created_at": now,
                 }

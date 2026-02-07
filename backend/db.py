@@ -270,6 +270,35 @@ class Database:
                     payload,
                 )
 
+    def fetch_artifacts(
+        self,
+        lecture_id: str,
+        artifact_type: Optional[str] = None,
+        preset_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        clauses = ["lecture_id = %(lecture_id)s"]
+        params: Dict[str, Any] = {"lecture_id": lecture_id}
+        if artifact_type:
+            clauses.append("artifact_type = %(artifact_type)s")
+            params["artifact_type"] = artifact_type
+        if preset_id:
+            clauses.append("preset_id = %(preset_id)s")
+            params["preset_id"] = preset_id
+        where_clause = " and ".join(clauses)
+        limit_clause = ""
+        if limit is not None:
+            limit_clause += " limit %(limit)s"
+            params["limit"] = limit
+        if offset is not None:
+            limit_clause += " offset %(offset)s"
+            params["offset"] = offset
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    f"select * from artifacts where {where_clause} order by artifact_type{limit_clause};",
+                    params,
     def fetch_artifacts(self, lecture_id: str) -> list[Dict[str, Any]]:
         with self.connect() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:

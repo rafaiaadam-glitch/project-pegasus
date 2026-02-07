@@ -22,6 +22,11 @@ Current flow buttons:
 - Queue transcription
 - Generate artifacts
 - Queue export
+- Review artifacts
+- Download exports
+
+The app persists course, lecture, and preset IDs locally using AsyncStorage so
+the flow can resume after restarts.
 
 ## EAS Build (Release)
 

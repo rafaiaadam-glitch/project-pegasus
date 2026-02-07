@@ -79,3 +79,33 @@ def save_export(payload: bytes, filename: str) -> str:
     target = _local_path("exports", filename)
     target.write_bytes(payload)
     return str(target)
+
+
+def save_artifact_file(source: Path, filename: str) -> str:
+    cfg = _config()
+    if cfg.mode == "s3":
+        import boto3
+
+        if not cfg.s3_bucket:
+            raise RuntimeError("S3_BUCKET must be set for S3 storage.")
+        key = f"{cfg.s3_prefix}/artifacts/{filename}"
+        boto3.client("s3").upload_file(str(source), cfg.s3_bucket, key)
+        return f"s3://{cfg.s3_bucket}/{key}"
+    target = _local_path("artifacts", filename)
+    target.write_bytes(source.read_bytes())
+    return str(target)
+
+
+def save_export_file(source: Path, filename: str) -> str:
+    cfg = _config()
+    if cfg.mode == "s3":
+        import boto3
+
+        if not cfg.s3_bucket:
+            raise RuntimeError("S3_BUCKET must be set for S3 storage.")
+        key = f"{cfg.s3_prefix}/exports/{filename}"
+        boto3.client("s3").upload_file(str(source), cfg.s3_bucket, key)
+        return f"s3://{cfg.s3_bucket}/{key}"
+    target = _local_path("exports", filename)
+    target.write_bytes(source.read_bytes())
+    return str(target)

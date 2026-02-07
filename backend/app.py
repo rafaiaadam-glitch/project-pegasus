@@ -295,6 +295,71 @@ def download_export(lecture_id: str, export_type: str):
 
 
 @app.get("/lectures/{lecture_id}/artifacts")
+def review_artifacts(
+    lecture_id: str,
+    artifact_type: str | None = None,
+    preset_id: str | None = None,
+    limit: int | None = None,
+    offset: int | None = None,
+) -> dict:
+    db = get_database()
+    artifact_records = db.fetch_artifacts(
+        lecture_id,
+        artifact_type=artifact_type,
+        preset_id=preset_id,
+        limit=limit,
+        offset=offset,
+    )
+    payload: dict[str, object] = {}
+    artifact_paths: dict[str, str] = {}
+    for record in artifact_records:
+        artifact_type_key = record["artifact_type"]
+        storage_path = record["storage_path"]
+        artifact_paths[artifact_type_key] = storage_path
+        if storage_path.startswith("s3://"):
+            payload[artifact_type_key] = None
+            continue
+        path = Path(storage_path)
+        if path.exists():
+            payload[artifact_type_key] = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            payload[artifact_type_key] = None
+    artifact_dir = Path("pipeline/output") / lecture_id
+    if artifact_dir.exists():
+        threads_path = artifact_dir / "threads.json"
+        if threads_path.exists():
+            payload.setdefault(
+                "threads", json.loads(threads_path.read_text(encoding="utf-8"))
+            )
+    return {
+        "lectureId": lecture_id,
+        "artifacts": payload,
+        "artifactRecords": artifact_records,
+        "artifactPaths": artifact_paths,
+        "exportRecords": db.fetch_exports(lecture_id),
+        "lecture": db.fetch_lecture(lecture_id),
+    }
+
+
+@app.get("/lectures/{lecture_id}/summary")
+def lecture_summary(lecture_id: str) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+    artifacts = db.fetch_artifacts(lecture_id)
+    exports = db.fetch_exports(lecture_id)
+    return {
+        "lecture": lecture,
+        "artifactCount": len(artifacts),
+        "exportCount": len(exports),
+        "artifactTypes": [row["artifact_type"] for row in artifacts],
+        "exportTypes": [row["export_type"] for row in exports],
+        "links": {
+            "artifacts": f"/lectures/{lecture_id}/artifacts",
+            "exports": f"/exports/{lecture_id}/{{export_type}}",
+            "jobs": "/jobs/{job_id}",
+        },
 def review_artifacts(lecture_id: str) -> dict:
     artifact_dir = Path("pipeline/output") / lecture_id
     if not artifact_dir.exists():
