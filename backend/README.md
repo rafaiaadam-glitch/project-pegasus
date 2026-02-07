@@ -41,5 +41,6 @@ Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis
 - `POST /lectures/{lecture_id}/transcribe`
 - `POST /lectures/{lecture_id}/generate`
 - `POST /lectures/{lecture_id}/export`
+- `GET /exports/{lecture_id}/{export_type}`
 - `GET /lectures/{lecture_id}/artifacts`
 - `GET /jobs/{job_id}`

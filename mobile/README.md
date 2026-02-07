@@ -22,3 +22,13 @@ Current flow buttons:
 - Queue transcription
 - Generate artifacts
 - Queue export
+
+## EAS Build (Release)
+
+```bash
+npm install -g eas-cli
+eas login
+eas build:configure
+eas build --platform ios
+eas build --platform android
+```

@@ -36,6 +36,16 @@ class Database:
                 )
                 cur.execute(
                     """
+                    create table if not exists courses (
+                        id text primary key,
+                        title text not null,
+                        created_at timestamptz not null,
+                        updated_at timestamptz not null
+                    );
+                    """
+                )
+                cur.execute(
+                    """
                     create table if not exists jobs (
                         id text primary key,
                         lecture_id text,
@@ -52,6 +62,64 @@ class Database:
                     """
                     create index if not exists jobs_lecture_id_idx
                     on jobs (lecture_id);
+                    """
+                )
+                cur.execute(
+                    """
+                    create table if not exists artifacts (
+                        id text primary key,
+                        lecture_id text not null,
+                        course_id text not null,
+                        preset_id text not null,
+                        artifact_type text not null,
+                        storage_path text not null,
+                        summary_overview text,
+                        summary_section_count integer,
+                        created_at timestamptz not null
+                    );
+                    """
+                )
+                cur.execute(
+                    """
+                    create index if not exists artifacts_lecture_id_idx
+                    on artifacts (lecture_id);
+                    """
+                )
+                cur.execute(
+                    """
+                    create table if not exists threads (
+                        id text primary key,
+                        course_id text not null,
+                        title text not null,
+                        summary text not null,
+                        status text not null,
+                        complexity_level integer not null,
+                        lecture_refs jsonb not null,
+                        created_at timestamptz not null
+                    );
+                    """
+                )
+                cur.execute(
+                    """
+                    create index if not exists threads_course_id_idx
+                    on threads (course_id);
+                    """
+                )
+                cur.execute(
+                    """
+                    create table if not exists exports (
+                        id text primary key,
+                        lecture_id text not null,
+                        export_type text not null,
+                        storage_path text not null,
+                        created_at timestamptz not null
+                    );
+                    """
+                )
+                cur.execute(
+                    """
+                    create index if not exists exports_lecture_id_idx
+                    on exports (lecture_id);
                     """
                 )
 
@@ -85,6 +153,23 @@ class Database:
                 cur.execute("select * from lectures where id = %s;", (lecture_id,))
                 row = cur.fetchone()
                 return dict(row) if row else None
+
+    def upsert_course(self, payload: Dict[str, Any]) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into courses (
+                        id, title, created_at, updated_at
+                    ) values (
+                        %(id)s, %(title)s, %(created_at)s, %(updated_at)s
+                    )
+                    on conflict (id) do update set
+                        title = excluded.title,
+                        updated_at = excluded.updated_at;
+                    """,
+                    payload,
+                )
 
     def create_job(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
@@ -140,6 +225,89 @@ class Database:
                 cur.execute("select * from jobs where id = %s;", (job_id,))
                 row = cur.fetchone()
                 return dict(row) if row else None
+
+    def upsert_artifact(self, payload: Dict[str, Any]) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into artifacts (
+                        id, lecture_id, course_id, preset_id, artifact_type,
+                        storage_path, summary_overview, summary_section_count, created_at
+                    ) values (
+                        %(id)s, %(lecture_id)s, %(course_id)s, %(preset_id)s,
+                        %(artifact_type)s, %(storage_path)s, %(summary_overview)s,
+                        %(summary_section_count)s, %(created_at)s
+                    )
+                    on conflict (id) do update set
+                        storage_path = excluded.storage_path,
+                        summary_overview = excluded.summary_overview,
+                        summary_section_count = excluded.summary_section_count;
+                    """,
+                    payload,
+                )
+
+    def fetch_artifacts(self, lecture_id: str) -> list[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "select * from artifacts where lecture_id = %s order by artifact_type;",
+                    (lecture_id,),
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+
+    def upsert_thread(self, payload: Dict[str, Any]) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into threads (
+                        id, course_id, title, summary, status, complexity_level,
+                        lecture_refs, created_at
+                    ) values (
+                        %(id)s, %(course_id)s, %(title)s, %(summary)s, %(status)s,
+                        %(complexity_level)s, %(lecture_refs)s, %(created_at)s
+                    )
+                    on conflict (id) do update set
+                        title = excluded.title,
+                        summary = excluded.summary,
+                        status = excluded.status,
+                        complexity_level = excluded.complexity_level,
+                        lecture_refs = excluded.lecture_refs;
+                    """,
+                    {
+                        **payload,
+                        "lecture_refs": Json(payload.get("lecture_refs")),
+                    },
+                )
+
+    def upsert_export(self, payload: Dict[str, Any]) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into exports (
+                        id, lecture_id, export_type, storage_path, created_at
+                    ) values (
+                        %(id)s, %(lecture_id)s, %(export_type)s, %(storage_path)s,
+                        %(created_at)s
+                    )
+                    on conflict (id) do update set
+                        storage_path = excluded.storage_path;
+                    """,
+                    payload,
+                )
+
+    def fetch_exports(self, lecture_id: str) -> list[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    "select * from exports where lecture_id = %s order by export_type;",
+                    (lecture_id,),
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
 
 
 def get_database() -> Database:

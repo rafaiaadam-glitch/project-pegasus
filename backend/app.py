@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 
 from backend.db import get_database
 from backend.jobs import (
@@ -101,6 +102,11 @@ def ingest_lecture(
             "updated_at": _iso_now(),
         }
     )
+    return {
+        "lectureId": lecture_id,
+        "metadataPath": str(metadata_path),
+        "audioPath": stored_audio,
+    }
     return {"lectureId": lecture_id, "metadataPath": str(metadata_path)}
 
 
@@ -258,11 +264,28 @@ def get_job(job_id: str) -> dict:
     }
 
 
+@app.get("/exports/{lecture_id}/{export_type}")
+def download_export(lecture_id: str, export_type: str):
+    db = get_database()
+    exports = db.fetch_exports(lecture_id)
+    record = next((item for item in exports if item["export_type"] == export_type), None)
+    if not record:
+        raise HTTPException(status_code=404, detail="Export not found.")
+    storage_path = record["storage_path"]
+    if storage_path.startswith("s3://"):
+        return JSONResponse({"downloadUrl": storage_path})
+    path = Path(storage_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Export file missing.")
+    return FileResponse(path, filename=path.name)
+
+
 @app.get("/lectures/{lecture_id}/artifacts")
 def review_artifacts(lecture_id: str) -> dict:
     artifact_dir = Path("pipeline/output") / lecture_id
     if not artifact_dir.exists():
         raise HTTPException(status_code=404, detail="Artifacts not found.")
+    db = get_database()
     artifact_map = {
         "summary": "summary.json",
         "outline": "outline.json",
@@ -280,6 +303,12 @@ def review_artifacts(lecture_id: str) -> dict:
             payload[key] = json.loads(path.read_text(encoding="utf-8"))
         else:
             payload[key] = None
+    return {
+        "lectureId": lecture_id,
+        "artifacts": payload,
+        "artifactRecords": db.fetch_artifacts(lecture_id),
+        "exportRecords": db.fetch_exports(lecture_id),
+        "lecture": db.fetch_lecture(lecture_id),
     return {"lectureId": lecture_id, "artifacts": payload}
     job = JOB_QUEUE.get(job_id)
     if not job:

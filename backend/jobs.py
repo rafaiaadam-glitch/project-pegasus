@@ -160,6 +160,73 @@ def run_generation_job(
             use_llm=True,
             openai_model=openai_model,
         )
+        artifacts_dir = output_dir / lecture_id
+        db = get_database()
+        now = _iso_now()
+        db.upsert_course(
+            {
+                "id": course_id,
+                "title": course_id,
+                "created_at": now,
+                "updated_at": now,
+            }
+        )
+
+        artifact_files = [
+            "summary.json",
+            "outline.json",
+            "key-terms.json",
+            "flashcards.json",
+            "exam-questions.json",
+        ]
+        artifact_paths: dict[str, str] = {}
+        for filename in artifact_files:
+            path = artifacts_dir / filename
+            if not path.exists():
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            artifact_type = payload.get("artifactType", filename.replace(".json", ""))
+            overview = payload.get("overview") if artifact_type == "summary" else None
+            section_count = (
+                len(payload.get("sections", [])) if artifact_type == "summary" else None
+            )
+            db.upsert_artifact(
+                {
+                    "id": payload.get("id", f"{lecture_id}-{artifact_type}"),
+                    "lecture_id": lecture_id,
+                    "course_id": course_id,
+                    "preset_id": preset_id,
+                    "artifact_type": artifact_type,
+                    "storage_path": str(path),
+                    "summary_overview": overview,
+                    "summary_section_count": section_count,
+                    "created_at": now,
+                }
+            )
+            artifact_paths[artifact_type] = str(path)
+
+        threads_path = artifacts_dir / "threads.json"
+        if threads_path.exists():
+            threads_payload = json.loads(threads_path.read_text(encoding="utf-8"))
+            for thread in threads_payload.get("threads", []):
+                db.upsert_thread(
+                    {
+                        "id": thread["id"],
+                        "course_id": thread["courseId"],
+                        "title": thread["title"],
+                        "summary": thread["summary"],
+                        "status": thread["status"],
+                        "complexity_level": thread["complexityLevel"],
+                        "lecture_refs": thread.get("lectureRefs", []),
+                        "created_at": now,
+                    }
+                )
+
+        payload = {
+            "lectureId": lecture_id,
+            "outputDir": str(artifacts_dir),
+            "artifactPaths": artifact_paths,
+        }
         payload = {"lectureId": lecture_id, "outputDir": str(output_dir / lecture_id)}
         _update_job(job_id, "completed", result=payload)
         return payload
@@ -180,6 +247,27 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
         export_artifacts(
             lecture_id=lecture_id, artifact_dir=artifact_dir, export_dir=export_dir
         )
+        db = get_database()
+        now = _iso_now()
+        export_paths = {
+            "markdown": str(export_dir / f"{lecture_id}.md"),
+            "anki": str(export_dir / f"{lecture_id}.csv"),
+            "pdf": str(export_dir / f"{lecture_id}.pdf"),
+        }
+        for export_type, path in export_paths.items():
+            db.upsert_export(
+                {
+                    "id": f"{lecture_id}-{export_type}",
+                    "lecture_id": lecture_id,
+                    "export_type": export_type,
+                    "storage_path": path,
+                    "created_at": now,
+                }
+            )
+        exports_manifest = {
+            "lectureId": lecture_id,
+            "exportDir": str(export_dir),
+            "exportPaths": export_paths,
         exports_manifest = {
             "lectureId": lecture_id,
             "exportDir": str(export_dir),
