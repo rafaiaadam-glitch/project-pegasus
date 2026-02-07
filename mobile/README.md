@@ -1,0 +1,34 @@
+# Pegasus Mobile (React Native + Expo)
+
+Minimal Expo scaffold aligned with the MVP stack.
+
+## Setup
+
+```bash
+npm install
+```
+
+## Run
+
+```bash
+npm run start
+```
+
+## Configure API
+
+Update `API_BASE_URL` in `App.tsx` to point at your FastAPI server.
+
+Current flow buttons:
+- Queue transcription
+- Generate artifacts
+- Queue export
+
+## EAS Build (Release)
+
+```bash
+npm install -g eas-cli
+eas login
+eas build:configure
+eas build --platform ios
+eas build --platform android
+```

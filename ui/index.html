@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pegasus Lecture Copilot — UI Skeleton</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="header">
+        <div>
+          <p class="eyebrow">Pegasus Lecture Copilot</p>
+          <h1>Lecture Workflow</h1>
+        </div>
+        <span class="status">Scaffold</span>
+      </header>
+
+      <section class="card">
+        <h2>1) Course</h2>
+        <p>Select or create a course to anchor all lectures and Threads.</p>
+        <div class="placeholder">Course selector placeholder</div>
+      </section>
+
+      <section class="card">
+        <h2>2) Lecture Style Preset</h2>
+        <p>Choose a preset before recording so outputs are structurally distinct.</p>
+        <div class="preset-grid">
+          <button type="button">Exam Mode</button>
+          <button type="button">Concept Map</button>
+          <button type="button">Beginner</button>
+          <button type="button">Neurodivergent</button>
+          <button type="button">Research</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>3) Record or Upload</h2>
+        <p>Capture the lecture audio without manual formatting.</p>
+        <div class="actions">
+          <button type="button" class="primary">Record</button>
+          <button type="button">Upload Audio</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>4) Processing</h2>
+        <p>Pipeline stages: Transcription → Generation → Validation → Threading.</p>
+        <ol class="pipeline">
+          <li>Transcription</li>
+          <li>Artifact Generation</li>
+          <li>Schema Validation</li>
+          <li>Thread Linking</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>5) Review Artifacts</h2>
+        <p>Revision-ready outputs, structured by preset.</p>
+        <div class="artifact-grid">
+          <div>Summary</div>
+          <div>Outline</div>
+          <div>Key Terms</div>
+          <div>Flashcards</div>
+          <div>Exam Questions</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>6) Export</h2>
+        <p>Deliverable formats for study workflows.</p>
+        <div class="actions">
+          <button type="button">Export PDF</button>
+          <button type="button">Export Markdown</button>
+          <button type="button">Export Anki CSV</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
