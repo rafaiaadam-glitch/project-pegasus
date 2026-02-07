@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "Pegasus Lecture Copilot",
+    "slug": "pegasus-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "assetBundlePatterns": ["**/*"]
+  }
+}
