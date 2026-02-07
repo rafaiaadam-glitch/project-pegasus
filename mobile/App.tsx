@@ -2,11 +2,15 @@ import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import * as Clipboard from "expo-clipboard";
+import { useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import {
   ActivityIndicator,
   Alert,
   Linking,
+import {
+  ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -115,6 +119,8 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  const [loading, setLoading] = useState(false);
 
   const runGenerate = async () => {
     setLoading(true);
@@ -254,6 +260,14 @@ export default function App() {
     } catch (error) {
       Alert.alert("Error", `${error}`);
     }
+  const openExport = async (exportType: string) => {
+    const url = `${API_BASE_URL}/exports/${lectureId}/${exportType}`;
+    const canOpen = await Linking.canOpenURL(url);
+    if (!canOpen) {
+      Alert.alert("Unavailable", "Cannot open export link on this device.");
+      return;
+    }
+    await Linking.openURL(url);
   };
 
   const summary = (artifacts?.summary ?? null) as
@@ -369,6 +383,16 @@ export default function App() {
       ) : (
         <Text style={styles.previewBody}>No thread records yet.</Text>
       )}
+  const renderArtifactPreview = (
+    label: string,
+    value: unknown,
+    fallback: string
+  ) => (
+    <View style={styles.previewCard}>
+      <Text style={styles.previewTitle}>{label}</Text>
+      <Text style={styles.previewBody}>
+        {value ? JSON.stringify(value, null, 2) : fallback}
+      </Text>
     </View>
   );
 
@@ -408,6 +432,8 @@ export default function App() {
             <Text style={styles.buttonText}>Upload Audio</Text>
           )}
         </TouchableOpacity>
+
+        </View>
 
         <TouchableOpacity style={styles.button} onPress={runGenerate}>
           {loading ? (
@@ -473,6 +499,26 @@ export default function App() {
             {renderFlashcards()}
             {renderQuestions()}
             {renderThreads()}
+            {renderArtifactPreview(
+              "Summary",
+              artifacts.summary,
+              "Run generation to see summary."
+            )}
+            {renderArtifactPreview(
+              "Outline",
+              artifacts.outline,
+              "Run generation to see outline."
+            )}
+            {renderArtifactPreview(
+              "Flashcards",
+              artifacts.flashcards,
+              "Run generation to see flashcards."
+            )}
+            {renderArtifactPreview(
+              "Exam Questions",
+              artifacts.examQuestions,
+              "Run generation to see questions."
+            )}
           </View>
         )}
 
