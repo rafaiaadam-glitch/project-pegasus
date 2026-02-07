@@ -95,6 +95,20 @@ Database migrations are applied on startup from `backend/db.py` via
 Both the API (`backend.app`) and worker (`backend.worker`) call `get_database()`,
 so migrations should run in each service on boot.
 
+## Release checklist
+
+- Confirm the API and worker services have identical `DATABASE_URL`, `REDIS_URL`,
+  `OPENAI_API_KEY`, `OPENAI_MODEL`, and storage settings (`STORAGE_MODE`,
+  `S3_BUCKET`, `S3_PREFIX`, `PLC_STORAGE_DIR`).
+- Verify Postgres and Redis services are reachable from the API and worker
+  runtimes.
+- Deploy migrations on the API service by triggering a restart and confirming
+  `backend/migrations` has been applied (review logs for `Database.migrate()`).
+- Confirm the worker service starts with no migration errors and can read the
+  same database schema.
+- Smoke test the job flow: upload audio, enqueue transcription, generation, and
+  export, then verify job status and export URLs.
+
 ## Mobile
 
 Use EAS Build (Expo) for iOS/Android distribution.

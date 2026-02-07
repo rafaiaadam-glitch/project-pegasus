@@ -60,6 +60,24 @@ class FakeDB:
     def upsert_artifact(self, payload: dict) -> None:
         self.artifacts[payload["id"]] = payload
 
+    def fetch_artifacts(
+        self,
+        lecture_id: str,
+        artifact_type: str | None = None,
+        preset_id: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ):
+        rows = [row for row in self.artifacts.values() if row["lecture_id"] == lecture_id]
+        if artifact_type:
+            rows = [row for row in rows if row["artifact_type"] == artifact_type]
+        if preset_id:
+            rows = [row for row in rows if row["preset_id"] == preset_id]
+        if offset:
+            rows = rows[offset:]
+        if limit is not None:
+            rows = rows[:limit]
+        return rows
     def fetch_artifacts(self, lecture_id: str):
         return [row for row in self.artifacts.values() if row["lecture_id"] == lecture_id]
 
@@ -88,6 +106,7 @@ def _write_artifact(path: Path, payload: dict) -> None:
 def test_full_pipeline_flow(monkeypatch, tmp_path):
     storage_dir = tmp_path / "storage"
     monkeypatch.setenv("PLC_STORAGE_DIR", str(storage_dir))
+    monkeypatch.setattr(app_module, "STORAGE_DIR", storage_dir)
 
     fake_db = FakeDB()
     monkeypatch.setattr(app_module, "get_database", lambda: fake_db)

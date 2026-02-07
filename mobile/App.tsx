@@ -43,6 +43,22 @@ export default function App() {
     artifactTypes: string[];
     exportTypes: string[];
   } | null>(null);
+  const [selectedThread, setSelectedThread] = useState<{
+    id?: string;
+    title?: string;
+    summary?: string;
+    status?: string;
+    complexity_level?: number;
+    lecture_refs?: string[];
+  } | null>(null);
+  const [jobs, setJobs] = useState<
+    {
+      id: string;
+      jobType: string;
+      status: string;
+      error?: string | null;
+    }[]
+  >([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -78,6 +94,65 @@ export default function App() {
     };
     persist();
   }, [courseId, lectureId, presetId, title]);
+
+  useEffect(() => {
+    if (jobs.length === 0) {
+      return;
+    }
+    const activeJobs = jobs.filter(
+      (job) => job.status !== "completed" && job.status !== "failed"
+    );
+    if (activeJobs.length === 0) {
+      return;
+    }
+    const interval = setInterval(async () => {
+      try {
+        const updates = await Promise.all(
+          activeJobs.map(async (job) => {
+            const resp = await fetch(`${API_BASE_URL}/jobs/${job.id}`);
+            if (!resp.ok) {
+              const detail = await resp.text();
+              return {
+                ...job,
+                status: "failed",
+                error: detail || "Failed to load job status",
+              };
+            }
+            const data = await resp.json();
+            return {
+              ...job,
+              status: data.status ?? job.status,
+              error: data.error ?? null,
+            };
+          })
+        );
+        setJobs((prev) => {
+          const byId = new Map(prev.map((job) => [job.id, job]));
+          updates.forEach((job) => {
+            byId.set(job.id, { ...byId.get(job.id), ...job });
+          });
+          return Array.from(byId.values());
+        });
+      } catch (error) {
+        Alert.alert("Error", `Failed to poll job status: ${error}`);
+      }
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [jobs]);
+
+  const upsertJob = (job: { id: string; jobType?: string; status?: string }) => {
+    setJobs((prev) => {
+      const byId = new Map(prev.map((item) => [item.id, item]));
+      const existing = byId.get(job.id);
+      byId.set(job.id, {
+        id: job.id,
+        jobType: job.jobType ?? existing?.jobType ?? "unknown",
+        status: job.status ?? existing?.status ?? "queued",
+        error: existing?.error ?? null,
+      });
+      return Array.from(byId.values());
+    });
+  };
 
   const uploadAudio = async () => {
     setLoading(true);
@@ -134,6 +209,9 @@ export default function App() {
         const detail = await resp.text();
         throw new Error(detail || "Generation failed");
       }
+      const data = await resp.json();
+      upsertJob({ id: data.jobId, jobType: data.jobType, status: data.status });
+      Alert.alert("Generation started", `Job ID: ${data.jobId}`);
       Alert.alert("Generation started", "Artifacts are now available.");
     } catch (error) {
       Alert.alert("Error", `${error}`);
@@ -153,6 +231,7 @@ export default function App() {
         throw new Error(detail || "Transcription failed");
       }
       const data = await resp.json();
+      upsertJob({ id: data.jobId, jobType: data.jobType, status: data.status });
       Alert.alert("Transcription queued", `Job ID: ${data.jobId}`);
     } catch (error) {
       Alert.alert("Error", `${error}`);
@@ -172,6 +251,7 @@ export default function App() {
         throw new Error(detail || "Export failed");
       }
       const data = await resp.json();
+      upsertJob({ id: data.jobId, jobType: data.jobType, status: data.status });
       Alert.alert("Export queued", `Job ID: ${data.jobId}`);
     } catch (error) {
       Alert.alert("Error", `${error}`);
@@ -254,6 +334,7 @@ export default function App() {
       }
       try {
         await Linking.openURL(targetUrl);
+        Alert.alert("Opened", `Opened ${exportType.toUpperCase()} export.`);
       } catch (error) {
         await copyToClipboard(targetUrl);
       }
@@ -284,10 +365,12 @@ export default function App() {
     | null;
   const threads = (artifacts?.threads ?? null) as
     | {
+        id?: string;
         title?: string;
         summary?: string;
         status?: string;
         complexity_level?: number;
+        lecture_refs?: string[];
       }[]
     | null;
 
@@ -367,6 +450,11 @@ export default function App() {
       <Text style={styles.previewTitle}>Thread Summary</Text>
       {threads?.length ? (
         threads.slice(0, 5).map((thread, idx) => (
+          <TouchableOpacity
+            key={`${thread.title}-${idx}`}
+            style={styles.threadCard}
+            onPress={() => setSelectedThread(thread)}
+          >
           <View key={`${thread.title}-${idx}`} style={styles.previewSection}>
             <Text style={styles.previewSubtitle}>
               {thread.title ?? "Thread"}
@@ -378,6 +466,8 @@ export default function App() {
               Status: {thread.status ?? "unknown"} • Complexity:{" "}
               {thread.complexity_level ?? "n/a"}
             </Text>
+            <Text style={styles.threadHint}>Tap for details</Text>
+          </TouchableOpacity>
           </View>
         ))
       ) : (
@@ -484,6 +574,40 @@ export default function App() {
                 ? summaryStatus.exportTypes.join(", ")
                 : "None yet"}
             </Text>
+            <Text style={styles.statusHint}>
+              Exports available:{" "}
+              {summaryStatus.exportTypes.length
+                ? summaryStatus.exportTypes.join(", ").toUpperCase()
+                : "No exports ready"}
+            </Text>
+          </View>
+        )}
+
+        {jobs.length > 0 && (
+          <View style={styles.statusCard}>
+            <Text style={styles.sectionTitle}>Job Status</Text>
+            {jobs.map((job) => (
+              <View key={job.id} style={styles.jobRow}>
+                <View style={styles.jobMeta}>
+                  <Text style={styles.jobType}>
+                    {job.jobType.toUpperCase()}
+                  </Text>
+                  <Text style={styles.jobId}>ID: {job.id}</Text>
+                </View>
+                <Text
+                  style={[
+                    styles.jobStatus,
+                    job.status === "failed" && styles.jobStatusFailed,
+                    job.status === "completed" && styles.jobStatusSuccess,
+                  ]}
+                >
+                  {job.status}
+                </Text>
+                {job.error ? (
+                  <Text style={styles.jobError}>{job.error}</Text>
+                ) : null}
+              </View>
+            ))}
           </View>
         )}
 
@@ -499,6 +623,33 @@ export default function App() {
             {renderFlashcards()}
             {renderQuestions()}
             {renderThreads()}
+          </View>
+        )}
+
+        {selectedThread && (
+          <View style={styles.detailCard}>
+            <View style={styles.detailHeader}>
+              <Text style={styles.sectionTitle}>Thread Detail</Text>
+              <TouchableOpacity onPress={() => setSelectedThread(null)}>
+                <Text style={styles.detailClose}>Close</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.previewSubtitle}>
+              {selectedThread.title ?? "Thread"}
+            </Text>
+            <Text style={styles.previewBody}>
+              {selectedThread.summary ?? "No summary available."}
+            </Text>
+            <Text style={styles.previewBody}>
+              Status: {selectedThread.status ?? "unknown"} • Complexity:{" "}
+              {selectedThread.complexity_level ?? "n/a"}
+            </Text>
+            <Text style={styles.previewBody}>
+              Lecture refs:{" "}
+              {selectedThread.lecture_refs?.length
+                ? selectedThread.lecture_refs.join(", ")
+                : "None"}
+            </Text>
             {renderArtifactPreview(
               "Summary",
               artifacts.summary,
@@ -536,6 +687,18 @@ export default function App() {
                 </Text>
               </TouchableOpacity>
             ))}
+          </View>
+        )}
+        {summaryStatus && exportRecords.length === 0 && (
+          <View style={styles.reviewSection}>
+            <Text style={styles.sectionTitle}>Exports</Text>
+            <Text style={styles.previewBody}>
+              {summaryStatus.exportTypes.length
+                ? `Exports ready: ${summaryStatus.exportTypes
+                    .join(", ")
+                    .toUpperCase()}`
+                : "No exports ready yet."}
+            </Text>
           </View>
         )}
 
@@ -634,6 +797,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
+  statusHint: {
+    color: "#93c5fd",
+    fontSize: 12,
+  },
+  jobRow: {
+    backgroundColor: "#111827",
+    borderRadius: 10,
+    padding: 10,
+    gap: 6,
+  },
+  jobMeta: {
+    gap: 2,
+  },
+  jobType: {
+    color: "#e2e8f0",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  jobId: {
+    color: "#94a3b8",
+    fontSize: 11,
+  },
+  jobStatus: {
+    color: "#f8fafc",
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+  },
+  jobStatusFailed: {
+    color: "#fca5a5",
+  },
+  jobStatusSuccess: {
+    color: "#86efac",
+  },
+  jobError: {
+    color: "#fca5a5",
+    fontSize: 11,
+  },
   sectionTitle: {
     color: "#f8fafc",
     fontSize: 18,
@@ -657,6 +858,38 @@ const styles = StyleSheet.create({
   previewSection: {
     marginTop: 10,
     gap: 4,
+  },
+  threadCard: {
+    marginTop: 10,
+    gap: 4,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "#0f172a",
+    borderColor: "#1e3a8a",
+    borderWidth: 1,
+  },
+  threadHint: {
+    color: "#93c5fd",
+    fontSize: 12,
+    marginTop: 6,
+  },
+  detailCard: {
+    backgroundColor: "#0b1120",
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+    borderColor: "#2563eb",
+    borderWidth: 1,
+  },
+  detailHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  detailClose: {
+    color: "#93c5fd",
+    fontSize: 13,
+    fontWeight: "600",
   },
   previewSubtitle: {
     color: "#e2e8f0",
