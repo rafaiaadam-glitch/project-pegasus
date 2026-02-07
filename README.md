@@ -163,6 +163,44 @@ Early milestones:
 - Preset-driven outputs
 - Export-ready study materials
 
+## MVP implementation (current)
+
+- Local pipeline scripts for ingestion, transcription, generation, threading, and exports.
+- FastAPI backend scaffold under `backend/`.
+- React Native (Expo) scaffold under `mobile/`.
+- Deployment notes under `docs/deploy.md`.
+
+---
+
+## MVP stack (recommended)
+
+**Frontend**
+- React Native (Expo) **or** SwiftUI (if iOS-first polish is the priority)
+
+**Backend**
+- Node.js (Fastify/Express) **or** Python (FastAPI)
+
+**Database**
+- Postgres (Supabase is easiest for MVP)
+
+**File storage**
+- S3-compatible storage **or** Supabase Storage
+
+**Jobs/queue**
+- Simple worker (BullMQ/Redis) **or** serverless background jobs
+
+**Transcription**
+- Whisper (hosted API or self-hosted)
+
+**LLM**
+- OpenAI responses for structured generation
+
+---
+
+## 60-second data flow (definition of done)
+
+Audio → Upload → Transcribe → Analyze → Generate artifacts → Store → Display/Export
+
 ---
 
 ## Guiding principle
