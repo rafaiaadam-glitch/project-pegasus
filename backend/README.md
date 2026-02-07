@@ -16,12 +16,21 @@ pip install -r backend/requirements.txt
 uvicorn backend.app:app --reload --port 8000
 ```
 
+## Worker
+
+```bash
+python -m backend.worker
+```
+
+Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis/RQ.
+
 ## Environment
 
 - `OPENAI_API_KEY` (required for LLM-backed generation)
 - `OPENAI_MODEL` (optional, default: `gpt-4o-mini`)
 - `PLC_STORAGE_DIR` (optional, default: `storage`)
 - `DATABASE_URL` (required, Postgres/Supabase)
+- `REDIS_URL` (optional, default: `redis://localhost:6379/0`)
 - `STORAGE_MODE` (`local` or `s3`)
 - `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`)
 
@@ -32,4 +41,5 @@ uvicorn backend.app:app --reload --port 8000
 - `POST /lectures/{lecture_id}/transcribe`
 - `POST /lectures/{lecture_id}/generate`
 - `POST /lectures/{lecture_id}/export`
+- `GET /lectures/{lecture_id}/artifacts`
 - `GET /jobs/{job_id}`

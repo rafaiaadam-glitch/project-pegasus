@@ -9,6 +9,13 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from backend.db import get_database
+from backend.jobs import (
+    enqueue_job,
+    run_export_job,
+    run_generation_job,
+    run_transcription_job,
+)
+from backend.storage import save_audio
 from backend.jobs import JOB_QUEUE
 from backend.storage import save_audio, save_export, save_transcript
 from pipeline.export_artifacts import export_artifacts
@@ -103,6 +110,20 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
     audio_files = list((STORAGE_DIR / "audio").glob(f"{lecture_id}.*"))
     if not audio_files:
         raise HTTPException(status_code=404, detail="Audio not found for lecture.")
+    job_id = enqueue_job(
+        "transcription",
+        lecture_id,
+        run_transcription_job,
+        lecture_id,
+        model,
+    )
+    db = get_database()
+    job = db.fetch_job(job_id)
+    return {
+        "jobId": job_id,
+        "status": job["status"] if job else "queued",
+        "jobType": job.get("job_type") if job else "transcription",
+    }
     audio_path = audio_files[0]
 
     def _job() -> dict:
@@ -151,6 +172,22 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
 
 @app.post("/lectures/{lecture_id}/generate")
 def generate_artifacts(lecture_id: str, course_id: str, preset_id: str) -> dict:
+    job_id = enqueue_job(
+        "generation",
+        lecture_id,
+        run_generation_job,
+        lecture_id,
+        course_id,
+        preset_id,
+        os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+    )
+    db = get_database()
+    job = db.fetch_job(job_id)
+    return {
+        "jobId": job_id,
+        "status": job["status"] if job else "queued",
+        "jobType": job.get("job_type") if job else "generation",
+    }
     transcript_path = STORAGE_DIR / "transcripts" / f"{lecture_id}.json"
     if not transcript_path.exists():
         raise HTTPException(status_code=404, detail="Transcript not found.")
@@ -183,6 +220,14 @@ def generate_artifacts(lecture_id: str, course_id: str, preset_id: str) -> dict:
 
 @app.post("/lectures/{lecture_id}/export")
 def export_lecture(lecture_id: str) -> dict:
+    job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
+    db = get_database()
+    job = db.fetch_job(job_id)
+    return {
+        "jobId": job_id,
+        "status": job["status"] if job else "queued",
+        "jobType": job.get("job_type") if job else "export",
+    }
     artifact_dir = Path("pipeline/output") / lecture_id
     if not artifact_dir.exists():
         raise HTTPException(status_code=404, detail="Artifacts not found.")
@@ -200,6 +245,42 @@ def export_lecture(lecture_id: str) -> dict:
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str) -> dict:
+    db = get_database()
+    job = db.fetch_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {
+        "id": job["id"],
+        "status": job["status"],
+        "jobType": job.get("job_type"),
+        "result": job.get("result"),
+        "error": job.get("error"),
+    }
+
+
+@app.get("/lectures/{lecture_id}/artifacts")
+def review_artifacts(lecture_id: str) -> dict:
+    artifact_dir = Path("pipeline/output") / lecture_id
+    if not artifact_dir.exists():
+        raise HTTPException(status_code=404, detail="Artifacts not found.")
+    artifact_map = {
+        "summary": "summary.json",
+        "outline": "outline.json",
+        "keyTerms": "key-terms.json",
+        "flashcards": "flashcards.json",
+        "examQuestions": "exam-questions.json",
+        "threads": "threads.json",
+        "threadOccurrences": "thread-occurrences.json",
+        "threadUpdates": "thread-updates.json",
+    }
+    payload: dict[str, object] = {}
+    for key, filename in artifact_map.items():
+        path = artifact_dir / filename
+        if path.exists():
+            payload[key] = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            payload[key] = None
+    return {"lectureId": lecture_id, "artifacts": payload}
     job = JOB_QUEUE.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
