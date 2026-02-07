@@ -4,15 +4,15 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import BinaryIO
 
 
 @dataclass(frozen=True)
 class StorageConfig:
     mode: str
     local_dir: Path
-    s3_bucket: Optional[str]
-    s3_prefix: Optional[str]
+    s3_bucket: str | None
+    s3_prefix: str | None
 
 
 def _config() -> StorageConfig:

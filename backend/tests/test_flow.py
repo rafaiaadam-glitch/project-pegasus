@@ -5,7 +5,6 @@ from pathlib import Path
 import sys
 
 import pytest
-from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT))
@@ -64,10 +63,10 @@ class FakeDB:
     def fetch_artifacts(
         self,
         lecture_id: str,
-        artifact_type: Optional[str] = None,
-        preset_id: Optional[str] = None,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
+        artifact_type: str | None = None,
+        preset_id: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
     ):
         rows = [row for row in self.artifacts.values() if row["lecture_id"] == lecture_id]
         if artifact_type:
@@ -79,6 +78,8 @@ class FakeDB:
         if limit is not None:
             rows = rows[:limit]
         return rows
+    def fetch_artifacts(self, lecture_id: str):
+        return [row for row in self.artifacts.values() if row["lecture_id"] == lecture_id]
 
     def upsert_thread(self, payload: dict) -> None:
         self.threads[payload["id"]] = payload

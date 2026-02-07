@@ -12,6 +12,10 @@ from rq import Queue, Retry
 
 from backend.db import get_database
 from backend.storage import save_artifact_file, save_export, save_export_file, save_transcript
+from rq import Queue
+
+from backend.db import get_database
+from backend.storage import save_export, save_transcript
 from pipeline.export_artifacts import export_artifacts
 from pipeline.run_pipeline import PipelineContext, run_pipeline
 from pipeline.transcribe_audio import _load_whisper
@@ -60,12 +64,7 @@ def _create_job_record(job_id: str, job_type: str, lecture_id: Optional[str]) ->
     )
 
 
-def _update_job(
-    job_id: str,
-    status: str,
-    result: Optional[Dict[str, Any]] = None,
-    error: Optional[str] = None,
-) -> None:
+def _update_job(job_id: str, status: str, result: Dict[str, Any] | None = None, error: str | None = None) -> None:
     db = get_database()
     db.update_job(
         job_id=job_id,
@@ -88,6 +87,7 @@ def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs)
         on_failure=_handle_job_failure,
         **kwargs,
     )
+    queue.enqueue(task, job_id, *args, **kwargs)
     return job_id
 
 
@@ -215,12 +215,14 @@ def run_generation_job(
                     "preset_id": preset_id,
                     "artifact_type": artifact_type,
                     "storage_path": stored_path,
+                    "storage_path": str(path),
                     "summary_overview": overview,
                     "summary_section_count": section_count,
                     "created_at": now,
                 }
             )
             artifact_paths[artifact_type] = stored_path
+            artifact_paths[artifact_type] = str(path)
 
         threads_path = artifacts_dir / "threads.json"
         if threads_path.exists():
@@ -244,6 +246,7 @@ def run_generation_job(
             "outputDir": str(artifacts_dir),
             "artifactPaths": artifact_paths,
         }
+        payload = {"lectureId": lecture_id, "outputDir": str(output_dir / lecture_id)}
         _update_job(job_id, "completed", result=payload)
         return payload
     except Exception as exc:
@@ -274,12 +277,19 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
         for export_type, path in export_files.items():
             stored_path = save_export_file(path, f"{lecture_id}/{path.name}")
             export_paths[export_type] = stored_path
+        export_paths = {
+            "markdown": str(export_dir / f"{lecture_id}.md"),
+            "anki": str(export_dir / f"{lecture_id}.csv"),
+            "pdf": str(export_dir / f"{lecture_id}.pdf"),
+        }
+        for export_type, path in export_paths.items():
             db.upsert_export(
                 {
                     "id": f"{lecture_id}-{export_type}",
                     "lecture_id": lecture_id,
                     "export_type": export_type,
                     "storage_path": stored_path,
+                    "storage_path": path,
                     "created_at": now,
                 }
             )
@@ -287,6 +297,9 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
             "lectureId": lecture_id,
             "exportDir": str(export_dir),
             "exportPaths": export_paths,
+        exports_manifest = {
+            "lectureId": lecture_id,
+            "exportDir": str(export_dir),
         }
         save_export(
             json.dumps(exports_manifest, indent=2).encode("utf-8"),
@@ -297,3 +310,50 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
     except Exception as exc:
         _update_job(job_id, "failed", error=str(exc))
         raise
+import queue
+import threading
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict
+
+
+@dataclass
+class Job:
+    id: str
+    status: str = "queued"
+    result: Dict[str, Any] | None = None
+    error: str | None = None
+
+
+class JobQueue:
+    def __init__(self) -> None:
+        self._queue: queue.Queue[tuple[Job, Callable[[], Dict[str, Any]]]] = queue.Queue()
+        self._jobs: Dict[str, Job] = {}
+        self._worker = threading.Thread(target=self._run, daemon=True)
+        self._worker.start()
+
+    def submit(self, func: Callable[[], Dict[str, Any]]) -> Job:
+        job_id = str(uuid.uuid4())
+        job = Job(id=job_id)
+        self._jobs[job_id] = job
+        self._queue.put((job, func))
+        return job
+
+    def get(self, job_id: str) -> Job | None:
+        return self._jobs.get(job_id)
+
+    def _run(self) -> None:
+        while True:
+            job, func = self._queue.get()
+            job.status = "running"
+            try:
+                job.result = func()
+                job.status = "completed"
+            except Exception as exc:  # pragma: no cover - runtime job errors
+                job.error = str(exc)
+                job.status = "failed"
+            finally:
+                self._queue.task_done()
+
+
+JOB_QUEUE = JobQueue()
