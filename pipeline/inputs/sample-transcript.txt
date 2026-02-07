@@ -1,0 +1,5 @@
+Topic: Neural signaling basics.
+
+Today we covered how neurons transmit signals using action potentials. We defined resting potential, depolarization, and repolarization, and we emphasized the role of sodium and potassium ion channels. We also discussed how myelination increases conduction velocity and why that matters for rapid response.
+
+We compared saltatory conduction to continuous conduction, and highlighted that synapses can be excitatory or inhibitory. Finally, we introduced the idea that repeated stimulation can strengthen synaptic connections, which sets up later lectures on learning and memory.
