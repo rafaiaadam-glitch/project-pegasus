@@ -5,6 +5,9 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+import {
+  ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -66,6 +69,8 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  const [loading, setLoading] = useState(false);
 
   const runGenerate = async () => {
     setLoading(true);
@@ -204,6 +209,8 @@ export default function App() {
             <Text style={styles.buttonText}>Upload Audio</Text>
           )}
         </TouchableOpacity>
+
+        </View>
 
         <TouchableOpacity style={styles.button} onPress={runGenerate}>
           {loading ? (
