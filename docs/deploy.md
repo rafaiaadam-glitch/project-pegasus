@@ -21,10 +21,15 @@ Environment variables:
 - `PLC_STORAGE_DIR` (optional)
 - `REDIS_URL` (queue/worker)
 
+Redis target: use a managed Redis service (Render Redis, Upstash Redis, or Fly
+Redis) and wire its connection string into `REDIS_URL` for both the API and
+worker services.
+
 ### Supabase setup
 
 1. Create a new Supabase project and copy the Postgres connection string into
    `DATABASE_URL`.
+2. Run the backend migrations (auto-applied on startup from `backend/migrations`):
 2. Enable the following tables (the backend auto-migrates on startup):
    - `courses`
    - `lectures`
@@ -43,6 +48,13 @@ Environment variables:
 
 Sample configs are included for Render (`render.yaml`), Fly.io (`fly.toml`), and
 Railway (`railway.toml`). Each points to `backend/Dockerfile`.
+
+Worker services:
+- Render: `render.yaml` includes a worker service (`pegasus-worker`) that runs
+  `python -m backend.worker`.
+- Fly.io: `fly.toml` defines a `worker` process group.
+- Railway: deploy a second service using `railway.worker.toml` with
+  `python -m backend.worker`.
 
 ## Mobile
 

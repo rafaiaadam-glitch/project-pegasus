@@ -20,3 +20,25 @@ services:
         value: pegasus
       - key: REDIS_URL
         sync: false
+  - type: worker
+    name: pegasus-worker
+    env: docker
+    dockerfilePath: backend/Dockerfile
+    plan: starter
+    autoDeploy: true
+    startCommand: python -m backend.worker
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: STORAGE_MODE
+        value: s3
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_PREFIX
+        value: pegasus
+      - key: REDIS_URL
+        sync: false

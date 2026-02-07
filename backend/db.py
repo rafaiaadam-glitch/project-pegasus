@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import psycopg2
@@ -17,10 +18,32 @@ class Database:
         return psycopg2.connect(self.dsn)
 
     def migrate(self) -> None:
+        migrations_dir = Path(__file__).resolve().parent / "migrations"
+        migrations = sorted(migrations_dir.glob("*.sql"))
+        if not migrations:
+            return
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
+                    create table if not exists schema_migrations (
+                        id text primary key,
+                        applied_at timestamptz not null default now()
+                    );
+                    """
+                )
+                cur.execute("select id from schema_migrations order by id;")
+                applied = {row[0] for row in cur.fetchall()}
+                for migration in migrations:
+                    migration_id = migration.name
+                    if migration_id in applied:
+                        continue
+                    sql = migration.read_text(encoding="utf-8")
+                    cur.execute(sql)
+                    cur.execute(
+                        "insert into schema_migrations (id) values (%s);",
+                        (migration_id,),
+                    )
                     create table if not exists lectures (
                         id text primary key,
                         course_id text not null,

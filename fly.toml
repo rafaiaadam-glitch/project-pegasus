@@ -4,6 +4,10 @@ primary_region = "iad"
 [build]
   dockerfile = "backend/Dockerfile"
 
+[processes]
+  app = "uvicorn backend.app:app --host 0.0.0.0 --port 8000"
+  worker = "python -m backend.worker"
+
 [env]
   OPENAI_MODEL = "gpt-4o-mini"
   STORAGE_MODE = "s3"

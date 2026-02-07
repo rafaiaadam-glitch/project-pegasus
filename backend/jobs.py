@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from redis import Redis
+from rq import Queue, Retry
 from rq import Queue
 
 from backend.db import get_database
@@ -37,6 +38,10 @@ def _get_queue() -> Queue:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     connection = Redis.from_url(redis_url)
     return Queue("pegasus", connection=connection)
+
+
+def _handle_job_failure(job, exc_type, exc_value, traceback) -> None:
+    _update_job(job.id, "failed", error=str(exc_value))
 
 
 def _create_job_record(job_id: str, job_type: str, lecture_id: Optional[str]) -> None:
@@ -71,6 +76,14 @@ def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs)
     job_id = str(uuid.uuid4())
     _create_job_record(job_id, job_type, lecture_id)
     queue = _get_queue()
+    queue.enqueue(
+        task,
+        job_id,
+        *args,
+        retry=Retry(max=3, interval=[10, 60, 300]),
+        on_failure=_handle_job_failure,
+        **kwargs,
+    )
     queue.enqueue(task, job_id, *args, **kwargs)
     return job_id
 

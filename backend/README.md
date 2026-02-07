@@ -22,6 +22,10 @@ uvicorn backend.app:app --reload --port 8000
 python -m backend.worker
 ```
 
+Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis/RQ
+with retry/backoff defaults.
+
+Migrations are applied from `backend/migrations` on startup.
 Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis/RQ.
 
 ## Environment
@@ -39,6 +43,7 @@ Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis
 - `GET /health`
 - `POST /lectures/ingest` (multipart upload)
 - `POST /lectures/{lecture_id}/transcribe`
+- `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `openai_model` optional)
 - `POST /lectures/{lecture_id}/generate`
 - `POST /lectures/{lecture_id}/export`
 - `GET /exports/{lecture_id}/{export_type}`

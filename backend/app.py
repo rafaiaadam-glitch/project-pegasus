@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
 
 from backend.db import get_database
 from backend.jobs import (
@@ -25,6 +26,12 @@ from pipeline.transcribe_audio import _load_whisper
 
 app = FastAPI(title="Pegasus Lecture Copilot API")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
+
+
+class GenerateRequest(BaseModel):
+    course_id: str
+    preset_id: str
+    openai_model: str | None = None
 
 
 def _iso_now() -> str:
@@ -130,6 +137,10 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
         "status": job["status"] if job else "queued",
         "jobType": job.get("job_type") if job else "transcription",
     }
+
+
+@app.post("/lectures/{lecture_id}/generate")
+def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
     audio_path = audio_files[0]
 
     def _job() -> dict:
@@ -183,6 +194,9 @@ def generate_artifacts(lecture_id: str, course_id: str, preset_id: str) -> dict:
         lecture_id,
         run_generation_job,
         lecture_id,
+        payload.course_id,
+        payload.preset_id,
+        payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
         course_id,
         preset_id,
         os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
