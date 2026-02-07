@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 import psycopg2
 from psycopg2.extras import Json, RealDictCursor
+from psycopg2.extras import RealDictCursor
 
 
 @dataclass(frozen=True)
