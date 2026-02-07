@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pegasus.local/schemas/preset.schema.json",
+  "title": "LectureStylePreset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "kind", "outputProfile"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "exam",
+        "concept-map",
+        "beginner",
+        "neurodivergent",
+        "research",
+        "custom"
+      ]
+    },
+    "description": {
+      "type": "string"
+    },
+    "outputProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["structure", "chunking", "emphasis"],
+      "properties": {
+        "structure": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chunking": {
+          "type": "string",
+          "minLength": 1
+        },
+        "emphasis": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      }
+    }
+  }
+}
