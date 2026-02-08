@@ -12,17 +12,6 @@ To deploy the MVP, you will need:
 
 Suggested platforms: Render, Fly.io, Railway, or Supabase Edge Functions (if ported).
 
-### Local docker-compose
-
-For a local MVP stack (API + worker + Postgres + Redis):
-
-```bash
-docker compose up --build
-```
-
-This uses `backend/Dockerfile` for both the API and worker containers and mounts
-storage at `/data`.
-
 Environment variables:
 - `DATABASE_URL`
 - `OPENAI_API_KEY`
