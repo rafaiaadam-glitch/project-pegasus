@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: pegasus
+      POSTGRES_PASSWORD: pegasus
+      POSTGRES_DB: pegasus
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: uvicorn backend.app:app --host 0.0.0.0 --port 8000
+    environment:
+      DATABASE_URL: postgresql://pegasus:pegasus@postgres:5432/pegasus
+      REDIS_URL: redis://redis:6379/0
+      PLC_STORAGE_DIR: /data
+      STORAGE_MODE: local
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - storage:/data
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: python -m backend.worker
+    environment:
+      DATABASE_URL: postgresql://pegasus:pegasus@postgres:5432/pegasus
+      REDIS_URL: redis://redis:6379/0
+      PLC_STORAGE_DIR: /data
+      STORAGE_MODE: local
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - storage:/data
+
+volumes:
+  pgdata:
+  storage:
