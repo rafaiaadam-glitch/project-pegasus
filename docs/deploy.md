@@ -30,7 +30,6 @@ worker services.
 1. Create a new Supabase project and copy the Postgres connection string into
    `DATABASE_URL`.
 2. Run the backend migrations (auto-applied on startup from `backend/migrations`):
-2. Enable the following tables (the backend auto-migrates on startup):
    - `courses`
    - `lectures`
    - `jobs`

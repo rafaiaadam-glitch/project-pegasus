@@ -2,15 +2,11 @@ import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 import * as Clipboard from "expo-clipboard";
-import { useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import {
   ActivityIndicator,
   Alert,
   Linking,
-import {
-  ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -36,6 +32,9 @@ export default function App() {
   const [exportRecords, setExportRecords] = useState<
     { export_type: string; storage_path: string }[]
   >([]);
+  const [artifactDownloads, setArtifactDownloads] = useState<
+    Record<string, string>
+  >({});
   const [summaryStatus, setSummaryStatus] = useState<{
     lecture?: { id?: string; title?: string; status?: string };
     artifactCount: number;
@@ -195,8 +194,6 @@ export default function App() {
     }
   };
 
-  const [loading, setLoading] = useState(false);
-
   const runGenerate = async () => {
     setLoading(true);
     try {
@@ -212,7 +209,6 @@ export default function App() {
       const data = await resp.json();
       upsertJob({ id: data.jobId, jobType: data.jobType, status: data.status });
       Alert.alert("Generation started", `Job ID: ${data.jobId}`);
-      Alert.alert("Generation started", "Artifacts are now available.");
     } catch (error) {
       Alert.alert("Error", `${error}`);
     } finally {
@@ -273,6 +269,7 @@ export default function App() {
       const data = await resp.json();
       setArtifacts(data.artifacts);
       setExportRecords(data.exportRecords ?? []);
+      setArtifactDownloads(data.artifactDownloadUrls ?? {});
     } catch (error) {
       Alert.alert("Error", `${error}`);
     } finally {
@@ -341,14 +338,6 @@ export default function App() {
     } catch (error) {
       Alert.alert("Error", `${error}`);
     }
-  const openExport = async (exportType: string) => {
-    const url = `${API_BASE_URL}/exports/${lectureId}/${exportType}`;
-    const canOpen = await Linking.canOpenURL(url);
-    if (!canOpen) {
-      Alert.alert("Unavailable", "Cannot open export link on this device.");
-      return;
-    }
-    await Linking.openURL(url);
   };
 
   const summary = (artifacts?.summary ?? null) as
@@ -445,6 +434,27 @@ export default function App() {
     </View>
   );
 
+  const renderArtifactDownloads = () => {
+    const entries = Object.entries(artifactDownloads);
+    if (!entries.length) {
+      return null;
+    }
+    return (
+      <View style={styles.previewCard}>
+        <Text style={styles.previewTitle}>Artifact Downloads</Text>
+        {entries.map(([key, url]) => (
+          <TouchableOpacity
+            key={key}
+            style={styles.linkButton}
+            onPress={() => Linking.openURL(url)}
+          >
+            <Text style={styles.linkText}>Download {key.toUpperCase()}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
   const renderThreads = () => (
     <View style={styles.previewCard}>
       <Text style={styles.previewTitle}>Thread Summary</Text>
@@ -455,7 +465,6 @@ export default function App() {
             style={styles.threadCard}
             onPress={() => setSelectedThread(thread)}
           >
-          <View key={`${thread.title}-${idx}`} style={styles.previewSection}>
             <Text style={styles.previewSubtitle}>
               {thread.title ?? "Thread"}
             </Text>
@@ -468,21 +477,10 @@ export default function App() {
             </Text>
             <Text style={styles.threadHint}>Tap for details</Text>
           </TouchableOpacity>
-          </View>
         ))
       ) : (
         <Text style={styles.previewBody}>No thread records yet.</Text>
       )}
-  const renderArtifactPreview = (
-    label: string,
-    value: unknown,
-    fallback: string
-  ) => (
-    <View style={styles.previewCard}>
-      <Text style={styles.previewTitle}>{label}</Text>
-      <Text style={styles.previewBody}>
-        {value ? JSON.stringify(value, null, 2) : fallback}
-      </Text>
     </View>
   );
 
@@ -522,8 +520,6 @@ export default function App() {
             <Text style={styles.buttonText}>Upload Audio</Text>
           )}
         </TouchableOpacity>
-
-        </View>
 
         <TouchableOpacity style={styles.button} onPress={runGenerate}>
           {loading ? (
@@ -623,6 +619,7 @@ export default function App() {
             {renderFlashcards()}
             {renderQuestions()}
             {renderThreads()}
+            {renderArtifactDownloads()}
           </View>
         )}
 
@@ -650,26 +647,6 @@ export default function App() {
                 ? selectedThread.lecture_refs.join(", ")
                 : "None"}
             </Text>
-            {renderArtifactPreview(
-              "Summary",
-              artifacts.summary,
-              "Run generation to see summary."
-            )}
-            {renderArtifactPreview(
-              "Outline",
-              artifacts.outline,
-              "Run generation to see outline."
-            )}
-            {renderArtifactPreview(
-              "Flashcards",
-              artifacts.flashcards,
-              "Run generation to see flashcards."
-            )}
-            {renderArtifactPreview(
-              "Exam Questions",
-              artifacts.examQuestions,
-              "Run generation to see questions."
-            )}
           </View>
         )}
 
