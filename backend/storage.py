@@ -13,6 +13,8 @@ class StorageConfig:
     local_dir: Path
     s3_bucket: Optional[str]
     s3_prefix: Optional[str]
+    s3_endpoint_url: Optional[str]
+    s3_region: Optional[str]
 
 
 def _config() -> StorageConfig:
@@ -23,6 +25,19 @@ def _config() -> StorageConfig:
         local_dir=local_dir,
         s3_bucket=os.getenv("S3_BUCKET"),
         s3_prefix=os.getenv("S3_PREFIX", "pegasus"),
+        s3_endpoint_url=os.getenv("S3_ENDPOINT_URL"),
+        s3_region=os.getenv("AWS_REGION") or os.getenv("S3_REGION"),
+    )
+
+
+def _s3_client():
+    cfg = _config()
+    import boto3
+
+    return boto3.client(
+        "s3",
+        region_name=cfg.s3_region,
+        endpoint_url=cfg.s3_endpoint_url,
     )
 
 
@@ -36,12 +51,10 @@ def _local_path(category: str, filename: str) -> Path:
 def save_audio(fileobj: BinaryIO, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        import boto3
-
         if not cfg.s3_bucket:
             raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/audio/{filename}"
-        boto3.client("s3").upload_fileobj(fileobj, cfg.s3_bucket, key)
+        _s3_client().upload_fileobj(fileobj, cfg.s3_bucket, key)
         return f"s3://{cfg.s3_bucket}/{key}"
     target = _local_path("audio", filename)
     with target.open("wb") as handle:
@@ -52,12 +65,10 @@ def save_audio(fileobj: BinaryIO, filename: str) -> str:
 def save_transcript(payload: str, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        import boto3
-
         if not cfg.s3_bucket:
             raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/transcripts/{filename}"
-        boto3.client("s3").put_object(
+        _s3_client().put_object(
             Bucket=cfg.s3_bucket, Key=key, Body=payload.encode("utf-8")
         )
         return f"s3://{cfg.s3_bucket}/{key}"
@@ -69,12 +80,10 @@ def save_transcript(payload: str, filename: str) -> str:
 def save_export(payload: bytes, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        import boto3
-
         if not cfg.s3_bucket:
             raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/exports/{filename}"
-        boto3.client("s3").put_object(Bucket=cfg.s3_bucket, Key=key, Body=payload)
+        _s3_client().put_object(Bucket=cfg.s3_bucket, Key=key, Body=payload)
         return f"s3://{cfg.s3_bucket}/{key}"
     target = _local_path("exports", filename)
     target.write_bytes(payload)
@@ -84,12 +93,10 @@ def save_export(payload: bytes, filename: str) -> str:
 def save_artifact_file(source: Path, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        import boto3
-
         if not cfg.s3_bucket:
             raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/artifacts/{filename}"
-        boto3.client("s3").upload_file(str(source), cfg.s3_bucket, key)
+        _s3_client().upload_file(str(source), cfg.s3_bucket, key)
         return f"s3://{cfg.s3_bucket}/{key}"
     target = _local_path("artifacts", filename)
     target.write_bytes(source.read_bytes())
@@ -99,12 +106,10 @@ def save_artifact_file(source: Path, filename: str) -> str:
 def save_export_file(source: Path, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        import boto3
-
         if not cfg.s3_bucket:
             raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/exports/{filename}"
-        boto3.client("s3").upload_file(str(source), cfg.s3_bucket, key)
+        _s3_client().upload_file(str(source), cfg.s3_bucket, key)
         return f"s3://{cfg.s3_bucket}/{key}"
     target = _local_path("exports", filename)
     target.write_bytes(source.read_bytes())
@@ -118,10 +123,7 @@ def download_url(storage_path: str, expires_in: int = 900) -> Optional[str]:
     bucket, _, key = rest.partition("/")
     if not bucket or not key:
         return None
-    import boto3
-
-    client = boto3.client("s3")
-    return client.generate_presigned_url(
+    return _s3_client().generate_presigned_url(
         "get_object",
         Params={"Bucket": bucket, "Key": key},
         ExpiresIn=expires_in,

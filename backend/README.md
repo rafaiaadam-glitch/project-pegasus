@@ -40,6 +40,8 @@ processed consistently.
 - `REDIS_URL` (optional, default: `redis://localhost:6379/0`)
 - `STORAGE_MODE` (`local` or `s3`)
 - `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`)
+- `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
+- `S3_REGION` / `AWS_REGION` (optional, for S3-compatible storage)
 
 ## Endpoints
 

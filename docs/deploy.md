@@ -12,12 +12,25 @@ To deploy the MVP, you will need:
 
 Suggested platforms: Render, Fly.io, Railway, or Supabase Edge Functions (if ported).
 
+### Local docker-compose
+
+For a local MVP stack (API + worker + Postgres + Redis):
+
+```bash
+docker compose up --build
+```
+
+This uses `backend/Dockerfile` for both the API and worker containers and mounts
+storage at `/data`.
+
 Environment variables:
 - `DATABASE_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `STORAGE_MODE` (`local` or `s3`)
 - `S3_BUCKET`, `S3_PREFIX` (if `STORAGE_MODE=s3`)
+- `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
+- `S3_REGION` / `AWS_REGION` (optional, for S3-compatible storage)
 - `PLC_STORAGE_DIR` (optional)
 - `REDIS_URL` (queue/worker)
 
