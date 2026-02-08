@@ -283,7 +283,7 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
                     "created_at": now,
                 }
             )
-                exports_manifest = {
+                        exports_manifest = {
             "lectureId": lecture_id,
             "exportDir": str(export_dir),
             "exportPaths": export_paths,
@@ -296,4 +296,6 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
         return exports_manifest
     except Exception as exc:
         _update_job(job_id, "failed", error=str(exc))
+        raise
+error=str(exc))
         raise
