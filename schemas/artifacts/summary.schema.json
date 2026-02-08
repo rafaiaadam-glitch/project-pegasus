@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pegasus.local/schemas/artifacts/summary.schema.json",
+  "title": "StructuredSummaryArtifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "courseId",
+    "lectureId",
+    "presetId",
+    "artifactType",
+    "generatedAt",
+    "version",
+    "overview",
+    "sections"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "courseId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lectureId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "presetId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifactType": {
+      "type": "string",
+      "const": "summary"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "threadRefs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "overview": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "bullets"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bullets": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

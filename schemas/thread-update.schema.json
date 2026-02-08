@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pegasus.local/schemas/thread-update.schema.json",
+  "title": "ThreadUpdate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "threadId",
+    "courseId",
+    "lectureId",
+    "changeType",
+    "summary",
+    "capturedAt"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "threadId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "courseId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lectureId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "changeType": {
+      "type": "string",
+      "enum": ["refinement", "contradiction", "complexity"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "details": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

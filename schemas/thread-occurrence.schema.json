@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pegasus.local/schemas/thread-occurrence.schema.json",
+  "title": "ThreadOccurrence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "threadId",
+    "courseId",
+    "lectureId",
+    "artifactId",
+    "evidence",
+    "confidence",
+    "capturedAt"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "threadId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "courseId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lectureId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifactId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence": {
+      "type": "string",
+      "minLength": 1
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "capturedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
