@@ -69,43 +69,12 @@ STOPWORDS = {
 }
 
 
-@dataclass(frozen=True)
-class ThreadStore:
-    path: Path
-
-    def load(self) -> Dict[str, Dict[str, object]]:
-        if not self.path.exists():
-            return {}
-        data = json.loads(self.path.read_text(encoding="utf-8"))
-        return {item["id"]: item for item in data.get("threads", [])}
-
-    def save(self, threads: Iterable[Dict[str, object]]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"threads": list(threads)}
-        self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _tokenize(text: str) -> List[str]:
-    tokens = re.findall(r"[A-Za-z][A-Za-z\-]{2,}", text.lower())
-    return [token for token in tokens if token not in STOPWORDS]
-
-
-def _top_terms(text: str, limit: int = 5) -> List[Tuple[str, int]]:
-    counts = Counter(_tokenize(text))
-    return counts.most_common(limit)
-
-
-def _sentence_for_term(text: str, term: str) -> str:
-    sentences = re.split(r"[.!?]\s+", text)
-    for sentence in sentences:
-        if term in sentence.lower():
-            return sentence.strip()
-    return sentences[0].strip() if sentences else term
-
+def _get_context_descriptors(transcript: str, term: str) -> List[str]:
+    """Extracts adjectives and nouns near a term to define its current 'depth'."""
+    # Simple regex to find words immediately preceding the term (potential descriptors)
+    pattern = rf"(\w+)\s+{re.escape(term)}"
+    matches = re.findall(pattern, transcript.lower())
+    return [m for m in matches if m not in STOPWORDS]
 
 def generate_thread_records(
     course_id: str,
@@ -125,80 +94,80 @@ def generate_thread_records(
     updates: List[Dict[str, object]] = []
 
     for term, count in _top_terms(transcript):
-        matching = next(
-            (thread for thread in threads if thread["title"] == term), None
-        )
+        matching = next((thread for thread in threads if thread["title"] == term), None)
         evidence = _sentence_for_term(transcript, term)
+        descriptors = _get_context_descriptors(transcript, term)
+        
         if matching is None:
+            # New Thread: Initial Introduction
             thread_id = str(uuid.uuid4())
             thread = {
                 "id": thread_id,
                 "courseId": course_id,
                 "title": term,
-                "summary": f"Lecture concept around '{term}'.",
-                "status": "foundational" if count < 6 else "advanced",
-                "complexityLevel": min(5, max(1, count // 2)),
+                "summary": f"Initial concept of '{term}' introduced.",
+                "status": "foundational",
+                "complexityLevel": 1,
                 "lectureRefs": [lecture_id],
-                "evolutionNotes": [
-                    {
-                        "lectureId": lecture_id,
-                        "changeType": "refinement",
-                        "note": f"Initial introduction of '{term}'.",
-                    }
-                ],
+                "descriptors": descriptors,
+                "evolutionNotes": [{
+                    "lectureId": lecture_id,
+                    "changeType": "refinement",
+                    "note": f"Concept first introduced with terms: {', '.join(descriptors) if descriptors else 'None'}."
+                }]
             }
             threads.append(thread)
         else:
+            # Existing Thread: Detect Refinement or Complexity
             thread_id = matching["id"]
-            lecture_refs = set(matching.get("lectureRefs", []))
-            lecture_refs.add(lecture_id)
-            matching["lectureRefs"] = sorted(lecture_refs)
-            matching.setdefault("evolutionNotes", []).append(
-                {
-                    "lectureId": lecture_id,
-                    "changeType": "refinement",
-                    "note": f"Revisited '{term}' with added context.",
-                }
-            )
-            updates.append(
-                {
-                    "id": str(uuid.uuid4()),
-                    "threadId": thread_id,
-                    "courseId": course_id,
-                    "lectureId": lecture_id,
-                    "changeType": "refinement",
-                    "summary": f"Expanded '{term}' with new lecture context.",
-                    "details": [evidence[:140]],
-                    "capturedAt": generated_at,
-                }
-            )
+            prev_descriptors = set(matching.get("descriptors", []))
+            new_descriptors = set(descriptors)
+            
+            # Refinement Logic: If we see new descriptors not present before
+            added_depth = new_descriptors - prev_descriptors
+            change_summary = f"Refined '{term}' with new context."
+            change_type = "refinement"
+            
+            if len(added_depth) > 2:
+                # Complexity Logic: If significant new terminology is added
+                matching["complexityLevel"] = min(5, matching.get("complexityLevel", 1) + 1)
+                matching["status"] = "advanced" if matching["complexityLevel"] > 2 else "foundational"
+                change_type = "complexity"
+                change_summary = f"Increased complexity of '{term}' via detailed descriptors: {', '.join(added_depth)}."
 
-        occurrences.append(
-            {
+            # Update existing thread metadata
+            matching["lectureRefs"] = sorted(list(set(matching.get("lectureRefs", []) + [lecture_id])))
+            matching["descriptors"] = list(prev_descriptors | new_descriptors)
+            matching.setdefault("evolutionNotes", []).append({
+                "lectureId": lecture_id,
+                "changeType": change_type,
+                "note": change_summary
+            })
+
+            updates.append({
                 "id": str(uuid.uuid4()),
                 "threadId": thread_id,
                 "courseId": course_id,
                 "lectureId": lecture_id,
-                "artifactId": "summary",
-                "evidence": evidence[:180],
-                "confidence": min(0.95, 0.5 + (count / 10)),
+                "changeType": change_type,
+                "summary": change_summary,
+                "details": [evidence[:140]],
                 "capturedAt": generated_at,
-            }
-        )
+            })
+
+        occurrences.append({
+            "id": str(uuid.uuid4()),
+            "threadId": thread_id,
+            "courseId": course_id,
+            "lectureId": lecture_id,
+            "artifactId": "summary",
+            "evidence": evidence[:180],
+            "confidence": min(0.95, 0.5 + (count / 10)),
+            "capturedAt": generated_at,
+        })
 
     store.save(threads)
-    if not updates:
-        updates.append(
-            {
-                "id": str(uuid.uuid4()),
-                "threadId": threads[0]["id"] if threads else str(uuid.uuid4()),
-                "courseId": course_id,
-                "lectureId": lecture_id,
-                "changeType": "refinement",
-                "summary": "Captured initial thread signals for this lecture.",
-                "details": ["Generated from top lecture terms."],
-                "capturedAt": generated_at,
-            }
+    return threads, occurrences, updates
         )
 
     return threads, occurrences, updates
