@@ -73,44 +73,96 @@ def _validate_common(payload: Dict[str, Any], artifact_type: str, errors: List[s
                 _assert_non_empty_string(value, f"threadRefs[{idx}]", errors)
 
 
-def _validate_summary(payload: Dict[str, Any], errors: List[str]) -> None:
-    _assert_required(payload, ["overview", "sections"], errors)
-    if "overview" in payload:
-        _assert_non_empty_string(payload["overview"], "overview", errors)
-    if "sections" in payload:
-        _assert_list(payload["sections"], "sections", errors)
-        if isinstance(payload["sections"], list):
-            _assert(len(payload["sections"]) > 0, "'sections' must not be empty", errors)
-            for idx, section in enumerate(payload["sections"]):
-                _assert(isinstance(section, dict), f"sections[{idx}] must be an object", errors)
-                if isinstance(section, dict):
-                    _assert_required(section, ["title", "bullets"], errors)
-                    if "title" in section:
-                        _assert_non_empty_string(section["title"], f"sections[{idx}].title", errors)
-                    if "bullets" in section:
-                        _assert_list(section["bullets"], f"sections[{idx}].bullets", errors)
-                        if isinstance(section["bullets"], list):
-                            _assert(
-                                len(section["bullets"]) > 0,
-                                f"sections[{idx}].bullets must not be empty",
-                                errors,
-                            )
-                            for bullet_index, bullet in enumerate(section["bullets"]):
-                                _assert_non_empty_string(
-                                    bullet,
-                                    f"sections[{idx}].bullets[{bullet_index}]",
-                                    errors,
-                                )
+def _summary(context: PipelineContext, transcript: str) -> Dict[str, Any]:
+    data = _base_artifact(context, "summary")
+    preset = context.preset_id.lower()
 
+    # Preset 1: Exam Mode - Focused on recall and testable facts
+    if preset in {"exam-mode", "exam"}:
+        overview = "High-density summary focused on examinable concepts and definitions required for assessment."
+        sections = [
+            {
+                "title": "Core Terminologies",
+                "bullets": [
+                    "Action Potential: The primary electrical signal used for long-distance communication.",
+                    "Saltatory Conduction: The rapid jumping of signals between nodes of Ranvier."
+                ]
+            },
+            {
+                "title": "Likely Exam Questions",
+                "bullets": [
+                    "Explain the role of voltage-gated sodium channels in depolarization.",
+                    "Contrast the energy efficiency of myelinated vs. unmyelinated axons."
+                ]
+            }
+        ]
 
-def _validate_outline(payload: Dict[str, Any], errors: List[str]) -> None:
-    _assert_required(payload, ["outline"], errors)
-    if "outline" in payload:
-        _assert_list(payload["outline"], "outline", errors)
-        if isinstance(payload["outline"], list):
-            _assert(len(payload["outline"]) > 0, "'outline' must not be empty", errors)
-            for idx, node in enumerate(payload["outline"]):
-                _validate_outline_node(node, f"outline[{idx}]", errors)
+    # Preset 2: Neurodivergent-Friendly - Low clutter, high intuition, short chunks
+    elif preset in {"neurodivergent-friendly", "neurodivergent"}:
+        overview = "Simplified recap using plain language and short, clear checkpoints to reduce cognitive load."
+        sections = [
+            {
+                "title": "The Big Idea",
+                "bullets": [
+                    "Neurons use electricity to talk to each other.",
+                    "Myelin is like insulation on a wire that makes the signal go faster."
+                ]
+            },
+            {
+                "title": "Quick Checkpoints",
+                "bullets": [
+                    "Sodium goes in = signal starts.",
+                    "Potassium goes out = signal resets."
+                ]
+            }
+        ]
+
+    # Default fallback
+    else:
+        overview = f"General summary of lecture {context.lecture_id} using preset {context.preset_id}."
+        sections = [{"title": "Main Points", "bullets": ["Content placeholder for general mode."]}]
+
+    data.update({"overview": overview, "sections": sections})
+    return data
+
+def _outline(context: PipelineContext) -> Dict[str, Any]:
+    data = _base_artifact(context, "outline")
+    preset = context.preset_id.lower()
+
+    # Exam Mode: Dense hierarchy for comprehensive review
+    if preset in {"exam-mode", "exam"}:
+        outline = [
+            {
+                "title": "1. Electrochemical Signaling",
+                "points": ["Resting potential (-70mV)", "Threshold of excitation"],
+                "children": [
+                    {"title": "1.1 Phases of Action Potential", "points": ["Depolarization", "Repolarization", "Hyperpolarization"]}
+                ]
+            }
+        ]
+
+    # Neurodivergent-Friendly: Flat structure with minimal nesting to avoid overwhelm
+    elif preset in {"neurodivergent-friendly", "neurodivergent"}:
+        outline = [
+            {
+                "title": "How Neurons Fire",
+                "points": [
+                    "Starting state (Resting)",
+                    "The spark (Depolarization)",
+                    "The reset (Repolarization)"
+                ]
+            },
+            {
+                "title": "Speeding up the Signal",
+                "points": ["Myelin wraps", "Jumping signals (Saltatory)"]
+            }
+        ]
+    
+    else:
+        outline = [{"title": "Lecture Outline", "points": ["Standard hierarchical view."]}]
+
+    data.update({"outline": outline})
+    return data
 
 
 def _validate_outline_node(node: Any, label: str, errors: List[str]) -> None:
