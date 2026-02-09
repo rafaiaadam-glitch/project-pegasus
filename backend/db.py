@@ -75,6 +75,34 @@ class Database:
                 row = cur.fetchone()
                 return dict(row) if row else None
 
+    def fetch_lectures(
+        self,
+        course_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        clauses = []
+        params: Dict[str, Any] = {}
+        if course_id:
+            clauses.append("course_id = %(course_id)s")
+            params["course_id"] = course_id
+        where_clause = f" where {' and '.join(clauses)}" if clauses else ""
+        limit_clause = ""
+        if limit is not None:
+            limit_clause += " limit %(limit)s"
+            params["limit"] = limit
+        if offset is not None:
+            limit_clause += " offset %(offset)s"
+            params["offset"] = offset
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    f"select * from lectures{where_clause} order by created_at desc{limit_clause};",
+                    params,
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+
     def upsert_course(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
             with conn.cursor() as cur:
@@ -91,6 +119,35 @@ class Database:
                     """,
                     payload,
                 )
+
+    def fetch_course(self, course_id: str) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("select * from courses where id = %s;", (course_id,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def fetch_courses(
+        self,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        limit_clause = ""
+        params: Dict[str, Any] = {}
+        if limit is not None:
+            limit_clause += " limit %(limit)s"
+            params["limit"] = limit
+        if offset is not None:
+            limit_clause += " offset %(offset)s"
+            params["offset"] = offset
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    f"select * from courses order by created_at desc{limit_clause};",
+                    params,
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
 
     def create_job(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:

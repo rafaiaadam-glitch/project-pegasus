@@ -62,6 +62,7 @@ def ingest_lecture(
     lecture_id: str = Form(...),
     preset_id: str = Form(...),
     title: str = Form(...),
+    course_title: Optional[str] = Form(None),
     duration_sec: int = Form(0),
     source_type: str = Form("upload"),
     audio: UploadFile = File(...),
@@ -92,6 +93,14 @@ def ingest_lecture(
     metadata_path = STORAGE_DIR / "metadata" / f"{lecture_id}.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     db = get_database()
+    db.upsert_course(
+        {
+            "id": course_id,
+            "title": course_title or course_id,
+            "created_at": _iso_now(),
+            "updated_at": _iso_now(),
+        }
+    )
     db.upsert_lecture(
         {
             "id": lecture_id,
@@ -110,6 +119,44 @@ def ingest_lecture(
         "metadataPath": str(metadata_path),
         "audioPath": stored_audio,
     }
+
+
+@app.get("/courses")
+def list_courses(limit: Optional[int] = None, offset: Optional[int] = None) -> dict:
+    db = get_database()
+    return {"courses": db.fetch_courses(limit=limit, offset=offset)}
+
+
+@app.get("/courses/{course_id}")
+def get_course(course_id: str) -> dict:
+    db = get_database()
+    course = db.fetch_course(course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
+    return course
+
+
+@app.get("/courses/{course_id}/lectures")
+def list_course_lectures(
+    course_id: str,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+) -> dict:
+    db = get_database()
+    return {
+        "courseId": course_id,
+        "lectures": db.fetch_lectures(course_id=course_id, limit=limit, offset=offset),
+    }
+
+
+@app.get("/lectures")
+def list_lectures(
+    course_id: Optional[str] = None,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+) -> dict:
+    db = get_database()
+    return {"lectures": db.fetch_lectures(course_id=course_id, limit=limit, offset=offset)}
 
 
 @app.post("/lectures/{lecture_id}/transcribe")

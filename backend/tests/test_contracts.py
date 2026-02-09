@@ -19,6 +19,7 @@ import backend.app as app_module
 class FakeDB:
     def __init__(self) -> None:
         self.lectures: dict[str, dict] = {}
+        self.courses: dict[str, dict] = {}
         self.artifacts: list[dict] = []
         self.exports: list[dict] = []
         self.threads: list[dict] = []
@@ -28,6 +29,38 @@ class FakeDB:
 
     def fetch_lecture(self, lecture_id: str):
         return self.lectures.get(lecture_id)
+
+    def fetch_lectures(
+        self,
+        course_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ):
+        rows = list(self.lectures.values())
+        if course_id:
+            rows = [row for row in rows if row.get("course_id") == course_id]
+        rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
+        if offset:
+            rows = rows[offset:]
+        if limit is not None:
+            rows = rows[:limit]
+        return rows
+
+    def fetch_course(self, course_id: str):
+        return self.courses.get(course_id)
+
+    def fetch_courses(
+        self,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ):
+        rows = list(self.courses.values())
+        rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
+        if offset:
+            rows = rows[offset:]
+        if limit is not None:
+            rows = rows[:limit]
+        return rows
 
     def fetch_artifacts(
         self,
@@ -164,3 +197,55 @@ def test_summary_contract(monkeypatch):
     assert payload["artifactTypes"] == ["summary"]
     assert payload["exportTypes"] == ["pdf"]
     assert "links" in payload
+
+
+def test_course_and_lecture_listings(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.courses["course-1"] = {
+        "id": "course-1",
+        "title": "Course One",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z",
+    }
+    fake_db.courses["course-2"] = {
+        "id": "course-2",
+        "title": "Course Two",
+        "created_at": "2024-01-02T00:00:00Z",
+        "updated_at": "2024-01-02T00:00:00Z",
+    }
+    fake_db.lectures["lecture-1"] = {
+        "id": "lecture-1",
+        "course_id": "course-1",
+        "title": "Lecture One",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
+    fake_db.lectures["lecture-2"] = {
+        "id": "lecture-2",
+        "course_id": "course-2",
+        "title": "Lecture Two",
+        "created_at": "2024-01-03T00:00:00Z",
+    }
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/courses")
+    assert response.status_code == 200
+    courses = response.json()["courses"]
+    assert [course["id"] for course in courses] == ["course-2", "course-1"]
+
+    response = client.get("/courses/course-1")
+    assert response.status_code == 200
+    assert response.json()["title"] == "Course One"
+
+    response = client.get("/courses/course-1/lectures")
+    assert response.status_code == 200
+    assert [lecture["id"] for lecture in response.json()["lectures"]] == ["lecture-1"]
+
+    response = client.get("/lectures", params={"course_id": "course-2"})
+    assert response.status_code == 200
+    assert [lecture["id"] for lecture in response.json()["lectures"]] == ["lecture-2"]
+
+    response = client.get("/lectures", params={"limit": 1})
+    assert response.status_code == 200
+    assert len(response.json()["lectures"]) == 1

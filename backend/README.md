@@ -46,7 +46,11 @@ processed consistently.
 ## Endpoints
 
 - `GET /health`
+- `GET /courses`
+- `GET /courses/{course_id}`
+- `GET /courses/{course_id}/lectures`
 - `POST /lectures/ingest` (multipart upload)
+- `GET /lectures`
 - `POST /lectures/{lecture_id}/transcribe`
 - `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `openai_model` optional)
 - `POST /lectures/{lecture_id}/export`
