@@ -1,6 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import * as Clipboard from "expo-clipboard";
 import * as DocumentPicker from "expo-document-picker";
 import {
@@ -30,11 +30,7 @@ export default function App() {
   const [title, setTitle] = useState("Lecture 1");
   const [artifacts, setArtifacts] = useState<Record<string, unknown> | null>(null);
   const [exportRecords, setExportRecords] = useState<
-    {
-      export_type: string;
-      storage_path: string;
-      metadata?: { size_bytes?: number; content_type?: string; filename?: string };
-    }[]
+    { export_type: string; storage_path: string }[]
   >([]);
   const [artifactDownloads, setArtifactDownloads] = useState<
     Record<string, string>
@@ -45,14 +41,6 @@ export default function App() {
     exportCount: number;
     artifactTypes: string[];
     exportTypes: string[];
-    exportReady?: Record<
-      string,
-      {
-        ready?: boolean;
-        filename?: string;
-        metadata?: { size_bytes?: number; content_type?: string } | null;
-      }
-    >;
   } | null>(null);
   const [selectedThread, setSelectedThread] = useState<{
     id?: string;
@@ -71,31 +59,6 @@ export default function App() {
     }[]
   >([]);
   const [loading, setLoading] = useState(false);
-  const [flowState, setFlowState] = useState<{
-    stage:
-      | "idle"
-      | "transcribe"
-      | "generate"
-      | "review"
-      | "export"
-      | "completed"
-      | "failed";
-    jobId?: string;
-    error?: string | null;
-  }>({ stage: "idle" });
-  const [uploadStatus, setUploadStatus] = useState<
-    "idle" | "completed" | "failed"
-  >("idle");
-  const [lastPollAt, setLastPollAt] = useState<string | null>(null);
-  const [artifactTypeFilter, setArtifactTypeFilter] = useState("");
-  const [artifactPresetFilter, setArtifactPresetFilter] = useState("");
-  const [artifactLimit, setArtifactLimit] = useState(8);
-  const [showAllFlashcards, setShowAllFlashcards] = useState(false);
-  const [showAllQuestions, setShowAllQuestions] = useState(false);
-  const [showAllThreads, setShowAllThreads] = useState(false);
-  const [showAllOutline, setShowAllOutline] = useState(false);
-  const [showAllSummarySections, setShowAllSummarySections] = useState(false);
-  const completedJobsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     const loadPrefs = async () => {
@@ -169,7 +132,6 @@ export default function App() {
           });
           return Array.from(byId.values());
         });
-        setLastPollAt(new Date().toLocaleTimeString());
       } catch (error) {
         Alert.alert("Error", `Failed to poll job status: ${error}`);
       }
@@ -191,91 +153,8 @@ export default function App() {
     });
   };
 
-  useEffect(() => {
-    jobs.forEach((job) => {
-      if (job.status !== "completed") {
-        return;
-      }
-      if (completedJobsRef.current.has(job.id)) {
-        return;
-      }
-      completedJobsRef.current.add(job.id);
-      loadSummary();
-      if (flowState.stage !== "review") {
-        loadArtifacts();
-      }
-    });
-  }, [jobs]);
-
-  useEffect(() => {
-    if (!flowState.jobId) {
-      return;
-    }
-    const currentJob = jobs.find((job) => job.id === flowState.jobId);
-    if (!currentJob) {
-      return;
-    }
-    if (currentJob.status === "failed") {
-      setFlowState({
-        stage: "failed",
-        error: currentJob.error ?? "Pipeline job failed.",
-      });
-      return;
-    }
-    if (currentJob.status !== "completed") {
-      return;
-    }
-    if (flowState.stage === "transcribe") {
-      void startGenerateFlow();
-    } else if (flowState.stage === "generate") {
-      setFlowState({ stage: "review" });
-      void loadArtifacts();
-    } else if (flowState.stage === "export") {
-      setFlowState({ stage: "completed" });
-      void loadSummary();
-    }
-  }, [jobs, flowState]);
-
-  const queueJob = async ({
-    endpoint,
-    payload,
-    actionLabel,
-    useLoading = true,
-  }: {
-    endpoint: string;
-    payload?: Record<string, unknown>;
-    actionLabel: string;
-    useLoading?: boolean;
-  }) => {
-    if (useLoading) {
-      setLoading(true);
-    }
-    try {
-      const resp = await fetch(endpoint, {
-        method: "POST",
-        headers: payload ? { "Content-Type": "application/json" } : undefined,
-        body: payload ? JSON.stringify(payload) : undefined,
-      });
-      if (!resp.ok) {
-        const detail = await resp.text();
-        throw new Error(detail || `${actionLabel} failed`);
-      }
-      const data = await resp.json();
-      upsertJob({ id: data.jobId, jobType: data.jobType, status: data.status });
-      return data;
-    } catch (error) {
-      Alert.alert("Error", `${error}`);
-      return null;
-    } finally {
-      if (useLoading) {
-        setLoading(false);
-      }
-    }
-  };
-
   const uploadAudio = async () => {
     setLoading(true);
-    setUploadStatus("idle");
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: "audio/*",
@@ -307,10 +186,8 @@ export default function App() {
         throw new Error(detail || "Upload failed");
       }
       const data = await resp.json();
-      setUploadStatus("completed");
       Alert.alert("Upload complete", `Audio stored at: ${data.audioPath}`);
     } catch (error) {
-      setUploadStatus("failed");
       Alert.alert("Error", `${error}`);
     } finally {
       setLoading(false);
@@ -318,104 +195,72 @@ export default function App() {
   };
 
   const runGenerate = async () => {
-    const data = await queueJob({
-      endpoint: `${API_BASE_URL}/lectures/${lectureId}/generate`,
-      payload: { course_id: courseId, preset_id: presetId },
-      actionLabel: "Generation",
-    });
-    if (data) {
+    setLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/lectures/${lectureId}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ course_id: courseId, preset_id: presetId }),
+      });
+      if (!resp.ok) {
+        const detail = await resp.text();
+        throw new Error(detail || "Generation failed");
+      }
+      const data = await resp.json();
+      upsertJob({ id: data.jobId, jobType: data.jobType, status: data.status });
       Alert.alert("Generation started", `Job ID: ${data.jobId}`);
+    } catch (error) {
+      Alert.alert("Error", `${error}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   const runTranscribe = async () => {
-    const data = await queueJob({
-      endpoint: `${API_BASE_URL}/lectures/${lectureId}/transcribe`,
-      actionLabel: "Transcription",
-    });
-    if (data) {
+    setLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/lectures/${lectureId}/transcribe`, {
+        method: "POST",
+      });
+      if (!resp.ok) {
+        const detail = await resp.text();
+        throw new Error(detail || "Transcription failed");
+      }
+      const data = await resp.json();
+      upsertJob({ id: data.jobId, jobType: data.jobType, status: data.status });
       Alert.alert("Transcription queued", `Job ID: ${data.jobId}`);
+    } catch (error) {
+      Alert.alert("Error", `${error}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   const runExport = async () => {
-    const data = await queueJob({
-      endpoint: `${API_BASE_URL}/lectures/${lectureId}/export`,
-      actionLabel: "Export",
-    });
-    if (data) {
+    setLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/lectures/${lectureId}/export`, {
+        method: "POST",
+      });
+      if (!resp.ok) {
+        const detail = await resp.text();
+        throw new Error(detail || "Export failed");
+      }
+      const data = await resp.json();
+      upsertJob({ id: data.jobId, jobType: data.jobType, status: data.status });
       Alert.alert("Export queued", `Job ID: ${data.jobId}`);
+    } catch (error) {
+      Alert.alert("Error", `${error}`);
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const startTranscribeFlow = async () => {
-    const data = await queueJob({
-      endpoint: `${API_BASE_URL}/lectures/${lectureId}/transcribe`,
-      actionLabel: "Transcription",
-      useLoading: false,
-    });
-    if (!data) {
-      setFlowState({ stage: "failed", error: "Transcription failed to start." });
-      return;
-    }
-    setFlowState({ stage: "transcribe", jobId: data.jobId });
-  };
-
-  const startGenerateFlow = async () => {
-    const data = await queueJob({
-      endpoint: `${API_BASE_URL}/lectures/${lectureId}/generate`,
-      payload: { course_id: courseId, preset_id: presetId },
-      actionLabel: "Generation",
-      useLoading: false,
-    });
-    if (!data) {
-      setFlowState({ stage: "failed", error: "Generation failed to start." });
-      return;
-    }
-    setFlowState({ stage: "generate", jobId: data.jobId });
-  };
-
-  const startExportFlow = async () => {
-    const data = await queueJob({
-      endpoint: `${API_BASE_URL}/lectures/${lectureId}/export`,
-      actionLabel: "Export",
-      useLoading: false,
-    });
-    if (!data) {
-      setFlowState({ stage: "failed", error: "Export failed to start." });
-      return;
-    }
-    setFlowState({ stage: "export", jobId: data.jobId });
-  };
-
-  const startFullFlow = async () => {
-    setFlowState({ stage: "transcribe" });
-    await startTranscribeFlow();
-  };
-
-  const continueToExport = async () => {
-    await startExportFlow();
   };
 
   const loadArtifacts = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (artifactTypeFilter.trim()) {
-        params.set("artifact_type", artifactTypeFilter.trim());
-      }
-      const presetValue = artifactPresetFilter.trim();
-      if (presetValue) {
-        params.set("preset_id", presetValue);
-      }
-      if (artifactLimit) {
-        params.set("limit", artifactLimit.toString());
-      }
-      const query = params.toString();
       const resp = await fetch(
-        `${API_BASE_URL}/lectures/${lectureId}/artifacts${
-          query ? `?${query}` : ""
-        }`
+        `${API_BASE_URL}/lectures/${lectureId}/artifacts`
       );
       if (!resp.ok) {
         const detail = await resp.text();
@@ -449,7 +294,6 @@ export default function App() {
         exportCount: data.exportCount ?? 0,
         artifactTypes: data.artifactTypes ?? [],
         exportTypes: data.exportTypes ?? [],
-        exportReady: data.exportReady ?? {},
       });
     } catch (error) {
       Alert.alert("Error", `${error}`);
@@ -461,21 +305,6 @@ export default function App() {
   const copyToClipboard = async (url: string) => {
     await Clipboard.setStringAsync(url);
     Alert.alert("Copied", "Export link copied to clipboard.");
-  };
-
-  const formatBytes = (size?: number) => {
-    if (size === undefined || size === null) {
-      return "n/a";
-    }
-    if (size < 1024) {
-      return `${size} B`;
-    }
-    const kb = size / 1024;
-    if (kb < 1024) {
-      return `${kb.toFixed(1)} KB`;
-    }
-    const mb = kb / 1024;
-    return `${mb.toFixed(1)} MB`;
   };
 
   const openExport = async (exportType: string) => {
@@ -533,10 +362,6 @@ export default function App() {
         lecture_refs?: string[];
       }[]
     | null;
-  const isFlowActive =
-    flowState.stage !== "idle" &&
-    flowState.stage !== "completed" &&
-    flowState.stage !== "failed";
 
   const renderSummary = () => (
     <View style={styles.previewCard}>
@@ -544,10 +369,7 @@ export default function App() {
       <Text style={styles.previewBody}>
         {summary?.overview ?? "Run generation to see summary."}
       </Text>
-      {(showAllSummarySections
-        ? summary?.sections ?? []
-        : (summary?.sections ?? []).slice(0, 3)
-      ).map((section, idx) => (
+      {summary?.sections?.map((section, idx) => (
         <View key={`${section.title}-${idx}`} style={styles.previewSection}>
           <Text style={styles.previewSubtitle}>{section.title ?? "Section"}</Text>
           {(section.bullets ?? []).map((bullet, bIdx) => (
@@ -557,16 +379,6 @@ export default function App() {
           ))}
         </View>
       ))}
-      {summary?.sections && summary.sections.length > 3 && (
-        <TouchableOpacity
-          style={styles.ghostButton}
-          onPress={() => setShowAllSummarySections((prev) => !prev)}
-        >
-          <Text style={styles.ghostButtonText}>
-            {showAllSummarySections ? "Show less" : "Show all sections"}
-          </Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 
@@ -574,10 +386,7 @@ export default function App() {
     <View style={styles.previewCard}>
       <Text style={styles.previewTitle}>Outline</Text>
       {outline?.structure?.length ? (
-        (showAllOutline
-          ? outline.structure
-          : outline.structure.slice(0, 5)
-        ).map((node, idx) => (
+        outline.structure.map((node, idx) => (
           <View key={`${node.title}-${idx}`} style={styles.previewSection}>
             <Text style={styles.previewSubtitle}>{node.title ?? "Topic"}</Text>
             {(node.children ?? []).map((child, cIdx) => (
@@ -590,16 +399,6 @@ export default function App() {
       ) : (
         <Text style={styles.previewBody}>Run generation to see outline.</Text>
       )}
-      {outline?.structure && outline.structure.length > 5 && (
-        <TouchableOpacity
-          style={styles.ghostButton}
-          onPress={() => setShowAllOutline((prev) => !prev)}
-        >
-          <Text style={styles.ghostButtonText}>
-            {showAllOutline ? "Show less" : "Show all outline items"}
-          </Text>
-        </TouchableOpacity>
-      )}
     </View>
   );
 
@@ -607,25 +406,14 @@ export default function App() {
     <View style={styles.previewCard}>
       <Text style={styles.previewTitle}>Flashcards</Text>
       {flashcards?.cards?.length ? (
-        (showAllFlashcards ? flashcards.cards : flashcards.cards.slice(0, 5)).map(
-          (card, idx) => (
+        flashcards.cards.slice(0, 5).map((card, idx) => (
           <View key={`${card.front}-${idx}`} style={styles.previewSection}>
             <Text style={styles.previewSubtitle}>{card.front ?? "Card"}</Text>
             <Text style={styles.previewBody}>{card.back ?? ""}</Text>
           </View>
-        )
+        ))
       ) : (
         <Text style={styles.previewBody}>Run generation to see flashcards.</Text>
-      )}
-      {flashcards?.cards && flashcards.cards.length > 5 && (
-        <TouchableOpacity
-          style={styles.ghostButton}
-          onPress={() => setShowAllFlashcards((prev) => !prev)}
-        >
-          <Text style={styles.ghostButtonText}>
-            {showAllFlashcards ? "Show less" : "Show all flashcards"}
-          </Text>
-        </TouchableOpacity>
       )}
     </View>
   );
@@ -634,27 +422,14 @@ export default function App() {
     <View style={styles.previewCard}>
       <Text style={styles.previewTitle}>Exam Questions</Text>
       {examQuestions?.questions?.length ? (
-        (showAllQuestions
-          ? examQuestions.questions
-          : examQuestions.questions.slice(0, 5)
-        ).map((item, idx) => (
+        examQuestions.questions.slice(0, 5).map((item, idx) => (
           <View key={`${item.question}-${idx}`} style={styles.previewSection}>
             <Text style={styles.previewSubtitle}>{item.question ?? "Question"}</Text>
             <Text style={styles.previewBody}>{item.answer ?? ""}</Text>
           </View>
-        )
+        ))
       ) : (
         <Text style={styles.previewBody}>Run generation to see questions.</Text>
-      )}
-      {examQuestions?.questions && examQuestions.questions.length > 5 && (
-        <TouchableOpacity
-          style={styles.ghostButton}
-          onPress={() => setShowAllQuestions((prev) => !prev)}
-        >
-          <Text style={styles.ghostButtonText}>
-            {showAllQuestions ? "Show less" : "Show all questions"}
-          </Text>
-        </TouchableOpacity>
       )}
     </View>
   );
@@ -684,7 +459,7 @@ export default function App() {
     <View style={styles.previewCard}>
       <Text style={styles.previewTitle}>Thread Summary</Text>
       {threads?.length ? (
-        (showAllThreads ? threads : threads.slice(0, 5)).map((thread, idx) => (
+        threads.slice(0, 5).map((thread, idx) => (
           <TouchableOpacity
             key={`${thread.title}-${idx}`}
             style={styles.threadCard}
@@ -705,16 +480,6 @@ export default function App() {
         ))
       ) : (
         <Text style={styles.previewBody}>No thread records yet.</Text>
-      )}
-      {threads && threads.length > 5 && (
-        <TouchableOpacity
-          style={styles.ghostButton}
-          onPress={() => setShowAllThreads((prev) => !prev)}
-        >
-          <Text style={styles.ghostButtonText}>
-            {showAllThreads ? "Show less" : "Show all threads"}
-          </Text>
-        </TouchableOpacity>
       )}
     </View>
   );
@@ -756,58 +521,25 @@ export default function App() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.button}
-          onPress={startFullFlow}
-          disabled={isFlowActive || loading}
-        >
+        <TouchableOpacity style={styles.button} onPress={runGenerate}>
           {loading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>Run Full Pipeline</Text>
+            <Text style={styles.buttonText}>Generate Artifacts</Text>
           )}
         </TouchableOpacity>
 
-        {flowState.stage === "review" && (
-          <TouchableOpacity style={styles.button} onPress={continueToExport}>
-            <Text style={styles.buttonText}>Continue to Export</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={styles.secondaryButton} onPress={runTranscribe}>
+          <Text style={styles.secondaryButtonText}>Queue Transcription</Text>
+        </TouchableOpacity>
 
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={runTranscribe}>
-            <Text style={styles.secondaryButtonText}>Queue Transcription</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryButton} onPress={runGenerate}>
-            <Text style={styles.secondaryButtonText}>Generate Artifacts</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.secondaryButton} onPress={runExport}>
+          <Text style={styles.secondaryButtonText}>Queue Export</Text>
+        </TouchableOpacity>
 
-        <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.secondaryButton} onPress={runExport}>
-            <Text style={styles.secondaryButtonText}>Queue Export</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryButton} onPress={loadSummary}>
-            <Text style={styles.secondaryButtonText}>Load Lecture Status</Text>
-          </TouchableOpacity>
-        </View>
-        <View style={styles.flowCard}>
-          <Text style={styles.sectionTitle}>Pipeline Status</Text>
-          <Text style={styles.previewBody}>
-            Upload:{" "}
-            <Text style={styles.flowHighlight}>{uploadStatus}</Text> • Stage:{" "}
-            <Text style={styles.flowHighlight}>{flowState.stage}</Text>
-          </Text>
-          {flowState.error ? (
-            <Text style={styles.jobError}>{flowState.error}</Text>
-          ) : null}
-          {flowState.jobId ? (
-            <Text style={styles.previewBody}>Current job: {flowState.jobId}</Text>
-          ) : null}
-          <Text style={styles.previewBody}>
-            Last status poll: {lastPollAt ?? "—"}
-          </Text>
-        </View>
+        <TouchableOpacity style={styles.secondaryButton} onPress={loadSummary}>
+          <Text style={styles.secondaryButtonText}>Load Lecture Status</Text>
+        </TouchableOpacity>
 
         {summaryStatus && (
           <View style={styles.statusCard}>
@@ -838,34 +570,12 @@ export default function App() {
                 ? summaryStatus.exportTypes.join(", ")
                 : "None yet"}
             </Text>
-            {summaryStatus.exportReady && (
-              <View style={styles.exportReadyList}>
-                {Object.entries(summaryStatus.exportReady).map(
-                  ([exportType, details]) => (
-                    <View key={exportType} style={styles.exportReadyRow}>
-                      <Text style={styles.previewBody}>
-                        {exportType.toUpperCase()}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.exportBadge,
-                          details?.ready
-                            ? styles.exportBadgeReady
-                            : styles.exportBadgePending,
-                        ]}
-                      >
-                        {details?.ready ? "Ready" : "Pending"}
-                      </Text>
-                      <Text style={styles.previewBody}>
-                        {details?.metadata?.size_bytes
-                          ? formatBytes(details.metadata.size_bytes)
-                          : details?.filename ?? "—"}
-                      </Text>
-                    </View>
-                  )
-                )}
-              </View>
-            )}
+            <Text style={styles.statusHint}>
+              Exports available:{" "}
+              {summaryStatus.exportTypes.length
+                ? summaryStatus.exportTypes.join(", ").toUpperCase()
+                : "No exports ready"}
+            </Text>
           </View>
         )}
 
@@ -896,52 +606,6 @@ export default function App() {
             ))}
           </View>
         )}
-
-        <View style={styles.filterCard}>
-          <Text style={styles.sectionTitle}>Artifact Filters</Text>
-          <Text style={styles.label}>Filter by Type</Text>
-          <TextInput
-            value={artifactTypeFilter}
-            onChangeText={setArtifactTypeFilter}
-            style={styles.input}
-            placeholder="summary, outline, flashcards..."
-            placeholderTextColor="#94a3b8"
-          />
-          <Text style={styles.label}>Filter by Preset</Text>
-          <TextInput
-            value={artifactPresetFilter}
-            onChangeText={setArtifactPresetFilter}
-            style={styles.input}
-            placeholder={presetId}
-            placeholderTextColor="#94a3b8"
-          />
-          <Text style={styles.label}>Limit</Text>
-          <TextInput
-            value={artifactLimit.toString()}
-            onChangeText={(value) =>
-              setArtifactLimit(Number.parseInt(value || "0", 10) || 0)
-            }
-            style={styles.input}
-            keyboardType="numeric"
-            placeholder="8"
-            placeholderTextColor="#94a3b8"
-          />
-          <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.secondaryButton} onPress={loadArtifacts}>
-              <Text style={styles.secondaryButtonText}>Apply Filters</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => {
-                setArtifactTypeFilter("");
-                setArtifactPresetFilter("");
-                setArtifactLimit(8);
-              }}
-            >
-              <Text style={styles.secondaryButtonText}>Clear</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
 
         <TouchableOpacity style={styles.secondaryButton} onPress={loadArtifacts}>
           <Text style={styles.secondaryButtonText}>Review Artifacts</Text>
@@ -997,15 +661,6 @@ export default function App() {
               >
                 <Text style={styles.linkText}>
                   Download {record.export_type.toUpperCase()}
-                </Text>
-                <Text style={styles.previewBody}>
-                  {record.metadata?.filename ??
-                    summaryStatus?.exportReady?.[record.export_type]?.filename ??
-                    "Export file"}
-                  {" • "}
-                  {record.metadata?.size_bytes
-                    ? formatBytes(record.metadata.size_bytes)
-                    : "size n/a"}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1083,7 +738,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
-    flex: 1,
   },
   buttonText: {
     color: "#fff",
@@ -1096,10 +750,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   reviewSection: {
-    gap: 12,
-  },
-  buttonRow: {
-    flexDirection: "row",
     gap: 12,
   },
   statusCard: {
@@ -1127,26 +777,6 @@ const styles = StyleSheet.create({
   statusHint: {
     color: "#93c5fd",
     fontSize: 12,
-  },
-  flowCard: {
-    backgroundColor: "#0b1120",
-    borderRadius: 12,
-    padding: 12,
-    gap: 6,
-    borderColor: "#2563eb",
-    borderWidth: 1,
-  },
-  flowHighlight: {
-    color: "#f8fafc",
-    fontWeight: "600",
-  },
-  filterCard: {
-    backgroundColor: "#0b1120",
-    borderRadius: 12,
-    padding: 12,
-    gap: 8,
-    borderColor: "#1e40af",
-    borderWidth: 1,
   },
   jobRow: {
     backgroundColor: "#111827",
@@ -1206,16 +836,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     gap: 4,
   },
-  ghostButton: {
-    marginTop: 10,
-    paddingVertical: 6,
-    alignItems: "flex-start",
-  },
-  ghostButtonText: {
-    color: "#7dd3fc",
-    fontSize: 12,
-    fontWeight: "600",
-  },
   threadCard: {
     marginTop: 10,
     gap: 4,
@@ -1264,31 +884,6 @@ const styles = StyleSheet.create({
     color: "#7dd3fc",
     fontSize: 15,
     fontWeight: "600",
-  },
-  exportReadyList: {
-    gap: 6,
-    marginTop: 8,
-  },
-  exportReadyRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 8,
-  },
-  exportBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-    fontSize: 11,
-    overflow: "hidden",
-  },
-  exportBadgeReady: {
-    backgroundColor: "#14532d",
-    color: "#bbf7d0",
-  },
-  exportBadgePending: {
-    backgroundColor: "#1e293b",
-    color: "#94a3b8",
   },
   hint: {
     backgroundColor: "#0b1120",

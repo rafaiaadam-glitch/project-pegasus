@@ -10,8 +10,6 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT))
 
-from pipeline.export_artifacts import export_filename
-
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
@@ -285,9 +283,9 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
 @pytest.mark.parametrize(
     "export_type,expected_file",
     [
-        ("markdown", export_filename("lecture-001", "markdown")),
-        ("anki", export_filename("lecture-001", "anki")),
-        ("pdf", export_filename("lecture-001", "pdf")),
+        ("markdown", "lecture-001.md"),
+        ("anki", "lecture-001.csv"),
+        ("pdf", "lecture-001.pdf"),
     ],
 )
 def test_export_download(monkeypatch, tmp_path, export_type, expected_file):

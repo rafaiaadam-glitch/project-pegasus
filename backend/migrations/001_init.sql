@@ -56,7 +56,6 @@ create table if not exists exports (
     lecture_id text not null,
     export_type text not null,
     storage_path text not null,
-    metadata jsonb not null default '{}'::jsonb,
     created_at timestamptz not null
 );
 

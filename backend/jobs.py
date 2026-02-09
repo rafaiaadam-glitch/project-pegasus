@@ -12,7 +12,7 @@ from rq import Queue, Retry
 
 from backend.db import get_database
 from backend.storage import save_artifact_file, save_export, save_export_file, save_transcript
-from pipeline.export_artifacts import EXPORT_TYPES, export_artifacts, export_filename
+from pipeline.export_artifacts import export_artifacts
 from pipeline.run_pipeline import PipelineContext, run_pipeline
 from pipeline.transcribe_audio import _load_whisper
 
@@ -266,22 +266,14 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
         db = get_database()
         now = _iso_now()
         export_files = {
-            export_type: export_dir / export_filename(lecture_id, export_type)
-            for export_type in EXPORT_TYPES
+            "markdown": export_dir / f"{lecture_id}.md",
+            "anki": export_dir / f"{lecture_id}.csv",
+            "pdf": export_dir / f"{lecture_id}.pdf",
         }
         export_paths = {}
-        export_metadata = {}
         for export_type, path in export_files.items():
             stored_path = save_export_file(path, f"{lecture_id}/{path.name}")
             export_paths[export_type] = stored_path
-            export_metadata[export_type] = {
-                "export_type": export_type,
-                "filename": path.name,
-                "storage_path": stored_path,
-                "size_bytes": path.stat().st_size,
-                "content_type": EXPORT_TYPES[export_type][1],
-                "created_at": now,
-            }
             db.upsert_export(
                 {
                     "id": f"{lecture_id}-{export_type}",
@@ -289,14 +281,12 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
                     "export_type": export_type,
                     "storage_path": stored_path,
                     "created_at": now,
-                    "metadata": export_metadata[export_type],
                 }
             )
         exports_manifest = {
             "lectureId": lecture_id,
             "exportDir": str(export_dir),
             "exportPaths": export_paths,
-            "exportMetadata": export_metadata,
         }
         save_export(
             json.dumps(exports_manifest, indent=2).encode("utf-8"),

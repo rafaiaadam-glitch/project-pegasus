@@ -19,7 +19,6 @@ from backend.jobs import (
     run_transcription_job,
 )
 from backend.storage import download_url, save_audio
-from pipeline.export_artifacts import EXPORT_TYPES, export_filename
 
 app = FastAPI(title="Pegasus Lecture Copilot API")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
@@ -257,22 +256,12 @@ def lecture_summary(lecture_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Lecture not found.")
     artifacts = db.fetch_artifacts(lecture_id)
     exports = db.fetch_exports(lecture_id)
-    exports_by_type = {row["export_type"]: row for row in exports}
-    export_ready = {
-        export_type: {
-            "ready": export_type in exports_by_type,
-            "filename": export_filename(lecture_id, export_type),
-            "metadata": exports_by_type.get(export_type, {}).get("metadata"),
-        }
-        for export_type in EXPORT_TYPES
-    }
     return {
         "lecture": lecture,
         "artifactCount": len(artifacts),
         "exportCount": len(exports),
         "artifactTypes": [row["artifact_type"] for row in artifacts],
         "exportTypes": [row["export_type"] for row in exports],
-        "exportReady": export_ready,
         "links": {
             "artifacts": f"/lectures/{lecture_id}/artifacts",
             "exports": f"/exports/{lecture_id}/{{export_type}}",

@@ -3,19 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Dict, List, Tuple
-
-
-EXPORT_TYPES: Dict[str, Tuple[str, str]] = {
-    "markdown": ("md", "text/markdown"),
-    "anki": ("csv", "text/csv"),
-    "pdf": ("pdf", "application/pdf"),
-}
-
-
-def export_filename(lecture_id: str, export_type: str) -> str:
-    extension, _content_type = EXPORT_TYPES[export_type]
-    return f"{lecture_id}-{export_type}.{extension}"
+from typing import Dict, List
 
 
 def _load_json(path: Path) -> Dict:
@@ -128,37 +116,17 @@ def _write_pdf(text: str, output_path: Path) -> None:
     output_path.write_text("".join(output), encoding="utf-8")
 
 
-def _ensure_artifacts(artifact_dir: Path) -> Dict[str, Path]:
-    required = {
-        "summary": artifact_dir / "summary.json",
-        "outline": artifact_dir / "outline.json",
-        "key-terms": artifact_dir / "key-terms.json",
-        "flashcards": artifact_dir / "flashcards.json",
-        "exam-questions": artifact_dir / "exam-questions.json",
-    }
-    missing = [name for name, path in required.items() if not path.exists()]
-    if missing:
-        raise FileNotFoundError(f"Missing artifact files: {', '.join(missing)}")
-    return required
-
-
 def export_artifacts(lecture_id: str, artifact_dir: Path, export_dir: Path) -> None:
-    required = _ensure_artifacts(artifact_dir)
     artifacts = {
-        "summary": _load_json(required["summary"]),
-        "outline": _load_json(required["outline"]),
-        "key-terms": _load_json(required["key-terms"]),
-        "flashcards": _load_json(required["flashcards"]),
-        "exam-questions": _load_json(required["exam-questions"]),
+        "summary": _load_json(artifact_dir / "summary.json"),
+        "outline": _load_json(artifact_dir / "outline.json"),
+        "key-terms": _load_json(artifact_dir / "key-terms.json"),
+        "flashcards": _load_json(artifact_dir / "flashcards.json"),
+        "exam-questions": _load_json(artifact_dir / "exam-questions.json"),
     }
 
     markdown = _markdown_from_artifacts(artifacts)
     export_dir.mkdir(parents=True, exist_ok=True)
-    (export_dir / export_filename(lecture_id, "markdown")).write_text(
-        markdown, encoding="utf-8"
-    )
-    _write_anki_csv(
-        artifacts["flashcards"].get("cards", []),
-        export_dir / export_filename(lecture_id, "anki"),
-    )
-    _write_pdf(markdown, export_dir / export_filename(lecture_id, "pdf"))
+    (export_dir / f"{lecture_id}.md").write_text(markdown, encoding="utf-8")
+    _write_anki_csv(artifacts["flashcards"].get("cards", []), export_dir / f"{lecture_id}.csv")
+    _write_pdf(markdown, export_dir / f"{lecture_id}.pdf")

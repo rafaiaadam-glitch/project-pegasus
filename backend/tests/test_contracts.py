@@ -10,8 +10,6 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT))
 
-from pipeline.export_artifacts import export_filename
-
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
@@ -104,7 +102,7 @@ def test_artifacts_contract(monkeypatch, tmp_path):
             "id": "lecture-001-markdown",
             "lecture_id": lecture_id,
             "export_type": "markdown",
-            "storage_path": str(tmp_path / export_filename("lecture-001", "markdown")),
+            "storage_path": str(tmp_path / "lecture-001.md"),
         }
     )
 
@@ -165,6 +163,4 @@ def test_summary_contract(monkeypatch):
     assert payload["exportCount"] == 1
     assert payload["artifactTypes"] == ["summary"]
     assert payload["exportTypes"] == ["pdf"]
-    assert payload["exportReady"]["pdf"]["ready"] is True
-    assert payload["exportReady"]["pdf"]["filename"] == export_filename(lecture_id, "pdf")
     assert "links" in payload

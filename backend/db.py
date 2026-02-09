@@ -246,19 +246,15 @@ class Database:
                 cur.execute(
                     """
                     insert into exports (
-                        id, lecture_id, export_type, storage_path, metadata, created_at
+                        id, lecture_id, export_type, storage_path, created_at
                     ) values (
                         %(id)s, %(lecture_id)s, %(export_type)s, %(storage_path)s,
-                        %(metadata)s, %(created_at)s
+                        %(created_at)s
                     )
                     on conflict (id) do update set
-                        storage_path = excluded.storage_path,
-                        metadata = excluded.metadata;
+                        storage_path = excluded.storage_path;
                     """,
-                    {
-                        **payload,
-                        "metadata": Json(payload.get("metadata") or {}),
-                    },
+                    payload,
                 )
 
     def fetch_exports(self, lecture_id: str) -> list[Dict[str, Any]]:
