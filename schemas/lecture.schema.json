@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pegasus.local/schemas/lecture.schema.json",
+  "title": "Lecture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "courseId",
+    "presetId",
+    "title",
+    "recordedAt",
+    "durationSec",
+    "audioSource",
+    "status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "courseId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "presetId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "durationSec": {
+      "type": "number",
+      "minimum": 1
+    },
+    "audioSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceType", "storageUri"],
+      "properties": {
+        "sourceType": {
+          "type": "string",
+          "enum": ["upload", "record"]
+        },
+        "storageUri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "originalFilename": {
+          "type": "string"
+        },
+        "contentType": {
+          "type": "string"
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["uploaded", "processing", "completed", "failed"]
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
