@@ -30,6 +30,7 @@ class FakeDB:
         self.artifacts: list[dict] = []
         self.exports: list[dict] = []
         self.threads: list[dict] = []
+        self.jobs: list[dict] = []
 
     def migrate(self) -> None:
         return None
@@ -97,6 +98,22 @@ class FakeDB:
     def fetch_threads_for_course(self, course_id: str):
         rows = [row for row in self.threads if row.get("course_id") == course_id]
         rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
+        return rows
+
+    def fetch_jobs(
+        self,
+        lecture_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ):
+        rows = list(self.jobs)
+        if lecture_id:
+            rows = [row for row in rows if row.get("lecture_id") == lecture_id]
+        rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
+        if offset:
+            rows = rows[offset:]
+        if limit is not None:
+            rows = rows[:limit]
         return rows
 
 
@@ -393,3 +410,137 @@ def test_generate_rejects_preset_mismatch(monkeypatch):
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "preset_id does not match lecture."
+
+
+def test_get_lecture_details(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.lectures["lecture-42"] = {
+        "id": "lecture-42",
+        "course_id": "course-1",
+        "title": "Lecture Forty Two",
+        "status": "uploaded",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/lectures/lecture-42")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == "lecture-42"
+    assert payload["title"] == "Lecture Forty Two"
+
+    missing = client.get("/lectures/missing")
+    assert missing.status_code == 404
+
+
+def test_list_lecture_jobs_contract(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-007"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "title": "Lecture Seven",
+        "status": "uploaded",
+    }
+    fake_db.jobs.append(
+        {
+            "id": "job-2",
+            "lecture_id": lecture_id,
+            "job_type": "generation",
+            "status": "completed",
+            "result": {"ok": True},
+            "error": None,
+            "created_at": "2024-01-02T00:00:00Z",
+            "updated_at": "2024-01-02T00:01:00Z",
+        }
+    )
+    fake_db.jobs.append(
+        {
+            "id": "job-1",
+            "lecture_id": lecture_id,
+            "job_type": "transcription",
+            "status": "failed",
+            "result": None,
+            "error": "boom",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:01:00Z",
+        }
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get(f"/lectures/{lecture_id}/jobs")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["lectureId"] == lecture_id
+    assert [job["id"] for job in payload["jobs"]] == ["job-2", "job-1"]
+    assert payload["jobs"][0]["jobType"] == "generation"
+
+    missing = client.get("/lectures/missing/jobs")
+    assert missing.status_code == 404
+
+
+def test_lecture_progress_contract(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-011"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "title": "Lecture Eleven",
+        "status": "processing",
+    }
+    fake_db.jobs.append(
+        {
+            "id": "job-export-1",
+            "lecture_id": lecture_id,
+            "job_type": "export",
+            "status": "queued",
+            "result": None,
+            "error": None,
+            "created_at": "2024-01-04T00:00:00Z",
+            "updated_at": "2024-01-04T00:00:00Z",
+        }
+    )
+    fake_db.jobs.append(
+        {
+            "id": "job-generation-1",
+            "lecture_id": lecture_id,
+            "job_type": "generation",
+            "status": "completed",
+            "result": {"artifactCount": 5},
+            "error": None,
+            "created_at": "2024-01-03T00:00:00Z",
+            "updated_at": "2024-01-03T00:01:00Z",
+        }
+    )
+    fake_db.jobs.append(
+        {
+            "id": "job-transcription-1",
+            "lecture_id": lecture_id,
+            "job_type": "transcription",
+            "status": "completed",
+            "result": {"transcriptPath": "storage/transcripts/lecture-011.json"},
+            "error": None,
+            "created_at": "2024-01-02T00:00:00Z",
+            "updated_at": "2024-01-02T00:01:00Z",
+        }
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get(f"/lectures/{lecture_id}/progress")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["lectureId"] == lecture_id
+    assert payload["lectureStatus"] == "processing"
+    assert payload["stageCount"] == 3
+    assert payload["completedStageCount"] == 2
+    assert payload["stages"]["transcription"]["status"] == "completed"
+    assert payload["stages"]["generation"]["status"] == "completed"
+    assert payload["stages"]["export"]["status"] == "queued"
+
+    missing = client.get("/lectures/missing/progress")
+    assert missing.status_code == 404

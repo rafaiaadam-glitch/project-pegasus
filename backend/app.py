@@ -10,6 +10,7 @@ from typing import Optional
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from redis import Redis
 
 from backend.db import get_database
 from backend.jobs import (
@@ -90,6 +91,53 @@ def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateReques
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "time": _iso_now()}
+
+
+@app.get("/health/ready")
+def readiness() -> JSONResponse:
+    checks: dict[str, dict[str, str]] = {}
+    overall_status = "ok"
+
+    db = get_database()
+    try:
+        db.healthcheck()
+        checks["database"] = {"status": "ok"}
+    except Exception as exc:
+        overall_status = "degraded"
+        checks["database"] = {"status": "error", "reason": str(exc)}
+
+    inline_jobs = os.getenv("PLC_INLINE_JOBS", "").strip().lower() in {"1", "true", "yes", "on"}
+    if inline_jobs:
+        checks["queue"] = {"status": "skipped", "reason": "PLC_INLINE_JOBS is enabled."}
+    else:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        try:
+            redis_client = Redis.from_url(redis_url)
+            redis_client.ping()
+            checks["queue"] = {"status": "ok"}
+        except Exception as exc:
+            overall_status = "degraded"
+            checks["queue"] = {"status": "error", "reason": str(exc)}
+
+    try:
+        _ensure_dirs()
+        probe = STORAGE_DIR / ".ready"
+        probe.write_text(_iso_now(), encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        checks["storage"] = {"status": "ok"}
+    except Exception as exc:
+        overall_status = "degraded"
+        checks["storage"] = {"status": "error", "reason": str(exc)}
+
+    status_code = 200 if overall_status == "ok" else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": overall_status,
+            "time": _iso_now(),
+            "checks": checks,
+        },
+    )
 
 
 @app.get("/presets")
@@ -208,6 +256,16 @@ def list_course_threads(course_id: str) -> dict:
     }
 
 
+
+
+@app.get("/lectures/{lecture_id}")
+def get_lecture(lecture_id: str) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+    return lecture
+
 @app.get("/lectures")
 def list_lectures(
     course_id: Optional[str] = None,
@@ -287,6 +345,72 @@ def get_job(job_id: str) -> dict:
         "jobType": job.get("job_type"),
         "result": job.get("result"),
         "error": job.get("error"),
+    }
+
+
+@app.get("/lectures/{lecture_id}/jobs")
+def list_lecture_jobs(
+    lecture_id: str,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+    jobs = db.fetch_jobs(lecture_id=lecture_id, limit=limit, offset=offset)
+    return {
+        "lectureId": lecture_id,
+        "jobs": [
+            {
+                "id": job["id"],
+                "status": job["status"],
+                "jobType": job.get("job_type"),
+                "result": job.get("result"),
+                "error": job.get("error"),
+                "createdAt": job.get("created_at"),
+                "updatedAt": job.get("updated_at"),
+            }
+            for job in jobs
+        ],
+    }
+
+
+@app.get("/lectures/{lecture_id}/progress")
+def lecture_progress(lecture_id: str) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+
+    jobs = db.fetch_jobs(lecture_id=lecture_id)
+
+    latest_by_type: dict[str, dict] = {}
+    for job in jobs:
+        job_type = job.get("job_type")
+        if not job_type or job_type in latest_by_type:
+            continue
+        latest_by_type[job_type] = job
+
+    stage_order = ["transcription", "generation", "export"]
+    stages: dict[str, dict] = {}
+    for stage in stage_order:
+        latest = latest_by_type.get(stage)
+        stages[stage] = {
+            "status": latest.get("status") if latest else "not_started",
+            "jobId": latest.get("id") if latest else None,
+            "updatedAt": latest.get("updated_at") if latest else None,
+            "error": latest.get("error") if latest else None,
+        }
+
+    completed_count = sum(1 for stage in stage_order if stages[stage]["status"] == "completed")
+
+    return {
+        "lectureId": lecture_id,
+        "lectureStatus": lecture.get("status"),
+        "stageCount": len(stage_order),
+        "completedStageCount": completed_count,
+        "stages": stages,
     }
 
 
