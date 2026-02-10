@@ -297,6 +297,20 @@ class Database:
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
+    def fetch_threads_for_course(self, course_id: str) -> list[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    select * from threads
+                    where course_id = %s
+                    order by created_at desc;
+                    """,
+                    (course_id,),
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+
     def upsert_export(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
             with conn.cursor() as cur:
