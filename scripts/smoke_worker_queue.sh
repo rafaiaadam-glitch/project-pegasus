@@ -14,6 +14,7 @@ TIMEOUT_SEC="${SMOKE_TIMEOUT_SEC:-300}"
 POLL_INTERVAL_SEC="${SMOKE_POLL_INTERVAL_SEC:-5}"
 AUDIO_FILE="${SMOKE_AUDIO_FILE:-smoke.wav}"
 ACCEPT_FAILED_TERMINAL="${SMOKE_ACCEPT_FAILED_TERMINAL:-1}"
+REQUIRE_QUEUE_PATH="${SMOKE_REQUIRE_QUEUE_PATH:-1}"
 
 cleanup() {
   rm -f "$AUDIO_FILE"
@@ -67,6 +68,7 @@ fi
 echo "[5/5] Polling job status for $JOB_ID (timeout: ${TIMEOUT_SEC}s)"
 end=$((SECONDS + TIMEOUT_SEC))
 last_status=""
+saw_running="0"
 while (( SECONDS < end )); do
   if ! curl -fsS "$API_BASE_URL/jobs/$JOB_ID" >/tmp/pegasus_smoke_job.json; then
     echo "WARN: failed to fetch job status; retrying..."
@@ -88,12 +90,44 @@ PY
     last_status="$status"
   fi
 
+  if [[ "$status" == "running" ]]; then
+    saw_running="1"
+  fi
+
+  queue_fallback="$(python - <<'PY'
+import json
+from pathlib import Path
+payload=json.loads(Path('/tmp/pegasus_smoke_job.json').read_text())
+result=payload.get('result') or {}
+print(result.get('queueFallback','') if isinstance(result, dict) else '')
+PY
+)"
+
+  if [[ "$REQUIRE_QUEUE_PATH" == "1" || "$REQUIRE_QUEUE_PATH" == "true" ]]; then
+    if [[ "$queue_fallback" == "inline" ]]; then
+      echo "FAIL: job used inline queue fallback instead of Redis worker path" >&2
+      exit 6
+    fi
+  fi
+
   if [[ "$status" == "succeeded" ]]; then
+    if [[ "$REQUIRE_QUEUE_PATH" == "1" || "$REQUIRE_QUEUE_PATH" == "true" ]]; then
+      if [[ "$saw_running" != "1" ]]; then
+        echo "FAIL: job never reached running state; expected explicit queue/worker consumption" >&2
+        exit 7
+      fi
+    fi
     echo "SUCCESS: queue + worker smoke test passed"
     exit 0
   fi
 
   if [[ "$status" == "failed" ]]; then
+    if [[ "$REQUIRE_QUEUE_PATH" == "1" || "$REQUIRE_QUEUE_PATH" == "true" ]]; then
+      if [[ "$saw_running" != "1" ]]; then
+        echo "FAIL: job failed without entering running state; queue path not proven" >&2
+        exit 8
+      fi
+    fi
     if [[ "$ACCEPT_FAILED_TERMINAL" == "1" || "$ACCEPT_FAILED_TERMINAL" == "true" ]]; then
       echo "SUCCESS: job failed terminally, but queue + worker path executed (set SMOKE_ACCEPT_FAILED_TERMINAL=0 to treat this as failure)"
       exit 0
