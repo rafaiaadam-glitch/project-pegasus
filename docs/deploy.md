@@ -139,6 +139,7 @@ Queue/worker validation behavior:
 - `SMOKE_REQUIRE_QUEUE_PATH=1` (default) enforces that jobs do **not** use inline fallback (`queueFallback=inline` fails the run).
 - `SMOKE_REQUIRE_RUNNING_STATE=1` (optional) requires observing `running` during polling before terminal completion. This can be flaky for very fast jobs; leave it `0` unless you need strict transition checks.
 - Set `SMOKE_REQUIRE_QUEUE_PATH=0` only when debugging environments where queue services are intentionally disabled.
+- If `SMOKE_AUDIO_FILE` points to an existing file, the script uses it as-is and does not delete/overwrite it.
 
 ### 1) Verify API health
 

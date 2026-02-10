@@ -17,17 +17,31 @@ ACCEPT_FAILED_TERMINAL="${SMOKE_ACCEPT_FAILED_TERMINAL:-1}"
 REQUIRE_QUEUE_PATH="${SMOKE_REQUIRE_QUEUE_PATH:-1}"
 REQUIRE_RUNNING_STATE="${SMOKE_REQUIRE_RUNNING_STATE:-0}"
 
+TMP_DIR="$(mktemp -d -t pegasus-smoke-XXXXXX)"
+GENERATED_AUDIO="0"
+
 cleanup() {
-  rm -f "$AUDIO_FILE"
+  if [[ "$GENERATED_AUDIO" == "1" ]]; then
+    rm -f "$AUDIO_FILE"
+  fi
+  rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
-echo "[1/5] Health check"
-curl -fsS "$API_BASE_URL/health" >/tmp/pegasus_smoke_health.json
-cat /tmp/pegasus_smoke_health.json
+health_json="$TMP_DIR/health.json"
+ingest_json="$TMP_DIR/ingest.json"
+enqueue_json="$TMP_DIR/enqueue.json"
+job_json="$TMP_DIR/job.json"
 
-echo "[2/5] Create placeholder WAV: $AUDIO_FILE"
-python - <<PY
+echo "[1/5] Health check"
+curl -fsS "$API_BASE_URL/health" >"$health_json"
+cat "$health_json"
+
+if [[ -f "$AUDIO_FILE" ]]; then
+  echo "[2/5] Using existing audio file: $AUDIO_FILE"
+else
+  echo "[2/5] Create placeholder WAV: $AUDIO_FILE"
+  python - <<PY
 from pathlib import Path
 import wave
 
@@ -39,6 +53,8 @@ with wave.open(str(path), 'w') as wav:
     wav.writeframes(b'\x00\x00' * 16000)
 print(path)
 PY
+  GENERATED_AUDIO="1"
+fi
 
 echo "[3/5] Ingest lecture: $LECTURE_ID"
 curl -fsS -X POST "$API_BASE_URL/lectures/ingest" \
@@ -46,17 +62,17 @@ curl -fsS -X POST "$API_BASE_URL/lectures/ingest" \
   -F "lecture_id=$LECTURE_ID" \
   -F "preset_id=$PRESET_ID" \
   -F "title=Smoke Lecture" \
-  -F "audio=@$AUDIO_FILE;type=audio/wav" >/tmp/pegasus_smoke_ingest.json
-cat /tmp/pegasus_smoke_ingest.json
+  -F "audio=@$AUDIO_FILE;type=audio/wav" >"$ingest_json"
+cat "$ingest_json"
 
 echo "[4/5] Enqueue transcription"
-curl -fsS -X POST "$API_BASE_URL/lectures/$LECTURE_ID/transcribe?model=$MODEL" >/tmp/pegasus_smoke_enqueue.json
-cat /tmp/pegasus_smoke_enqueue.json
+curl -fsS -X POST "$API_BASE_URL/lectures/$LECTURE_ID/transcribe?model=$MODEL" >"$enqueue_json"
+cat "$enqueue_json"
 
-JOB_ID="$(python - <<'PY'
+JOB_ID="$(python - <<PY
 import json
 from pathlib import Path
-payload=json.loads(Path('/tmp/pegasus_smoke_enqueue.json').read_text())
+payload=json.loads(Path('$enqueue_json').read_text())
 print(payload.get('jobId',''))
 PY
 )"
@@ -71,23 +87,23 @@ end=$((SECONDS + TIMEOUT_SEC))
 last_status=""
 saw_running="0"
 while (( SECONDS < end )); do
-  if ! curl -fsS "$API_BASE_URL/jobs/$JOB_ID" >/tmp/pegasus_smoke_job.json; then
+  if ! curl -fsS "$API_BASE_URL/jobs/$JOB_ID" >"$job_json"; then
     echo "WARN: failed to fetch job status; retrying..."
     sleep "$POLL_INTERVAL_SEC"
     continue
   fi
 
-  status="$(python - <<'PY'
+  status="$(python - <<PY
 import json
 from pathlib import Path
-payload=json.loads(Path('/tmp/pegasus_smoke_job.json').read_text())
+payload=json.loads(Path('$job_json').read_text())
 print(payload.get('status',''))
 PY
 )"
 
   if [[ "$status" != "$last_status" ]]; then
     echo "status=$status"
-    cat /tmp/pegasus_smoke_job.json
+    cat "$job_json"
     last_status="$status"
   fi
 
@@ -95,10 +111,10 @@ PY
     saw_running="1"
   fi
 
-  queue_fallback="$(python - <<'PY'
+  queue_fallback="$(python - <<PY
 import json
 from pathlib import Path
-payload=json.loads(Path('/tmp/pegasus_smoke_job.json').read_text())
+payload=json.loads(Path('$job_json').read_text())
 result=payload.get('result') or {}
 print(result.get('queueFallback','') if isinstance(result, dict) else '')
 PY
