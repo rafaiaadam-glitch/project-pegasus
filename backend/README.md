@@ -52,8 +52,9 @@ processed consistently.
 - `GET /presets/{preset_id}`
 - `GET /courses`
 - `GET /courses/{course_id}`
-- `GET /courses/{course_id}/lectures`
+- `GET /courses/{course_id}/lectures` (404 if course does not exist)
 - `GET /courses/{course_id}/threads`
+- `GET /courses/{course_id}/progress` (404 if course does not exist; supports `include_lectures=false`; includes `overallStatus` + course-level rollup and optional per-lecture `currentStage`, stage counts, and status snapshots)
 - `POST /lectures/ingest` (multipart upload)
 - `GET /lectures`
 - `GET /lectures/{lecture_id}`
@@ -61,7 +62,7 @@ processed consistently.
 - `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `course_id` and `preset_id` optional and default from ingested lecture; if provided they must match ingested lecture)
 - `POST /lectures/{lecture_id}/export`
 - `GET /lectures/{lecture_id}/jobs`
-- `GET /lectures/{lecture_id}/progress`
+- `GET /lectures/{lecture_id}/progress` (includes `overallStatus` and per-stage status plus `progressPercent`, `currentStage`, and `hasFailedStage`)
 - `GET /exports/{lecture_id}/{export_type}`
 - `GET /lectures/{lecture_id}/artifacts` (query params: `artifact_type`, `preset_id`, `limit`, `offset`; includes `artifactDownloadUrls` for S3-backed artifacts)
 - `GET /lectures/{lecture_id}/summary`
