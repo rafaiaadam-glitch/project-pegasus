@@ -38,6 +38,7 @@ processed consistently.
 - `PLC_STORAGE_DIR` (optional, default: `storage`)
 - `DATABASE_URL` (required, Postgres/Supabase)
 - `REDIS_URL` (optional, default: `redis://localhost:6379/0`)
+- `PLC_INLINE_JOBS` (optional, `true/1/on` runs jobs inline in API process; useful for local MVP without Redis)
 - `STORAGE_MODE` (`local` or `s3`)
 - `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
