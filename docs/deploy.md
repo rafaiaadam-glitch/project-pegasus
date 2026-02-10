@@ -127,13 +127,37 @@ so migrations should run in each service on boot.
 Use this procedure after deploy (or with local `docker compose`) to confirm API,
 worker, Postgres, and Redis are correctly wired.
 
+Preflight requirements:
+- `API_BASE_URL` must point to a running Pegasus API (deployed URL or local API).
+- A worker process must be running against the same `DATABASE_URL` and `REDIS_URL`
+  as the API.
+- Redis and Postgres must be reachable from both API and worker runtimes.
+- If running locally, ensure Docker/Compose are installed before using
+  `docker compose up --build`.
+
 Automated option:
 
 ```bash
 API_BASE_URL=https://your-api.example.com ./scripts/smoke_worker_queue.sh
 ```
 
-This script executes health, ingest, enqueue, and job polling steps and exits non-zero on failure/timeout. By default, terminal `failed` still counts as queue/worker-path success (override with `SMOKE_ACCEPT_FAILED_TERMINAL=0`).
+This script executes health, ingest, enqueue, and job polling steps and exits non-zero on failure/timeout. By default, terminal `failed` still counts as queue/worker-path success (override with `SMOKE_ACCEPT_FAILED_TERMINAL=0`). It validates a `queued -> non-queued` transition by default (override with `SMOKE_REQUIRE_QUEUED_TRANSITION=0` only for inline/non-queue environments), and it fails by default if the job result indicates API-side queue fallback (override with `SMOKE_ALLOW_QUEUE_FALLBACK=1` only for non-worker environments).
+
+Script-only logic validation (no live deployment):
+
+```bash
+./scripts/test_smoke_worker_queue.sh
+```
+
+This local harness stubs HTTP responses and validates success/failure branches in `scripts/smoke_worker_queue.sh`, but it does **not** replace a real deployed worker+queue smoke run.
+
+HTTP simulation (runs full smoke script against a local fake API):
+
+```bash
+./scripts/test_smoke_worker_queue_http.sh
+```
+
+This executes all smoke-script steps (`/health`, ingest, enqueue, polling) against a temporary local server to validate integration behavior without external dependencies.
 
 ### 1) Verify API health
 
