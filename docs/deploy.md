@@ -135,6 +135,10 @@ API_BASE_URL=https://your-api.example.com ./scripts/smoke_worker_queue.sh
 
 This script executes health, ingest, enqueue, and job polling steps and exits non-zero on failure/timeout. By default, terminal `failed` still counts as queue/worker-path success (override with `SMOKE_ACCEPT_FAILED_TERMINAL=0`).
 
+Queue/worker validation behavior:
+- `SMOKE_REQUIRE_QUEUE_PATH=1` (default) enforces that jobs do **not** use inline fallback and that status reaches `running` before terminal completion.
+- Set `SMOKE_REQUIRE_QUEUE_PATH=0` only when debugging environments where queue services are intentionally disabled.
+
 ### 1) Verify API health
 
 ```bash
