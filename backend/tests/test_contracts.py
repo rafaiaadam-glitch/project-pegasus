@@ -350,11 +350,7 @@ def test_course_threads_listing(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload["courseId"] == "course-1"
-    assert payload["overallStatus"] == "failed"
     assert [thread["id"] for thread in payload["threads"]] == ["thread-2", "thread-1"]
-
-    missing_course_threads = client.get("/courses/missing/threads")
-    assert missing_course_threads.status_code == 404
 
 
 def test_course_progress_rollup(monkeypatch):

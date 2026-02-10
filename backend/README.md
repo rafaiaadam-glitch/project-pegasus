@@ -53,7 +53,7 @@ processed consistently.
 - `GET /courses`
 - `GET /courses/{course_id}`
 - `GET /courses/{course_id}/lectures` (404 if course does not exist)
-- `GET /courses/{course_id}/threads` (404 if course does not exist)
+- `GET /courses/{course_id}/threads`
 - `GET /courses/{course_id}/progress` (404 if course does not exist; supports `include_lectures=false`; includes `overallStatus` + course-level rollup and optional per-lecture `currentStage`, stage counts, and status snapshots)
 - `POST /lectures/ingest` (multipart upload)
 - `GET /lectures`

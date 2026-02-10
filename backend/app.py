@@ -117,7 +117,7 @@ def _compute_stage_progress(latest_by_type: dict[str, dict], stage_order: list[s
         }
 
     completed_count = sum(1 for stage in stage_order if stages[stage]["status"] == "completed")
-    progress_percent = round((completed_count / len(stage_order)) * 100)
+    progress_percent = int((completed_count / len(stage_order)) * 100)
     current_stage = next(
         (stage for stage in stage_order if stages[stage]["status"] != "completed"),
         "completed",
@@ -307,7 +307,6 @@ def list_course_lectures(
 @app.get("/courses/{course_id}/threads")
 def list_course_threads(course_id: str) -> dict:
     db = get_database()
-    _fetch_course_or_404(db, course_id)
     return {
         "courseId": course_id,
         "threads": db.fetch_threads_for_course(course_id),
@@ -422,6 +421,9 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
 
 @app.post("/lectures/{lecture_id}/generate")
 def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
+    if payload.preset_id:
+        _ensure_valid_preset_id(payload.preset_id)
+
     db = get_database()
     course_id, preset_id = _resolve_generation_identifiers(db, lecture_id, payload)
     job_id = enqueue_job(
