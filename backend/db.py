@@ -16,6 +16,12 @@ class Database:
     def connect(self):
         return psycopg2.connect(self.dsn)
 
+    def healthcheck(self) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("select 1;")
+                cur.fetchone()
+
     def migrate(self) -> None:
         migrations_dir = Path(__file__).resolve().parent / "migrations"
         migrations = sorted(migrations_dir.glob("*.sql"))
@@ -203,6 +209,34 @@ class Database:
                 cur.execute("select * from jobs where id = %s;", (job_id,))
                 row = cur.fetchone()
                 return dict(row) if row else None
+
+    def fetch_jobs(
+        self,
+        lecture_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        clauses = []
+        params: Dict[str, Any] = {}
+        if lecture_id:
+            clauses.append("lecture_id = %(lecture_id)s")
+            params["lecture_id"] = lecture_id
+        where_clause = f" where {' and '.join(clauses)}" if clauses else ""
+        limit_clause = ""
+        if limit is not None:
+            limit_clause += " limit %(limit)s"
+            params["limit"] = limit
+        if offset is not None:
+            limit_clause += " offset %(offset)s"
+            params["offset"] = offset
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    f"select * from jobs{where_clause} order by created_at desc{limit_clause};",
+                    params,
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
 
     def upsert_artifact(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
