@@ -11,7 +11,14 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT))
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient
+
+try:
+    from fastapi.testclient import TestClient
+except RuntimeError:
+    TestClient = None
+
+if TestClient is None:
+    pytestmark = pytest.mark.skip(reason="fastapi.testclient requires httpx")
 
 import backend.app as app_module
 
@@ -86,6 +93,11 @@ class FakeDB:
 
     def fetch_threads(self, lecture_id: str):
         return [row for row in getattr(self, "threads", []) if lecture_id in row.get("lecture_refs", [])]
+
+    def fetch_threads_for_course(self, course_id: str):
+        rows = [row for row in self.threads if row.get("course_id") == course_id]
+        rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
+        return rows
 
 
 def test_artifacts_contract(monkeypatch, tmp_path):
@@ -249,3 +261,135 @@ def test_course_and_lecture_listings(monkeypatch):
     response = client.get("/lectures", params={"limit": 1})
     assert response.status_code == 200
     assert len(response.json()["lectures"]) == 1
+
+
+def test_presets_catalog():
+    client = TestClient(app_module.app)
+
+    response = client.get("/presets")
+    assert response.status_code == 200
+    presets = response.json()["presets"]
+    assert len(presets) >= 5
+    assert {preset["id"] for preset in presets} >= {
+        "exam-mode",
+        "concept-map-mode",
+        "beginner-mode",
+        "neurodivergent-friendly-mode",
+        "research-mode",
+    }
+
+    response = client.get("/presets/exam-mode")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kind"] == "exam"
+    assert "outputProfile" in payload
+
+    response = client.get("/presets/missing-preset")
+    assert response.status_code == 404
+
+
+def test_course_threads_listing(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.threads = [
+        {
+            "id": "thread-1",
+            "course_id": "course-1",
+            "title": "Foundations",
+            "summary": "Base concept",
+            "status": "foundational",
+            "complexity_level": 1,
+            "lecture_refs": ["lecture-1"],
+            "created_at": "2024-01-02T00:00:00Z",
+        },
+        {
+            "id": "thread-2",
+            "course_id": "course-1",
+            "title": "Advanced Topic",
+            "summary": "Later concept",
+            "status": "advanced",
+            "complexity_level": 3,
+            "lecture_refs": ["lecture-2"],
+            "created_at": "2024-01-03T00:00:00Z",
+        },
+        {
+            "id": "thread-3",
+            "course_id": "course-2",
+            "title": "Other course",
+            "summary": "Different",
+            "status": "foundational",
+            "complexity_level": 2,
+            "lecture_refs": ["lecture-9"],
+            "created_at": "2024-01-01T00:00:00Z",
+        },
+    ]
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/courses/course-1/threads")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["courseId"] == "course-1"
+    assert [thread["id"] for thread in payload["threads"]] == ["thread-2", "thread-1"]
+
+
+def test_generate_rejects_invalid_preset_id():
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/lectures/lecture-001/generate",
+        json={"course_id": "course-001", "preset_id": "invalid-preset"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid preset_id."
+
+
+def test_generate_rejects_missing_lecture(monkeypatch):
+    fake_db = FakeDB()
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/lectures/lecture-missing/generate",
+        json={"course_id": "course-001", "preset_id": "exam-mode"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Lecture not found."
+
+
+def test_generate_rejects_course_mismatch(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.lectures["lecture-001"] = {
+        "id": "lecture-001",
+        "course_id": "course-stored",
+        "preset_id": "exam-mode",
+        "title": "Lecture",
+    }
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/lectures/lecture-001/generate",
+        json={"course_id": "course-request", "preset_id": "exam-mode"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "course_id does not match lecture."
+
+
+def test_generate_rejects_preset_mismatch(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.lectures["lecture-001"] = {
+        "id": "lecture-001",
+        "course_id": "course-001",
+        "preset_id": "exam-mode",
+        "title": "Lecture",
+    }
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/lectures/lecture-001/generate",
+        json={"course_id": "course-001", "preset_id": "research-mode"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "preset_id does not match lecture."

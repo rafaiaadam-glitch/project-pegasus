@@ -47,6 +47,8 @@ processed consistently.
 ## Endpoints
 
 - `GET /health`
+- `GET /presets`
+- `GET /presets/{preset_id}`
 - `GET /courses`
 - `GET /courses/{course_id}`
 - `GET /courses/{course_id}/lectures`
@@ -54,7 +56,7 @@ processed consistently.
 - `POST /lectures/ingest` (multipart upload)
 - `GET /lectures`
 - `POST /lectures/{lecture_id}/transcribe`
-- `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `openai_model` optional)
+- `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `course_id` and `preset_id` optional and default from ingested lecture; if provided they must match ingested lecture)
 - `POST /lectures/{lecture_id}/export`
 - `GET /exports/{lecture_id}/{export_type}`
 - `GET /lectures/{lecture_id}/artifacts` (query params: `artifact_type`, `preset_id`, `limit`, `offset`; includes `artifactDownloadUrls` for S3-backed artifacts)

@@ -18,6 +18,7 @@ from backend.jobs import (
     run_generation_job,
     run_transcription_job,
 )
+from backend.presets import PRESETS, PRESETS_BY_ID
 from backend.storage import download_url, save_audio
 
 app = FastAPI(title="Pegasus Lecture Copilot API")
@@ -25,8 +26,8 @@ STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
 
 
 class GenerateRequest(BaseModel):
-    course_id: str
-    preset_id: str
+    course_id: Optional[str] = None
+    preset_id: Optional[str] = None
     openai_model: Optional[str] = None
 
 
@@ -51,9 +52,57 @@ def _sha256(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def _ensure_valid_preset_id(preset_id: str) -> None:
+    if preset_id not in PRESETS_BY_ID:
+        raise HTTPException(status_code=400, detail="Invalid preset_id.")
+
+
+def _validate_generation_context(db, lecture_id: str, course_id: str, preset_id: str) -> None:
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+    lecture_course_id = lecture.get("course_id")
+    if lecture_course_id and lecture_course_id != course_id:
+        raise HTTPException(status_code=400, detail="course_id does not match lecture.")
+    lecture_preset_id = lecture.get("preset_id")
+    if lecture_preset_id and lecture_preset_id != preset_id:
+        raise HTTPException(status_code=400, detail="preset_id does not match lecture.")
+
+
+def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateRequest) -> tuple[str, str]:
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+
+    course_id = payload.course_id or lecture.get("course_id")
+    if not course_id:
+        raise HTTPException(status_code=400, detail="course_id is required.")
+
+    preset_id = payload.preset_id or lecture.get("preset_id")
+    if not preset_id:
+        raise HTTPException(status_code=400, detail="preset_id is required.")
+
+    _ensure_valid_preset_id(preset_id)
+    _validate_generation_context(db, lecture_id, course_id, preset_id)
+    return course_id, preset_id
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "time": _iso_now()}
+
+
+@app.get("/presets")
+def list_presets() -> dict:
+    return {"presets": PRESETS}
+
+
+@app.get("/presets/{preset_id}")
+def get_preset(preset_id: str) -> dict:
+    preset = PRESETS_BY_ID.get(preset_id)
+    if not preset:
+        raise HTTPException(status_code=404, detail="Preset not found.")
+    return preset
 
 
 @app.post("/lectures/ingest")
@@ -67,6 +116,7 @@ def ingest_lecture(
     source_type: str = Form("upload"),
     audio: UploadFile = File(...),
 ) -> dict:
+    _ensure_valid_preset_id(preset_id)
     _ensure_dirs()
     ext = Path(audio.filename or "").suffix or ".bin"
     stored_audio = save_audio(audio.file, f"{lecture_id}{ext}")
@@ -149,6 +199,15 @@ def list_course_lectures(
     }
 
 
+@app.get("/courses/{course_id}/threads")
+def list_course_threads(course_id: str) -> dict:
+    db = get_database()
+    return {
+        "courseId": course_id,
+        "threads": db.fetch_threads_for_course(course_id),
+    }
+
+
 @app.get("/lectures")
 def list_lectures(
     course_id: Optional[str] = None,
@@ -183,21 +242,24 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
 
 @app.post("/lectures/{lecture_id}/generate")
 def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
+    db = get_database()
+    course_id, preset_id = _resolve_generation_identifiers(db, lecture_id, payload)
     job_id = enqueue_job(
         "generation",
         lecture_id,
         run_generation_job,
         lecture_id,
-        payload.course_id,
-        payload.preset_id,
+        course_id,
+        preset_id,
         payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     )
-    db = get_database()
     job = db.fetch_job(job_id)
     return {
         "jobId": job_id,
         "status": job["status"] if job else "queued",
         "jobType": job.get("job_type") if job else "generation",
+        "courseId": course_id,
+        "presetId": preset_id,
     }
 
 
