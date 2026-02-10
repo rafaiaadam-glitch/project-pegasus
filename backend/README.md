@@ -50,6 +50,7 @@ processed consistently.
 - `GET /courses`
 - `GET /courses/{course_id}`
 - `GET /courses/{course_id}/lectures`
+- `GET /courses/{course_id}/threads`
 - `POST /lectures/ingest` (multipart upload)
 - `GET /lectures`
 - `POST /lectures/{lecture_id}/transcribe`
