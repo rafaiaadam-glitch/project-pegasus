@@ -55,14 +55,30 @@ cat /tmp/pegasus_smoke_enqueue.json
 JOB_ID="$(python - <<'PY'
 import json
 from pathlib import Path
-payload=json.loads(Path('/tmp/pegasus_smoke_enqueue.json').read_text())
-print(payload.get('jobId',''))
+payload = json.loads(Path('/tmp/pegasus_smoke_enqueue.json').read_text())
+print(payload.get('jobId', ''))
+PY
+)"
+
+ENQUEUE_STATUS="$(python - <<'PY'
+import json
+from pathlib import Path
+payload = json.loads(Path('/tmp/pegasus_smoke_enqueue.json').read_text())
+print(payload.get('status', ''))
 PY
 )"
 
 if [[ -z "$JOB_ID" ]]; then
   echo "ERROR: Could not extract jobId from enqueue response" >&2
   exit 3
+fi
+
+seen_queued=0
+seen_non_queued=0
+if [[ "$ENQUEUE_STATUS" == "queued" ]]; then
+  seen_queued=1
+elif [[ -n "$ENQUEUE_STATUS" ]]; then
+  seen_non_queued=1
 fi
 
 echo "[5/5] Polling job status for $JOB_ID (timeout: ${TIMEOUT_SEC}s)"
@@ -79,10 +95,16 @@ while (( SECONDS < end )); do
   status="$(python - <<'PY'
 import json
 from pathlib import Path
-payload=json.loads(Path('/tmp/pegasus_smoke_job.json').read_text())
-print(payload.get('status',''))
+payload = json.loads(Path('/tmp/pegasus_smoke_job.json').read_text())
+print(payload.get('status', ''))
 PY
 )"
+
+  if [[ "$status" == "queued" ]]; then
+    seen_queued=1
+  elif [[ -n "$status" ]]; then
+    seen_non_queued=1
+  fi
 
   if [[ "$status" != "$last_status" ]]; then
     echo "status=$status"
@@ -132,6 +154,7 @@ PY
       echo "SUCCESS: job failed terminally, but queue + worker path executed (set SMOKE_ACCEPT_FAILED_TERMINAL=0 to treat this as failure)"
       exit 0
     fi
+
     echo "FAIL: job reached failed terminal state (queue + worker path executed)" >&2
     exit 4
   fi
