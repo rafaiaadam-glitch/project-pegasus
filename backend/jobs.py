@@ -33,11 +33,58 @@ def _ensure_dirs() -> None:
     (storage_dir / "exports").mkdir(parents=True, exist_ok=True)
 
 
+def _load_lecture_metadata(lecture_id: str) -> Dict[str, Any]:
+    metadata_path = _storage_dir() / "metadata" / f"{lecture_id}.json"
+    if not metadata_path.exists():
+        return {}
+    try:
+        payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    return payload
+
+
+def _resolve_lecture_upsert_payload(
+    lecture_id: str,
+    audio_path: Path,
+    transcript_path: str,
+    existing_lecture: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    metadata = _load_lecture_metadata(lecture_id)
+    current = existing_lecture or {}
+    return {
+        "id": lecture_id,
+        "course_id": current.get("course_id") or metadata.get("courseId") or "unknown",
+        "preset_id": current.get("preset_id") or metadata.get("presetId") or "unknown",
+        "title": current.get("title") or metadata.get("title") or lecture_id,
+        "status": "transcribed",
+        "audio_path": current.get("audio_path")
+        or metadata.get("audioSource", {}).get("storagePath")
+        or str(audio_path),
+        "transcript_path": transcript_path,
+        "created_at": current.get("created_at") or metadata.get("createdAt") or _iso_now(),
+        "updated_at": _iso_now(),
+    }
+
 def _get_queue() -> Queue:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     connection = Redis.from_url(redis_url)
     return Queue("pegasus", connection=connection)
 
+
+
+
+def _should_run_jobs_inline() -> bool:
+    return os.getenv("PLC_INLINE_JOBS", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _run_job_inline(job_id: str, task, *args, **kwargs) -> None:
+    try:
+        task(job_id, *args, **kwargs)
+    except Exception as exc:  # pragma: no cover - task updates job status before raising
+        _update_job(job_id, "failed", error=str(exc))
 
 def _handle_job_failure(job, exc_type, exc_value, traceback) -> None:
     _update_job(job.id, "failed", error=str(exc_value))
@@ -79,15 +126,25 @@ def _update_job(
 def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs) -> str:
     job_id = str(uuid.uuid4())
     _create_job_record(job_id, job_type, lecture_id)
-    queue = _get_queue()
-    queue.enqueue(
-        task,
-        job_id,
-        *args,
-        retry=Retry(max=3, interval=[10, 60, 300]),
-        on_failure=_handle_job_failure,
-        **kwargs,
-    )
+
+    if _should_run_jobs_inline():
+        _run_job_inline(job_id, task, *args, **kwargs)
+        return job_id
+
+    try:
+        queue = _get_queue()
+        queue.enqueue(
+            task,
+            job_id,
+            *args,
+            retry=Retry(max=3, interval=[10, 60, 300]),
+            on_failure=_handle_job_failure,
+            **kwargs,
+        )
+    except Exception as exc:
+        _update_job(job_id, "running", result={"queueFallback": "inline", "reason": str(exc)})
+        _run_job_inline(job_id, task, *args, **kwargs)
+
     return job_id
 
 
@@ -122,18 +179,14 @@ def run_transcription_job(job_id: str, lecture_id: str, model: str) -> Dict[str,
         transcript_payload = json.dumps(transcript, indent=2)
         transcript_path = save_transcript(transcript_payload, f"{lecture_id}.json")
         db = get_database()
+        existing_lecture = db.fetch_lecture(lecture_id)
         db.upsert_lecture(
-            {
-                "id": lecture_id,
-                "course_id": "unknown",
-                "preset_id": "unknown",
-                "title": lecture_id,
-                "status": "transcribed",
-                "audio_path": str(audio_path),
-                "transcript_path": transcript_path,
-                "created_at": _iso_now(),
-                "updated_at": _iso_now(),
-            }
+            _resolve_lecture_upsert_payload(
+                lecture_id=lecture_id,
+                audio_path=audio_path,
+                transcript_path=transcript_path,
+                existing_lecture=existing_lecture,
+            )
         )
         payload = {"lectureId": lecture_id, "transcriptPath": transcript_path}
         _update_job(job_id, "completed", result=payload)

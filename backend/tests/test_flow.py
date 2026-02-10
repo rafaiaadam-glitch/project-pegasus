@@ -11,7 +11,16 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT))
 
 pytest.importorskip("fastapi")
-from fastapi.testclient import TestClient
+try:
+    from fastapi.testclient import TestClient
+except RuntimeError as exc:  # pragma: no cover - dependency guard for CI/runtime
+    if "httpx" in str(exc):
+        TestClient = None
+    else:
+        raise
+
+if TestClient is None:
+    pytestmark = pytest.mark.skip(reason="fastapi.testclient requires httpx")
 
 import backend.app as app_module
 import backend.jobs as jobs_module
@@ -278,6 +287,76 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
     assert fake_db.job_history["transcription-1"] == ["queued", "running", "completed"]
     assert fake_db.job_history["generation-1"] == ["queued", "running", "completed"]
     assert fake_db.job_history["export-1"] == ["queued", "running", "completed"]
+
+
+def test_transcription_preserves_existing_lecture_metadata(monkeypatch, tmp_path):
+    storage_dir = tmp_path / "storage"
+    (storage_dir / "audio").mkdir(parents=True, exist_ok=True)
+    audio_path = storage_dir / "audio" / "lecture-xyz.mp3"
+    audio_path.write_bytes(b"audio")
+
+    fake_db = FakeDB()
+    fake_db.upsert_lecture(
+        {
+            "id": "lecture-xyz",
+            "course_id": "course-123",
+            "preset_id": "exam-mode",
+            "title": "Original Lecture Title",
+            "status": "uploaded",
+            "audio_path": "stored/audio/path.mp3",
+            "transcript_path": None,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        }
+    )
+    fake_db.create_job(
+        {
+            "id": "job-1",
+            "lecture_id": "lecture-xyz",
+            "job_type": "transcription",
+            "status": "queued",
+            "result": None,
+            "error": None,
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        }
+    )
+
+    class StubWhisperModel:
+        def transcribe(self, _path: str):
+            return {
+                "language": "en",
+                "text": "Sample transcript.",
+                "segments": [{"start": 0.0, "end": 1.0, "text": "Sample transcript."}],
+            }
+
+    class StubWhisper:
+        def load_model(self, _model: str):
+            return StubWhisperModel()
+
+    monkeypatch.setenv("PLC_STORAGE_DIR", str(storage_dir))
+    monkeypatch.setattr(jobs_module, "get_database", lambda: fake_db)
+    monkeypatch.setattr(jobs_module, "_load_whisper", lambda: StubWhisper())
+
+    def fake_save_transcript(payload: str, name: str) -> str:
+        out = storage_dir / "transcripts"
+        out.mkdir(parents=True, exist_ok=True)
+        target = out / name
+        target.write_text(payload, encoding="utf-8")
+        return str(target)
+
+    monkeypatch.setattr(jobs_module, "save_transcript", fake_save_transcript)
+
+    jobs_module.run_transcription_job("job-1", "lecture-xyz", "base")
+
+    lecture = fake_db.fetch_lecture("lecture-xyz")
+    assert lecture is not None
+    assert lecture["course_id"] == "course-123"
+    assert lecture["preset_id"] == "exam-mode"
+    assert lecture["title"] == "Original Lecture Title"
+    assert lecture["audio_path"] == "stored/audio/path.mp3"
+    assert lecture["status"] == "transcribed"
+
 
 
 @pytest.mark.parametrize(
