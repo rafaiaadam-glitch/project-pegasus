@@ -313,5 +313,21 @@ def lecture_summary(lecture_id: str) -> dict:
             "artifacts": f"/lectures/{lecture_id}/artifacts",
             "exports": f"/exports/{lecture_id}/{{export_type}}",
             "jobs": "/jobs/{job_id}",
+
+            @app.get("/courses/{course_id}/threads/{title}/history")
+def get_thread_history(course_id: str, title: str):
+    db = get_database()
+    # 1. Find the core thread record
+    thread = db.fetch_thread_by_title(course_id, title)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    # 2. Fetch all chronological updates and occurrences for this thread
+    history = db.fetch_thread_evolution(thread["id"])
+    
+    return {
+        "thread": thread,
+        "timeline": history # Returns chronological list of refinements and complexity jumps
+    }
         },
     }
