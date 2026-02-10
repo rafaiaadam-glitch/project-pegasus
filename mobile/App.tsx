@@ -7,349 +7,116 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
-  Dimensions,
+  BlurView, // Requires expo-blur
 } from 'react-native';
 
-const { width } = Dimensions.get('window');
-
-// --- Types for our State Management ---
-type TabType = 'Transcript' | 'Takeaways';
-type PresetType = 'Exam' | 'Neurodivergent';
-
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabType>('Takeaways');
-  const [preset, setPreset] = useState<PresetType>('Exam');
-
-  // --- Mock Data: This would eventually come from your FastAPI Backend ---
-  const lectureData = {
-    title: "Lec 04: Neural Signaling",
-    course: "Introduction to Neuroscience",
-    transcript: [
-      { time: "0:00", text: "Today we're diving into the action potential." },
-      { time: "0:12", text: "It's essentially the electrical impulse that travels down an axon, allowing neurons to communicate." },
-      { time: "0:45", text: "The key is the sodium-potassium pump, which maintains the resting potential at -70mV." },
-    ],
-    artifacts: {
-      exam: {
-        summary: "High-density recall focus. Focus on ionic gradients and threshold potentials.",
-        bullets: [
-          "Sodium/Potassium Pump: 3 Na+ out, 2 K+ in (Likely Exam Question).",
-          "Threshold of Excitation: -55mV required to trigger firing.",
-          "Saltatory Conduction: Occurs in Myelinated axons via Nodes of Ranvier."
-        ]
-      },
-      neuro: {
-        summary: "Simple analogies and low-clutter summary to reduce cognitive load.",
-        bullets: [
-          "The 'Flush' Rule: A neuron fires all-the-way or not at all.",
-          "Insulation: Myelin is like the plastic on a wire—it keeps the signal fast.",
-          "The Spark: Sodium rushing in is what starts the message."
-        ]
-      }
-    }
-  };
+  const [activeTab, setActiveTab] = useState<'Transcript' | 'Artifacts'>('Artifacts');
+  const [preset, setPreset] = useState('Exam');
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* 1. HEADER SECTION (Course Info) */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.courseSubtitle}>{lectureData.course}</Text>
-          <Text style={styles.lectureTitle}>{lectureData.title}</Text>
-        </View>
-        <TouchableOpacity style={styles.moreButton}>
-          <Text style={styles.moreIcon}>•••</Text>
-        </TouchableOpacity>
+      {/* 1. APPLE-STYLE NAV BAR */}
+      <View style={styles.navBar}>
+        <Text style={styles.navTitle}>Neural Signaling</Text>
+        <Text style={styles.navSubtitle}>Bio 101 • Lec 04</Text>
       </View>
 
-      {/* 2. TAB SWITCHER (Otter Pattern) */}
+      {/* 2. CRISP TAB SWITCHER */}
       <View style={styles.tabContainer}>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'Transcript' && styles.activeTab]} 
-          onPress={() => setActiveTab('Transcript')}
-        >
-          <Text style={activeTab === 'Transcript' ? styles.activeTabText : styles.tabText}>Transcript</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'Takeaways' && styles.activeTab]} 
-          onPress={() => setActiveTab('Takeaways')}
-        >
-          <Text style={activeTab === 'Takeaways' ? styles.activeTabText : styles.tabText}>Takeaways</Text>
-        </TouchableOpacity>
+        <View style={styles.segmentBackground}>
+          <TouchableOpacity 
+            style={[styles.segment, activeTab === 'Artifacts' && styles.segmentActive]}
+            onPress={() => setActiveTab('Artifacts')}
+          >
+            <Text style={[styles.segmentText, activeTab === 'Artifacts' && styles.segmentTextActive]}>Study Guide</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.segment, activeTab === 'Transcript' && styles.segmentActive]}
+            onPress={() => setActiveTab('Transcript')}
+          >
+            <Text style={[styles.segmentText, activeTab === 'Transcript' && styles.segmentTextActive]}>Transcript</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* 3. MAIN CONTENT AREA */}
-      <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
+      <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
         
-        {activeTab === 'Transcript' ? (
-          /* TRANSCRIPT VIEW */
-          <View style={styles.transcriptList}>
-            {lectureData.transcript.map((item, index) => (
-              <View key={index} style={styles.transcriptRow}>
-                <Text style={styles.timestamp}>{item.time}</Text>
-                <View style={styles.textBubble}>
-                  <Text style={styles.transcriptText}>{item.text}</Text>
-                </View>
-              </View>
+        {/* 3. PRESET SWITCHER (Material Structure Change) */}
+        <View style={styles.presetContainer}>
+          <Text style={styles.label}>Style Preset</Text>
+          <View style={styles.presetRow}>
+            {['Exam', 'ADHD', 'Research'].map((p) => (
+              <TouchableOpacity 
+                key={p} 
+                style={[styles.pBadge, preset === p && styles.pBadgeActive]}
+                onPress={() => setPreset(p)}
+              >
+                <Text style={[styles.pBadgeText, preset === p && styles.pBadgeTextActive]}>{p}</Text>
+              </TouchableOpacity>
             ))}
           </View>
-        ) : (
-          /* TAKEAWAYS VIEW (Materially changes based on Preset) */
-          <View>
-            {/* PRESET TOGGLE: The Core Differentiator */}
-            <View style={styles.presetPicker}>
-              <Text style={styles.pickerLabel}>Learning Style Preset:</Text>
-              <View style={styles.toggleRow}>
-                <TouchableOpacity 
-                  style={[styles.toggleBtn, preset === 'Exam' && styles.toggleBtnActive]}
-                  onPress={() => setPreset('Exam')}
-                >
-                  <Text style={[styles.toggleBtnText, preset === 'Exam' && styles.toggleBtnTextActive]}>Exam Mode</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.toggleBtn, preset === 'Neurodivergent' && styles.toggleBtnActive]}
-                  onPress={() => setPreset('Neurodivergent')}
-                >
-                  <Text style={[styles.toggleBtnText, preset === 'Neurodivergent' && styles.toggleBtnTextActive]}>Simple (ADHD)</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+        </View>
 
-            {/* ARTIFACT CARDS */}
-            <View style={styles.card}>
-              <Text style={styles.cardHeader}>Overview</Text>
-              <Text style={styles.cardBody}>
-                {preset === 'Exam' ? lectureData.artifacts.exam.summary : lectureData.artifacts.neuro.summary}
-              </Text>
-            </View>
+        {/* 4. CONTENT CARDS (High Whitespace) */}
+        <View style={styles.card}>
+          <Text style={styles.cardTag}>SUMMARY</Text>
+          <Text style={styles.cardTitle}>The Sodium-Potassium Pump</Text>
+          <Text style={styles.cardBody}>
+            Crucial for maintaining resting potential. It moves 3 sodium ions out for every 2 potassium ions in, creating an electrical gradient.
+          </Text>
+        </View>
 
-            <View style={styles.card}>
-              <Text style={styles.cardHeader}>
-                {preset === 'Exam' ? "Examinable Points" : "Key Takeaways"}
-              </Text>
-              {(preset === 'Exam' ? lectureData.artifacts.exam.bullets : lectureData.artifacts.neuro.bullets).map((bullet, i) => (
-                <Text key={i} style={styles.bulletPoint}>• {bullet}</Text>
-              ))}
-            </View>
+        <View style={styles.card}>
+          <Text style={styles.cardTag}>🧵 THREAD EVOLUTION</Text>
+          <Text style={styles.cardTitle}>Action Potential</Text>
+          <Text style={styles.cardBody}>
+            Concept introduced in Lec 01. Today: Refined with Saltatory Conduction details.
+          </Text>
+          <TouchableOpacity>
+            <Text style={styles.linkText}>See Growth History →</Text>
+          </TouchableOpacity>
+        </View>
 
-            {/* THREAD ENGINE PREVIEW */}
-            <View style={[styles.card, styles.threadCard]}>
-              <Text style={styles.threadHeader}>🧵 Thread Evolution</Text>
-              <Text style={styles.threadText}>
-                "Action Potential" was refined in this lecture. 
-                <Text style={styles.linkText}> View History →</Text>
-              </Text>
-            </View>
-          </View>
-        )}
       </ScrollView>
 
-      {/* 4. PERSISTENT FLOATING RECORD BUTTON (Otter Identity) */}
-      <TouchableOpacity style={styles.fab} activeOpacity={0.8}>
-        <Text style={styles.fabIcon}>🎙️</Text>
-      </TouchableOpacity>
+      {/* 5. MINIMALIST RECORD BUTTON (Floating Action) */}
+      <View style={styles.footer}>
+        <TouchableOpacity style={styles.recordButton}>
+          <View style={styles.recordInner} />
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F2F4F7', // Otter grey-blue background
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#FFF',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderColor: '#E4E7EB',
-  },
-  courseSubtitle: {
-    fontSize: 12,
-    color: '#667085',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  lectureTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#101828',
-    marginTop: 2,
-  },
-  moreButton: {
-    padding: 8,
-  },
-  moreIcon: {
-    fontSize: 18,
-    color: '#98A2B3',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#FFF',
-    borderBottomWidth: 1,
-    borderColor: '#E4E7EB',
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: 'center',
-    borderBottomWidth: 3,
-    borderColor: 'transparent',
-  },
-  activeTab: {
-    borderColor: '#007AFF', // Pegasus Primary Blue
-  },
-  tabText: {
-    fontSize: 15,
-    color: '#667085',
-    fontWeight: '500',
-  },
-  activeTabText: {
-    fontSize: 15,
-    color: '#007AFF',
-    fontWeight: '700',
-  },
-  scrollArea: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 100, // Space for FAB
-  },
-  /* Transcript Styles */
-  transcriptList: {
-    marginTop: 10,
-  },
-  transcriptRow: {
-    flexDirection: 'row',
-    marginBottom: 20,
-  },
-  timestamp: {
-    width: 40,
-    fontSize: 12,
-    color: '#98A2B3',
-    paddingTop: 4,
-  },
-  textBubble: {
-    flex: 1,
-    paddingLeft: 10,
-  },
-  transcriptText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#344054',
-  },
-  /* Takeaway Styles */
-  presetPicker: {
-    backgroundColor: '#FFF',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#D0D5DD',
-  },
-  pickerLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475467',
-    marginBottom: 10,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    padding: 4,
-  },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 6,
-  },
-  toggleBtnActive: {
-    backgroundColor: '#FFF',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  toggleBtnText: {
-    fontSize: 14,
-    color: '#667085',
-    fontWeight: '500',
-  },
-  toggleBtnTextActive: {
-    color: '#101828',
-    fontWeight: '700',
-  },
-  card: {
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E4E7EB',
-  },
-  cardHeader: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#101828',
-    marginBottom: 8,
-  },
-  cardBody: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#475467',
-  },
-  bulletPoint: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: '#344054',
-    marginBottom: 6,
-  },
-  threadCard: {
-    backgroundColor: '#F5F9FF',
-    borderColor: '#B2CCFF',
-  },
-  threadHeader: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#2E90FA',
-  },
-  threadText: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#475467',
-  },
-  linkText: {
-    color: '#007AFF',
-    fontWeight: '600',
-  },
-  /* FAB */
-  fab: {
-    position: 'absolute',
-    bottom: 30,
-    left: width / 2 - 32, // Centered like Otter
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#007AFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-  },
-  fabIcon: {
-    fontSize: 28,
-  },
+  container: { flex: 1, backgroundColor: '#FFFFFF' }, // Apple White
+  navBar: { padding: 20, alignItems: 'center', borderBottomWidth: 0.5, borderColor: '#E5E5E5' },
+  navTitle: { fontSize: 17, fontWeight: '600', color: '#000' },
+  navSubtitle: { fontSize: 13, color: '#8E8E93', marginTop: 2 },
+  tabContainer: { padding: 16, backgroundColor: '#F2F2F7' },
+  segmentBackground: { flexDirection: 'row', backgroundColor: '#E3E3E8', borderRadius: 8, padding: 2 },
+  segment: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
+  segmentActive: { backgroundColor: '#FFF', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
+  segmentText: { fontSize: 13, color: '#8E8E93', fontWeight: '500' },
+  segmentTextActive: { color: '#000', fontWeight: '600' },
+  scrollArea: { flex: 1, padding: 20 },
+  presetContainer: { marginBottom: 30 },
+  label: { fontSize: 12, fontWeight: '600', color: '#8E8E93', textTransform: 'uppercase', marginBottom: 12 },
+  presetRow: { flexDirection: 'row', gap: 10 },
+  pBadge: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F2F2F7' },
+  pBadgeActive: { backgroundColor: '#007AFF' },
+  pBadgeText: { fontSize: 14, color: '#007AFF', fontWeight: '500' },
+  pBadgeTextActive: { color: '#FFF' },
+  card: { backgroundColor: '#FFF', padding: 20, borderRadius: 16, marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, elevation: 2, borderOrigin: '1px solid #F2F2F7' },
+  cardTag: { fontSize: 10, fontWeight: '700', color: '#007AFF', letterSpacing: 1, marginBottom: 8 },
+  cardTitle: { fontSize: 20, fontWeight: '700', color: '#000', marginBottom: 10 },
+  cardBody: { fontSize: 16, lineHeight: 24, color: '#3A3A3C' },
+  linkText: { color: '#007AFF', fontWeight: '600', marginTop: 15 },
+  footer: { position: 'absolute', bottom: 40, width: '100%', alignItems: 'center' },
+  recordButton: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 15, elevation: 5 },
+  recordInner: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#FF3B30' }, // Apple Red
 });
