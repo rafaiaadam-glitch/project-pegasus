@@ -332,3 +332,15 @@ def get_database() -> Database:
     db = Database(dsn=dsn)
     db.migrate()
     return db
+
+def fetch_thread_evolution(self, thread_id: str):
+    # Query the thread_updates table for refinements and complexity changes
+    # We join with lectures to get the chronological order and lecture numbers
+    query = """
+        SELECT u.*, l.title as lecture_title, l.created_at as lecture_date
+        FROM thread_updates u
+        JOIN lectures l ON u.lecture_id = l.id
+        WHERE u.thread_id = ?
+        ORDER BY l.created_at ASC
+    """
+    return self.execute_query(query, [thread_id])
