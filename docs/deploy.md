@@ -159,6 +159,10 @@ HTTP simulation (runs full smoke script against a local fake API):
 
 This executes all smoke-script steps (`/health`, ingest, enqueue, polling) against a temporary local server to validate integration behavior without external dependencies.
 
+Queue/worker validation behavior:
+- `SMOKE_REQUIRE_QUEUE_PATH=1` (default) enforces that jobs do **not** use inline fallback and that status reaches `running` before terminal completion.
+- Set `SMOKE_REQUIRE_QUEUE_PATH=0` only when debugging environments where queue services are intentionally disabled.
+
 ### 1) Verify API health
 
 ```bash
