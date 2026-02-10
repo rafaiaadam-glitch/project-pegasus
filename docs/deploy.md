@@ -121,6 +121,110 @@ so migrations should run in each service on boot.
 - Smoke test the job flow: upload audio, enqueue transcription, generation, and
   export, then verify job status and export URLs.
 
+
+## Full deployment smoke test (worker + queue)
+
+Use this procedure after deploy (or with local `docker compose`) to confirm API,
+worker, Postgres, and Redis are correctly wired.
+
+Automated option:
+
+```bash
+API_BASE_URL=https://your-api.example.com ./scripts/smoke_worker_queue.sh
+```
+
+This script executes health, ingest, enqueue, and job polling steps and exits non-zero on failure/timeout. By default, terminal `failed` still counts as queue/worker-path success (override with `SMOKE_ACCEPT_FAILED_TERMINAL=0`).
+
+### 1) Verify API health
+
+```bash
+curl -sS "$API_BASE_URL/health"
+```
+
+Expected: `{"status":"ok",...}`.
+
+### 2) Ingest a lecture
+
+Create a tiny placeholder WAV file (for smoke test queue validation):
+
+```bash
+python - <<'PY'
+from pathlib import Path
+import wave
+
+path = Path('smoke.wav')
+with wave.open(str(path), 'w') as wav:
+    wav.setnchannels(1)
+    wav.setsampwidth(2)
+    wav.setframerate(16000)
+    wav.writeframes(b'\x00\x00' * 16000)
+print(path)
+PY
+```
+
+Upload it:
+
+```bash
+curl -sS -X POST "$API_BASE_URL/lectures/ingest" \
+  -F "course_id=smoke-course" \
+  -F "lecture_id=smoke-lecture" \
+  -F "preset_id=exam" \
+  -F "title=Smoke Lecture" \
+  -F "audio=@smoke.wav;type=audio/wav"
+```
+
+Expected: JSON containing `lectureId` and `audioPath`.
+
+### 3) Enqueue a transcription job
+
+```bash
+curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/transcribe?model=base"
+```
+
+Capture `jobId` from the response.
+
+### 4) Poll job status
+
+```bash
+curl -sS "$API_BASE_URL/jobs/$JOB_ID"
+```
+
+Poll until `status` is `succeeded` or `failed`.
+
+Success criteria for queue/worker wiring:
+- job transitions away from `queued` (proves worker consumed the queue)
+- job reaches terminal state (`succeeded` or `failed`) and returns `result` or `error`
+
+### 5) Verify worker logs
+
+Check worker logs for dequeue + execution:
+
+```bash
+docker compose logs worker --tail=200
+```
+
+You should see the job picked up and completed/failed with a concrete reason.
+
+### 6) (Optional) Full artifact path smoke
+
+If transcription succeeds in your environment (Whisper/runtime configured):
+
+```bash
+curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/generate" \
+  -H 'Content-Type: application/json' \
+  -d '{"course_id":"smoke-course","preset_id":"exam"}'
+
+curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/export"
+```
+
+Then verify:
+
+```bash
+curl -sS "$API_BASE_URL/lectures/smoke-lecture/artifacts"
+```
+
+and export download endpoints under `/exports/{lecture_id}/{export_type}`.
+
 ## Mobile
 
 Use EAS Build (Expo) for iOS/Android distribution.
