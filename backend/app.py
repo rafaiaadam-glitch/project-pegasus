@@ -313,5 +313,5 @@ def lecture_summary(lecture_id: str) -> dict:
             "artifacts": f"/lectures/{lecture_id}/artifacts",
             "exports": f"/exports/{lecture_id}/{{export_type}}",
             "jobs": "/jobs/{job_id}",
-
-            @app.get("/courses/{course_id}/threads/{title}/history")
+        },
+    }
