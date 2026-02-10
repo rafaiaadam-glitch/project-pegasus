@@ -68,6 +68,36 @@ def _resolve_lecture_upsert_payload(
         "updated_at": _iso_now(),
     }
 
+
+def _resolve_thread_refs(db, course_id: str) -> list[str]:
+    """Load known thread IDs for a course to seed cross-lecture continuity."""
+    fetch_threads_for_course = getattr(db, "fetch_threads_for_course", None)
+    if not callable(fetch_threads_for_course):
+        return []
+
+    try:
+        threads = fetch_threads_for_course(course_id)
+    except Exception:
+        return []
+
+    if not isinstance(threads, list):
+        return []
+
+    refs: list[str] = []
+    seen: set[str] = set()
+    for thread in threads:
+        if not isinstance(thread, dict):
+            continue
+        thread_id = thread.get("id")
+        if not isinstance(thread_id, str):
+            continue
+        normalized = thread_id.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        refs.append(normalized)
+    return refs
+
 def _get_queue() -> Queue:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     connection = Redis.from_url(redis_url)
@@ -214,12 +244,15 @@ def run_generation_job(
         if not transcript_text:
             raise ValueError("Transcript text is empty.")
 
+        db = get_database()
+        thread_refs = _resolve_thread_refs(db, course_id)
+
         context = PipelineContext(
             course_id=course_id,
             lecture_id=lecture_id,
             preset_id=preset_id,
             generated_at=_iso_now(),
-            thread_refs=["thread-placeholder"],
+            thread_refs=thread_refs,
         )
         output_dir = Path("pipeline/output")
         run_pipeline(
@@ -230,7 +263,6 @@ def run_generation_job(
             openai_model=openai_model,
         )
         artifacts_dir = output_dir / lecture_id
-        db = get_database()
         now = _iso_now()
         db.upsert_course(
             {

@@ -156,3 +156,115 @@ def test_enqueue_job_marks_failed_if_inline_task_raises(monkeypatch):
     job = next(iter(fake_db.jobs.values()))
     assert job["status"] == "failed"
     assert "boom" in (job.get("error") or "")
+
+
+def test_resolve_thread_refs_uses_course_threads_when_available():
+    class FakeThreadDB:
+        def fetch_threads_for_course(self, _course_id: str):
+            return [
+                {"id": "thread-1"},
+                {"id": "thread-2"},
+                {"id": ""},
+                {"id": None},
+                {},
+            ]
+
+    refs = jobs_module._resolve_thread_refs(FakeThreadDB(), "course-1")
+
+    assert refs == ["thread-1", "thread-2"]
+
+
+def test_resolve_thread_refs_returns_empty_when_method_missing():
+    refs = jobs_module._resolve_thread_refs(object(), "course-1")
+
+    assert refs == []
+
+
+def test_generation_job_passes_existing_thread_refs_to_pipeline(monkeypatch, tmp_path):
+    storage_dir = tmp_path / "storage"
+    (storage_dir / "transcripts").mkdir(parents=True, exist_ok=True)
+    (storage_dir / "transcripts" / "lecture-xyz.json").write_text(
+        json.dumps({"text": "Transcript text."}), encoding="utf-8"
+    )
+
+    class FakeGenerationDB:
+        def __init__(self) -> None:
+            self.job_updates: list[tuple[str, str]] = []
+            self.courses: list[dict] = []
+
+        def update_job(self, job_id: str, status=None, result=None, error=None, updated_at=None):
+            if status is not None:
+                self.job_updates.append((job_id, status))
+
+        def fetch_threads_for_course(self, _course_id: str):
+            return [{"id": "thread-a"}, {"id": "thread-b"}]
+
+        def upsert_course(self, payload: dict) -> None:
+            self.courses.append(payload)
+
+        def upsert_artifact(self, payload: dict) -> None:
+            return None
+
+        def upsert_thread(self, payload: dict) -> None:
+            return None
+
+    fake_db = FakeGenerationDB()
+    observed = {}
+
+    def fake_run_pipeline(transcript_text, context, output_dir, use_llm=False, openai_model=""):
+        observed["transcript_text"] = transcript_text
+        observed["thread_refs"] = context.thread_refs
+        observed["lecture_id"] = context.lecture_id
+
+    monkeypatch.setenv("PLC_STORAGE_DIR", str(storage_dir))
+    monkeypatch.setattr(jobs_module, "get_database", lambda: fake_db)
+    monkeypatch.setattr(jobs_module, "run_pipeline", fake_run_pipeline)
+
+    result = jobs_module.run_generation_job(
+        "job-4",
+        lecture_id="lecture-xyz",
+        course_id="course-123",
+        preset_id="exam-mode",
+        openai_model="gpt-4o-mini",
+    )
+
+    assert observed["transcript_text"] == "Transcript text."
+    assert observed["thread_refs"] == ["thread-a", "thread-b"]
+    assert observed["lecture_id"] == "lecture-xyz"
+    assert fake_db.job_updates[0] == ("job-4", "running")
+    assert fake_db.job_updates[-1] == ("job-4", "completed")
+    assert result["lectureId"] == "lecture-xyz"
+
+
+def test_resolve_thread_refs_deduplicates_and_normalizes_ids():
+    class FakeThreadDB:
+        def fetch_threads_for_course(self, _course_id: str):
+            return [
+                {"id": "thread-1"},
+                {"id": " thread-1 "},
+                {"id": "thread-2"},
+            ]
+
+    refs = jobs_module._resolve_thread_refs(FakeThreadDB(), "course-1")
+
+    assert refs == ["thread-1", "thread-2"]
+
+
+def test_resolve_thread_refs_returns_empty_on_db_error():
+    class BrokenThreadDB:
+        def fetch_threads_for_course(self, _course_id: str):
+            raise RuntimeError("db unavailable")
+
+    refs = jobs_module._resolve_thread_refs(BrokenThreadDB(), "course-1")
+
+    assert refs == []
+
+
+def test_resolve_thread_refs_returns_empty_when_not_list():
+    class NonListThreadDB:
+        def fetch_threads_for_course(self, _course_id: str):
+            return {"id": "thread-1"}
+
+    refs = jobs_module._resolve_thread_refs(NonListThreadDB(), "course-1")
+
+    assert refs == []
