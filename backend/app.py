@@ -112,6 +112,7 @@ def _compute_stage_progress(latest_by_type: dict[str, dict], stage_order: list[s
         stages[stage] = {
             "status": latest.get("status") if latest else "not_started",
             "jobId": latest.get("id") if latest else None,
+            "createdAt": latest.get("created_at") if latest else None,
             "updatedAt": latest.get("updated_at") if latest else None,
             "error": latest.get("error") if latest else None,
         }
@@ -366,10 +367,12 @@ def course_progress(course_id: str, include_lectures: bool = True) -> dict:
         if overall_status in status_counts:
             status_counts[overall_status] += 1
 
-        lecture_timestamps = [
-            progress_payload["stages"][stage]["updatedAt"] for stage in stage_order
-            if progress_payload["stages"][stage]["updatedAt"]
-        ]
+        lecture_timestamps = []
+        for stage in stage_order:
+            stage_payload = progress_payload["stages"][stage]
+            stage_activity = stage_payload.get("updatedAt") or stage_payload.get("createdAt")
+            if stage_activity:
+                lecture_timestamps.append(stage_activity)
         lecture_timestamps.extend(
             [
                 lecture.get("updated_at"),
