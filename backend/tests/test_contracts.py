@@ -212,6 +212,36 @@ def test_summary_contract(monkeypatch):
             "storage_path": "s3://bucket/lecture-002.pdf",
         }
     )
+    fake_db.jobs.append(
+        {
+            "id": "job-export-1",
+            "lecture_id": lecture_id,
+            "job_type": "export",
+            "status": "queued",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        }
+    )
+    fake_db.jobs.append(
+        {
+            "id": "job-generation-1",
+            "lecture_id": lecture_id,
+            "job_type": "generation",
+            "status": "completed",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        }
+    )
+    fake_db.jobs.append(
+        {
+            "id": "job-transcription-1",
+            "lecture_id": lecture_id,
+            "job_type": "transcription",
+            "status": "completed",
+            "created_at": "2024-01-01T00:00:00Z",
+            "updated_at": "2024-01-01T00:00:00Z",
+        }
+    )
 
     monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
     client = TestClient(app_module.app)
@@ -225,7 +255,18 @@ def test_summary_contract(monkeypatch):
     assert payload["exportCount"] == 1
     assert payload["artifactTypes"] == ["summary"]
     assert payload["exportTypes"] == ["pdf"]
-    assert "links" in payload
+    assert payload["overallStatus"] == "in_progress"
+    assert payload["progressPercent"] == 66
+    assert payload["currentStage"] == "export"
+    assert payload["hasFailedStage"] is False
+    assert payload["stages"]["transcription"]["status"] == "completed"
+    assert payload["stages"]["generation"]["status"] == "completed"
+    assert payload["stages"]["export"]["status"] == "queued"
+    assert payload["links"]["summary"] == f"/lectures/{lecture_id}/summary"
+    assert payload["links"]["progress"] == f"/lectures/{lecture_id}/progress"
+    assert payload["links"]["artifacts"] == f"/lectures/{lecture_id}/artifacts"
+    assert payload["links"]["jobs"] == f"/lectures/{lecture_id}/jobs"
+    assert payload["links"]["exports"] == f"/exports/{lecture_id}/{{export_type}}"
 
 
 def test_course_and_lecture_listings(monkeypatch):
@@ -426,7 +467,10 @@ def test_course_progress_rollup(monkeypatch):
     assert payload["lectureCount"] == 2
     assert payload["completedLectureCount"] == 0
     assert payload["failedLectureCount"] == 1
+    assert payload["inProgressLectureCount"] == 1
+    assert payload["notStartedLectureCount"] == 0
     assert payload["progressPercent"] == 50
+    assert payload["latestActivityAt"] == "2024-01-04T00:00:00Z"
     assert [row["lectureId"] for row in payload["lectures"]] == ["lecture-2", "lecture-1"]
     assert payload["lectures"][0]["overallStatus"] == "failed"
     assert payload["lectures"][0]["stageCount"] == 3
@@ -437,6 +481,10 @@ def test_course_progress_rollup(monkeypatch):
     assert payload["lectures"][0]["hasFailedStage"] is True
     assert payload["lectures"][0]["stageStatuses"]["generation"] == "failed"
     assert payload["lectures"][1]["stageStatuses"]["export"] == "queued"
+    assert payload["lectures"][0]["links"]["summary"] == "/lectures/lecture-2/summary"
+    assert payload["lectures"][0]["links"]["progress"] == "/lectures/lecture-2/progress"
+    assert payload["lectures"][0]["links"]["artifacts"] == "/lectures/lecture-2/artifacts"
+    assert payload["lectures"][0]["links"]["jobs"] == "/lectures/lecture-2/jobs"
 
 
 def test_course_progress_summary_without_lectures(monkeypatch):
@@ -464,7 +512,12 @@ def test_course_progress_summary_without_lectures(monkeypatch):
 
     assert payload["overallStatus"] == "not_started"
     assert payload["lectureCount"] == 1
+    assert payload["completedLectureCount"] == 0
+    assert payload["failedLectureCount"] == 0
+    assert payload["inProgressLectureCount"] == 0
+    assert payload["notStartedLectureCount"] == 1
     assert payload["progressPercent"] == 0
+    assert payload["latestActivityAt"] == "2024-01-01T00:00:00Z"
     assert "lectures" not in payload
 
 
@@ -673,6 +726,10 @@ def test_lecture_progress_contract(monkeypatch):
     assert payload["stages"]["transcription"]["status"] == "completed"
     assert payload["stages"]["generation"]["status"] == "completed"
     assert payload["stages"]["export"]["status"] == "queued"
+    assert payload["links"]["summary"] == f"/lectures/{lecture_id}/summary"
+    assert payload["links"]["progress"] == f"/lectures/{lecture_id}/progress"
+    assert payload["links"]["artifacts"] == f"/lectures/{lecture_id}/artifacts"
+    assert payload["links"]["jobs"] == f"/lectures/{lecture_id}/jobs"
 
     missing = client.get("/lectures/missing/progress")
     assert missing.status_code == 404
@@ -722,3 +779,5 @@ def test_lecture_progress_contract_failed_stage(monkeypatch):
     assert payload["progressPercent"] == 33
     assert payload["currentStage"] == "generation"
     assert payload["hasFailedStage"] is True
+    assert payload["links"]["summary"] == f"/lectures/{lecture_id}/summary"
+    assert payload["links"]["progress"] == f"/lectures/{lecture_id}/progress"
