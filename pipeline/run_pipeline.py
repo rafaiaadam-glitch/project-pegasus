@@ -5,11 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
+
+# Add parent directory to path to allow imports without PYTHONPATH
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.schema_validator import SchemaValidator
 
