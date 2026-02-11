@@ -20,7 +20,7 @@ from backend.jobs import (
     run_transcription_job,
 )
 from backend.presets import PRESETS, PRESETS_BY_ID
-from backend.storage import download_url, save_audio
+from backend.storage import download_url, load_json_payload, save_audio
 
 app = FastAPI(title="Pegasus Lecture Copilot API")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
@@ -537,6 +537,39 @@ def get_lecture(lecture_id: str) -> dict:
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found.")
     return lecture
+
+@app.get("/lectures/{lecture_id}/transcript")
+def get_lecture_transcript(
+    lecture_id: str,
+    include_text: bool = Query(default=True),
+    segment_limit: Optional[int] = Query(default=None, ge=0),
+) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+
+    transcript_path = lecture.get("transcript_path")
+    if not transcript_path:
+        raise HTTPException(status_code=404, detail="Transcript not found for lecture.")
+
+    try:
+        transcript = load_json_payload(transcript_path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Transcript file missing.")
+
+    segments = transcript.get("segments", [])
+    if segment_limit is not None:
+        segments = segments[:segment_limit]
+
+    return {
+        "lectureId": lecture_id,
+        "transcriptPath": transcript_path,
+        "language": transcript.get("language"),
+        "text": transcript.get("text", "") if include_text else "",
+        "segments": segments,
+        "segmentCount": len(segments),
+    }
 
 @app.get("/lectures")
 def list_lectures(
