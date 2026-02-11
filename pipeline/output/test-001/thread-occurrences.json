@@ -1,0 +1,84 @@
+{
+  "occurrences": [
+    {
+      "id": "62de9c94-89a0-46ea-b2d3-b713ca85a716",
+      "threadId": "b3d7250f-5901-4c41-91e3-1cb66c08c18f",
+      "courseId": "test-course",
+      "lectureId": "test-001",
+      "artifactId": "summary",
+      "evidence": "We also discussed how myelination increases conduction velocity and why that matters for rapid response.",
+      "confidence": 0.8,
+      "capturedAt": "2026-02-11T09:32:48.248331+00:00"
+    },
+    {
+      "id": "e2193ec7-d0fd-48d0-8e0d-ad7337b304af",
+      "threadId": "638ea655-2b98-4961-8546-781c2043b105",
+      "courseId": "test-course",
+      "lectureId": "test-001",
+      "artifactId": "summary",
+      "evidence": "Topic: Neural signaling basics.",
+      "confidence": 0.6,
+      "capturedAt": "2026-02-11T09:32:48.248331+00:00"
+    },
+    {
+      "id": "d42b3dd5-ad9b-4d22-8c66-b3a1103e313f",
+      "threadId": "f50e7c7a-f48f-4f0c-a618-2ce4da7163d1",
+      "courseId": "test-course",
+      "lectureId": "test-001",
+      "artifactId": "summary",
+      "evidence": "Topic: Neural signaling basics.",
+      "confidence": 0.6,
+      "capturedAt": "2026-02-11T09:32:48.248331+00:00"
+    },
+    {
+      "id": "b6fd6230-82fe-4f11-85ec-826feb3044af",
+      "threadId": "0b629499-cf53-4fd9-8797-a2765153d846",
+      "courseId": "test-course",
+      "lectureId": "test-001",
+      "artifactId": "summary",
+      "evidence": "Topic: Neural signaling basics.",
+      "confidence": 0.6,
+      "capturedAt": "2026-02-11T09:32:48.248331+00:00"
+    },
+    {
+      "id": "c1c37563-f54e-44c4-8f49-4b2ad5d52989",
+      "threadId": "8b20a7db-113d-4b19-b1f6-cd193794244b",
+      "courseId": "test-course",
+      "lectureId": "test-001",
+      "artifactId": "summary",
+      "evidence": "Today we covered how neurons transmit signals using action potentials.",
+      "confidence": 0.6,
+      "capturedAt": "2026-02-11T09:32:48.248331+00:00"
+    },
+    {
+      "id": "967847f8-9a57-43a4-96c7-e7facf700562",
+      "threadId": "3da9ae8f-e15a-43ab-ba76-6576fdf96f7b",
+      "courseId": "test-course",
+      "lectureId": "test-001",
+      "artifactId": "summary",
+      "evidence": "Today we covered how neurons transmit signals using action potentials.",
+      "confidence": 0.6,
+      "capturedAt": "2026-02-11T09:32:48.248331+00:00"
+    },
+    {
+      "id": "5c59a079-3c7d-4a11-bd82-1a357aa4f1ab",
+      "threadId": "8bf41b99-2edc-4f75-9c53-278f8769ca15",
+      "courseId": "test-course",
+      "lectureId": "test-001",
+      "artifactId": "summary",
+      "evidence": "Today we covered how neurons transmit signals using action potentials.",
+      "confidence": 0.6,
+      "capturedAt": "2026-02-11T09:32:48.248331+00:00"
+    },
+    {
+      "id": "645821a0-261d-48e5-b10c-467d6b094f31",
+      "threadId": "bda9a748-2e42-46a9-9426-a4a04ca5c10e",
+      "courseId": "test-course",
+      "lectureId": "test-001",
+      "artifactId": "summary",
+      "evidence": "Today we covered how neurons transmit signals using action potentials.",
+      "confidence": 0.6,
+      "capturedAt": "2026-02-11T09:32:48.248331+00:00"
+    }
+  ]
+}

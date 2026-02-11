@@ -1,0 +1,35 @@
+{
+  "id": "8e2da5e5-5300-43b4-a892-f34697085a1c",
+  "courseId": "test-course",
+  "lectureId": "test-001",
+  "presetId": "exam-mode",
+  "artifactType": "flashcards",
+  "generatedAt": "2026-02-11T09:32:48.248331+00:00",
+  "version": "0.2",
+  "threadRefs": [
+    "b3d7250f-5901-4c41-91e3-1cb66c08c18f",
+    "638ea655-2b98-4961-8546-781c2043b105",
+    "f50e7c7a-f48f-4f0c-a618-2ce4da7163d1"
+  ],
+  "cards": [
+    {
+      "front": "Define the primary mechanism.",
+      "back": "The main process that drives the system behavior.",
+      "difficulty": "easy",
+      "tags": [
+        "definitions",
+        "exam"
+      ],
+      "threadRef": "638ea655-2b98-4961-8546-781c2043b105"
+    },
+    {
+      "front": "Compare enhanced vs standard process.",
+      "back": "Enhanced uses optimization; standard is slower without it.",
+      "difficulty": "medium",
+      "tags": [
+        "comparisons",
+        "exam"
+      ]
+    }
+  ]
+}

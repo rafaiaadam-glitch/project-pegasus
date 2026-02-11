@@ -1,0 +1,31 @@
+{
+  "id": "83c9bc26-99d8-4665-bf9f-2d1e5720cc38",
+  "courseId": "test-course",
+  "lectureId": "test-001",
+  "presetId": "exam-mode",
+  "artifactType": "outline",
+  "generatedAt": "2026-02-11T09:32:48.248331+00:00",
+  "version": "0.2",
+  "threadRefs": [
+    "b3d7250f-5901-4c41-91e3-1cb66c08c18f",
+    "638ea655-2b98-4961-8546-781c2043b105",
+    "f50e7c7a-f48f-4f0c-a618-2ce4da7163d1"
+  ],
+  "outline": [
+    {
+      "title": "Exam essentials",
+      "points": [
+        "Define key terms and baseline state",
+        "Explain primary vs secondary component roles",
+        "Contrast different process types"
+      ]
+    },
+    {
+      "title": "Common exam angles",
+      "points": [
+        "Explain mechanism A vs mechanism B",
+        "Describe how factor X changes outcome Y"
+      ]
+    }
+  ]
+}

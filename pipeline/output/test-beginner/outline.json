@@ -1,0 +1,40 @@
+{
+  "id": "26601489-afae-4ccd-a48f-58c4d48048e2",
+  "courseId": "course-001",
+  "lectureId": "test-beginner",
+  "presetId": "beginner-mode",
+  "artifactType": "outline",
+  "generatedAt": "2026-02-11T09:33:47.109866+00:00",
+  "version": "0.2",
+  "threadRefs": [
+    "2c5e7d74-d171-4e8c-9dca-704c0ab9f42d",
+    "b14644ae-ac3e-4093-ba7d-c94d03250d67",
+    "02dcda68-b5ba-4465-9797-834087a28b27"
+  ],
+  "outline": [
+    {
+      "title": "Main mechanisms",
+      "points": [
+        "Baseline state and threshold",
+        "Primary process via component A",
+        "Secondary process via component B"
+      ]
+    },
+    {
+      "title": "System transmission",
+      "points": [
+        "Type A vs Type B interactions",
+        "Optimization factor and speed"
+      ],
+      "children": [
+        {
+          "title": "Enhanced vs standard process",
+          "points": [
+            "Enhanced process uses optimization method",
+            "Standard process is slower without optimization"
+          ]
+        }
+      ]
+    }
+  ]
+}

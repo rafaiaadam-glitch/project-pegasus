@@ -1,0 +1,31 @@
+{
+  "id": "4da9ff58-40c7-4015-a596-0dcf3bc55a1e",
+  "courseId": "test-course",
+  "lectureId": "test-001",
+  "presetId": "exam-mode",
+  "artifactType": "summary",
+  "generatedAt": "2026-02-11T09:32:48.248331+00:00",
+  "version": "0.2",
+  "threadRefs": [
+    "b3d7250f-5901-4c41-91e3-1cb66c08c18f",
+    "638ea655-2b98-4961-8546-781c2043b105",
+    "f50e7c7a-f48f-4f0c-a618-2ce4da7163d1"
+  ],
+  "overview": "Preset 'exam-mode' summary of lecture test-001.",
+  "sections": [
+    {
+      "title": "Core essentials",
+      "bullets": [
+        "Main concept and fundamental mechanisms.",
+        "Key process and driving factors."
+      ]
+    },
+    {
+      "title": "Continuity hooks",
+      "bullets": [
+        "Factor X increases efficiency through specific mechanism.",
+        "Repeated application strengthens understanding for later lectures."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "34c36304-97a0-4e8f-818c-2af4f17d1fee",
+  "courseId": "course-001",
+  "lectureId": "test-research",
+  "presetId": "research-mode",
+  "artifactType": "key-terms",
+  "generatedAt": "2026-02-11T09:33:59.940541+00:00",
+  "version": "0.2",
+  "threadRefs": [
+    "2c5e7d74-d171-4e8c-9dca-704c0ab9f42d",
+    "b14644ae-ac3e-4093-ba7d-c94d03250d67",
+    "02dcda68-b5ba-4465-9797-834087a28b27"
+  ],
+  "terms": [
+    {
+      "term": "Primary mechanism",
+      "definition": "The main process driving the phenomenon. [evidence]",
+      "threadRef": "b14644ae-ac3e-4093-ba7d-c94d03250d67"
+    },
+    {
+      "term": "System adaptability",
+      "definition": "The capacity for change and optimization. [evidence]"
+    }
+  ]
+}
