@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional
 
 
@@ -30,20 +30,36 @@ class StepInfo:
 class ProgressTracker:
     """Tracks progress of pipeline execution with real-time feedback."""
 
-    def __init__(self, total_steps: int = 0, verbose: bool = True):
+    def __init__(
+        self,
+        total_steps: int = 0,
+        verbose: bool = True,
+        log_file: Optional[str] = None,
+    ):
         """
         Initialize progress tracker.
 
         Args:
             total_steps: Expected number of steps in the pipeline
             verbose: Whether to print progress to console
+            log_file: Optional path to append step logs and summary output
         """
         self.total_steps = total_steps
         self.verbose = verbose
+        self.log_file = Path(log_file) if log_file else None
         self.steps: List[StepInfo] = []
         self._step_index: Dict[str, int] = {}
         self._current_step: Optional[str] = None
         self._pipeline_start = time.time()
+
+    def _emit(self, message: str) -> None:
+        """Write a progress message to stdout and/or a log file."""
+        if self.verbose:
+            print(message)
+        if self.log_file:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_file.open("a", encoding="utf-8") as handle:
+                handle.write(f"{message}\n")
 
     def start_step(self, step_name: str) -> None:
         """
@@ -58,9 +74,9 @@ class ProgressTracker:
         self._step_index[step_name] = step_num
         self._current_step = step_name
 
-        if self.verbose:
-            total_info = f"/{self.total_steps}" if self.total_steps > 0 else ""
-            print(f"[{step_num}{total_info}] Starting: {step_name}...")
+        total_info = f"/{self.total_steps}" if self.total_steps > 0 else ""
+        if self.verbose or self.log_file:
+            self._emit(f"[{step_num}{total_info}] Starting: {step_name}...")
 
     def complete_step(self, step_name: str) -> None:
         """
@@ -71,15 +87,17 @@ class ProgressTracker:
         """
         if step_name not in self._step_index:
             if self.verbose:
-                print(f"Warning: Attempting to complete unknown step '{step_name}'")
+                self._emit(f"Warning: Attempting to complete unknown step '{step_name}'")
+            elif self.log_file:
+                self._emit(f"Warning: Attempting to complete unknown step '{step_name}'")
             return
 
         step = self.steps[self._step_index[step_name]]
         step.status = "completed"
         step.end_time = time.time()
 
-        if self.verbose and step.duration:
-            print(f"✓ {step_name} ({step.duration:.1f}s)")
+        if step.duration:
+            self._emit(f"✓ {step_name} ({step.duration:.1f}s)")
 
         self._current_step = None
 
@@ -93,7 +111,9 @@ class ProgressTracker:
         """
         if step_name not in self._step_index:
             if self.verbose:
-                print(f"✗ Error in unknown step '{step_name}': {error_message}")
+                self._emit(f"✗ Error in unknown step '{step_name}': {error_message}")
+            elif self.log_file:
+                self._emit(f"✗ Error in unknown step '{step_name}': {error_message}")
             return
 
         step = self.steps[self._step_index[step_name]]
@@ -101,10 +121,9 @@ class ProgressTracker:
         step.end_time = time.time()
         step.error_message = error_message
 
-        if self.verbose:
-            duration_info = f" ({step.duration:.1f}s)" if step.duration else ""
-            print(f"✗ {step_name}{duration_info}")
-            print(f"  Error: {error_message}")
+        duration_info = f" ({step.duration:.1f}s)" if step.duration else ""
+        self._emit(f"✗ {step_name}{duration_info}")
+        self._emit(f"  Error: {error_message}")
 
         self._current_step = None
 
@@ -151,5 +170,10 @@ class ProgressTracker:
 
     def print_summary(self) -> None:
         """Print the summary report to console."""
+        summary = self.get_summary()
         if self.verbose:
-            print(self.get_summary())
+            print(summary)
+        if self.log_file:
+            self.log_file.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_file.open("a", encoding="utf-8") as handle:
+                handle.write(f"{summary}\n")

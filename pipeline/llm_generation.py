@@ -20,7 +20,11 @@ def _require_env(name: str) -> str:
 
 
 def _request_openai(payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any]:
-    from pipeline.retry_utils import with_retry, RetryConfig, NonRetryableError
+    from pipeline.retry_utils import (
+        with_retry,
+        retry_config_from_env,
+        NonRetryableError,
+    )
 
     def make_request() -> Dict[str, Any]:
         api_key = _require_env("OPENAI_API_KEY")
@@ -37,7 +41,7 @@ def _request_openai(payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
-    config = RetryConfig(max_attempts=3, initial_delay=2.0, max_delay=30.0)
+    config = retry_config_from_env()
 
     try:
         return with_retry(make_request, config=config,

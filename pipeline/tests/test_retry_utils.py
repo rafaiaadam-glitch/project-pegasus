@@ -10,6 +10,7 @@ from pipeline.retry_utils import (
     NonRetryableError,
     MaxRetriesExceeded,
     _is_retryable_error,
+    retry_config_from_env,
     with_retry,
 )
 
@@ -182,3 +183,51 @@ def test_with_retry_preserves_return_type():
     assert with_retry(lambda: "text", operation_name="str") == "text"
     assert with_retry(lambda: {"key": "value"}, operation_name="dict") == {"key": "value"}
     assert with_retry(lambda: [1, 2, 3], operation_name="list") == [1, 2, 3]
+
+
+def test_retry_config_from_env_defaults(monkeypatch):
+    """Test env config helper returns expected defaults when unset."""
+    monkeypatch.delenv("PLC_RETRY_MAX_ATTEMPTS", raising=False)
+    monkeypatch.delenv("PLC_RETRY_INITIAL_DELAY", raising=False)
+    monkeypatch.delenv("PLC_RETRY_MAX_DELAY", raising=False)
+    monkeypatch.delenv("PLC_RETRY_BACKOFF_MULTIPLIER", raising=False)
+
+    config = retry_config_from_env()
+
+    assert config.max_attempts == 3
+    assert config.initial_delay == 2.0
+    assert config.max_delay == 30.0
+    assert config.backoff_multiplier == 2.0
+
+
+def test_retry_config_from_env_custom_values(monkeypatch):
+    """Test env config helper uses custom values when valid."""
+    monkeypatch.setenv("PLC_RETRY_MAX_ATTEMPTS", "5")
+    monkeypatch.setenv("PLC_RETRY_INITIAL_DELAY", "0.5")
+    monkeypatch.setenv("PLC_RETRY_MAX_DELAY", "4.0")
+    monkeypatch.setenv("PLC_RETRY_BACKOFF_MULTIPLIER", "1.5")
+
+    config = retry_config_from_env()
+
+    assert config.max_attempts == 5
+    assert config.initial_delay == 0.5
+    assert config.max_delay == 4.0
+    assert config.backoff_multiplier == 1.5
+
+
+def test_retry_config_from_env_invalid_values_fallback(monkeypatch):
+    """Test env config helper clamps/falls back for invalid values."""
+    monkeypatch.setenv("PLC_RETRY_MAX_ATTEMPTS", "invalid")
+    monkeypatch.setenv("PLC_RETRY_INITIAL_DELAY", "-3")
+    monkeypatch.setenv("PLC_RETRY_MAX_DELAY", "-5")
+    monkeypatch.setenv("PLC_RETRY_BACKOFF_MULTIPLIER", "0")
+
+    config = retry_config_from_env()
+
+    # invalid int falls back to default
+    assert config.max_attempts == 3
+    # negative delays clamp to 0, then max_delay is raised to initial_delay
+    assert config.initial_delay == 0.0
+    assert config.max_delay == 0.0
+    # multiplier clamps to minimum 1.0
+    assert config.backoff_multiplier == 1.0

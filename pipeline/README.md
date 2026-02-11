@@ -100,6 +100,8 @@ python pipeline/run_pipeline.py --help
 - `--openai-model MODEL` - OpenAI model to use (default: `gpt-4o-mini`)
 - `--export` - Export to Markdown, PDF, and Anki CSV
 - `--output-dir PATH` - Output directory (default: `pipeline/output`)
+- `--progress-log-file PATH` - Optional file to append progress events and summary
+- `--quiet` - Disable console progress/status output (useful in automation)
 
 ---
 
@@ -218,11 +220,17 @@ Robust API call handling with exponential backoff:
 
 **Implementation:**
 ```python
-from pipeline.retry_utils import with_retry, RetryConfig
+from pipeline.retry_utils import with_retry, retry_config_from_env
 
-config = RetryConfig(max_attempts=3, initial_delay=2.0)
+config = retry_config_from_env()
 result = with_retry(make_api_call, config=config, operation_name="API request")
 ```
+
+**Environment overrides (optional):**
+- `PLC_RETRY_MAX_ATTEMPTS` (int, minimum `1`)
+- `PLC_RETRY_INITIAL_DELAY` (float seconds, minimum `0`)
+- `PLC_RETRY_MAX_DELAY` (float seconds, minimum `0`, auto-adjusted to `>= INITIAL_DELAY`)
+- `PLC_RETRY_BACKOFF_MULTIPLIER` (float, minimum `1.0`)
 
 ### Thread Reference Consistency (Feb 2026)
 

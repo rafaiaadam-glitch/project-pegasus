@@ -246,6 +246,17 @@ def _parse_args() -> argparse.Namespace:
         default=Path("pipeline/output"),
         help="Output directory for artifacts.",
     )
+    parser.add_argument(
+        "--progress-log-file",
+        type=Path,
+        default=None,
+        help="Optional file path to append progress logs and final summary.",
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Disable console progress output (use with --progress-log-file for persisted logs).",
+    )
     return parser.parse_args()
 
 
@@ -269,7 +280,11 @@ def main() -> None:
         thread_refs=[],  # Start empty, populated in run_pipeline
     )
 
-    tracker = ProgressTracker(total_steps=3, verbose=True)
+    tracker = ProgressTracker(
+        total_steps=3,
+        verbose=not args.quiet,
+        log_file=str(args.progress_log_file) if args.progress_log_file else None,
+    )
     run_pipeline(
         transcript,
         context,
@@ -279,7 +294,8 @@ def main() -> None:
         progress_tracker=tracker,
     )
     tracker.print_summary()
-    print(f"Artifacts written to {args.output_dir / args.lecture_id}")
+    if not args.quiet:
+        print(f"Artifacts written to {args.output_dir / args.lecture_id}")
 
     if args.export:
         from pipeline.export_artifacts import export_artifacts
@@ -289,7 +305,8 @@ def main() -> None:
             artifact_dir=args.output_dir / args.lecture_id,
             export_dir=Path("storage") / "exports" / args.lecture_id,
         )
-        print(f"Exports written to {Path('storage') / 'exports' / args.lecture_id}")
+        if not args.quiet:
+            print(f"Exports written to {Path('storage') / 'exports' / args.lecture_id}")
 
 
 if __name__ == "__main__":
