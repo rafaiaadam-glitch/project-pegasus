@@ -167,3 +167,35 @@ def test_error_handling_workflow():
     summary = tracker.get_summary()
     assert "2 succeeded, 1 failed" in summary
     assert "Network timeout" in summary
+
+
+def test_log_file_records_progress_when_not_verbose(tmp_path):
+    """Test progress messages are appended to a log file with verbose output disabled."""
+    log_path = tmp_path / "progress" / "run.log"
+    tracker = ProgressTracker(total_steps=2, verbose=False, log_file=str(log_path))
+
+    tracker.start_step("thread_generation")
+    tracker.complete_step("thread_generation")
+    tracker.start_step("artifact_generation")
+    tracker.report_error("artifact_generation", "Schema mismatch")
+    tracker.print_summary()
+
+    contents = log_path.read_text(encoding="utf-8")
+    assert "Starting: thread_generation" in contents
+    assert "✓ thread_generation" in contents
+    assert "✗ artifact_generation" in contents
+    assert "Schema mismatch" in contents
+    assert "PIPELINE EXECUTION SUMMARY" in contents
+
+
+def test_log_file_created_for_unknown_step_warning(tmp_path):
+    """Test warnings/errors for unknown steps are also written to log output."""
+    log_path = tmp_path / "warnings.log"
+    tracker = ProgressTracker(verbose=False, log_file=str(log_path))
+
+    tracker.complete_step("missing-step")
+    tracker.report_error("missing-step", "No step context")
+
+    contents = log_path.read_text(encoding="utf-8")
+    assert "Warning: Attempting to complete unknown step 'missing-step'" in contents
+    assert "Error in unknown step 'missing-step': No step context" in contents

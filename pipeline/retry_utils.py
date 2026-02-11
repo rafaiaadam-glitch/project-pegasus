@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import time
+import os
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, TypeVar
 from urllib.error import HTTPError, URLError
@@ -20,6 +21,57 @@ class RetryConfig:
     initial_delay: float = 1.0
     max_delay: float = 30.0
     backoff_multiplier: float = 2.0
+
+
+def retry_config_from_env(prefix: str = "PLC_RETRY_") -> RetryConfig:
+    """Build retry config from environment variables with sane defaults.
+
+    Supported variables:
+    - {prefix}MAX_ATTEMPTS (int)
+    - {prefix}INITIAL_DELAY (float)
+    - {prefix}MAX_DELAY (float)
+    - {prefix}BACKOFF_MULTIPLIER (float)
+    """
+    defaults = RetryConfig(max_attempts=3, initial_delay=2.0, max_delay=30.0)
+
+    def _int_env(name: str, default: int, minimum: int) -> int:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        try:
+            value = int(raw)
+        except ValueError:
+            return default
+        return max(minimum, value)
+
+    def _float_env(name: str, default: float, minimum: float) -> float:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        try:
+            value = float(raw)
+        except ValueError:
+            return default
+        return max(minimum, value)
+
+    max_attempts = _int_env(f"{prefix}MAX_ATTEMPTS", defaults.max_attempts, 1)
+    initial_delay = _float_env(f"{prefix}INITIAL_DELAY", defaults.initial_delay, 0.0)
+    max_delay = _float_env(f"{prefix}MAX_DELAY", defaults.max_delay, 0.0)
+    backoff_multiplier = _float_env(
+        f"{prefix}BACKOFF_MULTIPLIER",
+        defaults.backoff_multiplier,
+        1.0,
+    )
+
+    # Ensure max_delay is never below initial_delay.
+    max_delay = max(max_delay, initial_delay)
+
+    return RetryConfig(
+        max_attempts=max_attempts,
+        initial_delay=initial_delay,
+        max_delay=max_delay,
+        backoff_multiplier=backoff_multiplier,
+    )
 
 
 class NonRetryableError(Exception):
