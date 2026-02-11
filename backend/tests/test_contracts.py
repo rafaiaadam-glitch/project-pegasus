@@ -271,6 +271,9 @@ def test_course_and_lecture_listings(monkeypatch):
     assert response.status_code == 200
     assert [lecture["id"] for lecture in response.json()["lectures"]] == ["lecture-1"]
 
+    missing_course_lectures = client.get("/courses/missing/lectures")
+    assert missing_course_lectures.status_code == 404
+
     response = client.get("/lectures", params={"course_id": "course-2"})
     assert response.status_code == 200
     assert [lecture["id"] for lecture in response.json()["lectures"]] == ["lecture-2"]
@@ -348,6 +351,131 @@ def test_course_threads_listing(monkeypatch):
     payload = response.json()
     assert payload["courseId"] == "course-1"
     assert [thread["id"] for thread in payload["threads"]] == ["thread-2", "thread-1"]
+
+
+def test_course_progress_rollup(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.courses["course-1"] = {
+        "id": "course-1",
+        "title": "Course One",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z",
+    }
+    fake_db.lectures["lecture-1"] = {
+        "id": "lecture-1",
+        "course_id": "course-1",
+        "title": "Lecture One",
+        "status": "processing",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
+    fake_db.lectures["lecture-2"] = {
+        "id": "lecture-2",
+        "course_id": "course-1",
+        "title": "Lecture Two",
+        "status": "failed",
+        "created_at": "2024-01-02T00:00:00Z",
+    }
+    fake_db.jobs.extend(
+        [
+            {
+                "id": "job-lecture-1-export",
+                "lecture_id": "lecture-1",
+                "job_type": "export",
+                "status": "queued",
+                "created_at": "2024-01-03T00:00:00Z",
+            },
+            {
+                "id": "job-lecture-1-generation",
+                "lecture_id": "lecture-1",
+                "job_type": "generation",
+                "status": "completed",
+                "created_at": "2024-01-02T00:00:00Z",
+            },
+            {
+                "id": "job-lecture-1-transcription",
+                "lecture_id": "lecture-1",
+                "job_type": "transcription",
+                "status": "completed",
+                "created_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "id": "job-lecture-2-generation",
+                "lecture_id": "lecture-2",
+                "job_type": "generation",
+                "status": "failed",
+                "created_at": "2024-01-04T00:00:00Z",
+            },
+            {
+                "id": "job-lecture-2-transcription",
+                "lecture_id": "lecture-2",
+                "job_type": "transcription",
+                "status": "completed",
+                "created_at": "2024-01-03T00:00:00Z",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/courses/course-1/progress")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["courseId"] == "course-1"
+    assert payload["lectureCount"] == 2
+    assert payload["completedLectureCount"] == 0
+    assert payload["failedLectureCount"] == 1
+    assert payload["progressPercent"] == 50
+    assert [row["lectureId"] for row in payload["lectures"]] == ["lecture-2", "lecture-1"]
+    assert payload["lectures"][0]["overallStatus"] == "failed"
+    assert payload["lectures"][0]["stageCount"] == 3
+    assert payload["lectures"][0]["completedStageCount"] == 1
+    assert payload["lectures"][0]["currentStage"] == "generation"
+    assert payload["lectures"][1]["completedStageCount"] == 2
+    assert payload["lectures"][1]["currentStage"] == "export"
+    assert payload["lectures"][0]["hasFailedStage"] is True
+    assert payload["lectures"][0]["stageStatuses"]["generation"] == "failed"
+    assert payload["lectures"][1]["stageStatuses"]["export"] == "queued"
+
+
+def test_course_progress_summary_without_lectures(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.courses["course-1"] = {
+        "id": "course-1",
+        "title": "Course One",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z",
+    }
+    fake_db.lectures["lecture-1"] = {
+        "id": "lecture-1",
+        "course_id": "course-1",
+        "title": "Lecture One",
+        "status": "uploaded",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/courses/course-1/progress", params={"include_lectures": "false"})
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["overallStatus"] == "not_started"
+    assert payload["lectureCount"] == 1
+    assert payload["progressPercent"] == 0
+    assert "lectures" not in payload
+
+
+def test_course_progress_missing_course(monkeypatch):
+    fake_db = FakeDB()
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/courses/missing/progress")
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Course not found."
 
 
 def test_generate_rejects_invalid_preset_id():
@@ -536,11 +664,61 @@ def test_lecture_progress_contract(monkeypatch):
 
     assert payload["lectureId"] == lecture_id
     assert payload["lectureStatus"] == "processing"
+    assert payload["overallStatus"] == "in_progress"
     assert payload["stageCount"] == 3
     assert payload["completedStageCount"] == 2
+    assert payload["progressPercent"] == 66
+    assert payload["currentStage"] == "export"
+    assert payload["hasFailedStage"] is False
     assert payload["stages"]["transcription"]["status"] == "completed"
     assert payload["stages"]["generation"]["status"] == "completed"
     assert payload["stages"]["export"]["status"] == "queued"
 
     missing = client.get("/lectures/missing/progress")
     assert missing.status_code == 404
+
+
+def test_lecture_progress_contract_failed_stage(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-012"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "title": "Lecture Twelve",
+        "status": "failed",
+    }
+    fake_db.jobs.append(
+        {
+            "id": "job-generation-failed",
+            "lecture_id": lecture_id,
+            "job_type": "generation",
+            "status": "failed",
+            "result": None,
+            "error": "schema validation failed",
+            "created_at": "2024-01-03T00:00:00Z",
+            "updated_at": "2024-01-03T00:01:00Z",
+        }
+    )
+    fake_db.jobs.append(
+        {
+            "id": "job-transcription-complete",
+            "lecture_id": lecture_id,
+            "job_type": "transcription",
+            "status": "completed",
+            "result": {"transcriptPath": "storage/transcripts/lecture-012.json"},
+            "error": None,
+            "created_at": "2024-01-02T00:00:00Z",
+            "updated_at": "2024-01-02T00:01:00Z",
+        }
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get(f"/lectures/{lecture_id}/progress")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["overallStatus"] == "failed"
+    assert payload["progressPercent"] == 33
+    assert payload["currentStage"] == "generation"
+    assert payload["hasFailedStage"] is True

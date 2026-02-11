@@ -88,6 +88,62 @@ def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateReques
     return course_id, preset_id
 
 
+def _latest_jobs_by_type(jobs: list[dict]) -> dict[str, dict]:
+    latest_by_type: dict[str, dict] = {}
+    for job in jobs:
+        job_type = job.get("job_type")
+        if not job_type or job_type in latest_by_type:
+            continue
+        latest_by_type[job_type] = job
+    return latest_by_type
+
+
+def _fetch_course_or_404(db, course_id: str) -> dict:
+    course = db.fetch_course(course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
+    return course
+
+
+def _compute_stage_progress(latest_by_type: dict[str, dict], stage_order: list[str]) -> dict:
+    stages: dict[str, dict] = {}
+    for stage in stage_order:
+        latest = latest_by_type.get(stage)
+        stages[stage] = {
+            "status": latest.get("status") if latest else "not_started",
+            "jobId": latest.get("id") if latest else None,
+            "updatedAt": latest.get("updated_at") if latest else None,
+            "error": latest.get("error") if latest else None,
+        }
+
+    completed_count = sum(1 for stage in stage_order if stages[stage]["status"] == "completed")
+    progress_percent = int((completed_count / len(stage_order)) * 100)
+    current_stage = next(
+        (stage for stage in stage_order if stages[stage]["status"] != "completed"),
+        "completed",
+    )
+    has_failed_stage = any(stages[stage]["status"] == "failed" for stage in stage_order)
+
+    return {
+        "stageCount": len(stage_order),
+        "completedStageCount": completed_count,
+        "progressPercent": progress_percent,
+        "currentStage": current_stage,
+        "hasFailedStage": has_failed_stage,
+        "stages": stages,
+    }
+
+
+def _derive_overall_status(stage_progress: dict) -> str:
+    if stage_progress["hasFailedStage"]:
+        return "failed"
+    if stage_progress["completedStageCount"] == stage_progress["stageCount"]:
+        return "completed"
+    if stage_progress["completedStageCount"] > 0 or stage_progress["currentStage"] != "transcription":
+        return "in_progress"
+    return "not_started"
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "time": _iso_now()}
@@ -241,6 +297,7 @@ def list_course_lectures(
     offset: Optional[int] = None,
 ) -> dict:
     db = get_database()
+    _fetch_course_or_404(db, course_id)
     return {
         "courseId": course_id,
         "lectures": db.fetch_lectures(course_id=course_id, limit=limit, offset=offset),
@@ -255,6 +312,70 @@ def list_course_threads(course_id: str) -> dict:
         "threads": db.fetch_threads_for_course(course_id),
     }
 
+
+@app.get("/courses/{course_id}/progress")
+def course_progress(course_id: str, include_lectures: bool = True) -> dict:
+    db = get_database()
+    _fetch_course_or_404(db, course_id)
+
+    lectures = db.fetch_lectures(course_id=course_id)
+    stage_order = ["transcription", "generation", "export"]
+
+    lecture_progress = []
+    completed_lectures = 0
+    failed_lectures = 0
+
+    for lecture in lectures:
+        lecture_id = lecture["id"]
+        progress = _compute_stage_progress(_latest_jobs_by_type(db.fetch_jobs(lecture_id=lecture_id)), stage_order)
+        overall_status = _derive_overall_status(progress)
+
+        if overall_status == "completed":
+            completed_lectures += 1
+        if overall_status == "failed":
+            failed_lectures += 1
+
+        lecture_progress.append(
+            {
+                "lectureId": lecture_id,
+                "lectureStatus": lecture.get("status"),
+                "overallStatus": overall_status,
+                "stageCount": progress["stageCount"],
+                "completedStageCount": progress["completedStageCount"],
+                "progressPercent": progress["progressPercent"],
+                "currentStage": progress["currentStage"],
+                "hasFailedStage": progress["hasFailedStage"],
+                "stageStatuses": {
+                    stage: progress["stages"][stage]["status"] for stage in stage_order
+                },
+            }
+        )
+
+    total_lectures = len(lectures)
+    course_progress_percent = round(
+        (sum(row["progressPercent"] for row in lecture_progress) / total_lectures)
+    ) if total_lectures else 0
+
+    if failed_lectures > 0:
+        overall_status = "failed"
+    elif total_lectures > 0 and completed_lectures == total_lectures:
+        overall_status = "completed"
+    elif course_progress_percent > 0:
+        overall_status = "in_progress"
+    else:
+        overall_status = "not_started"
+
+    payload = {
+        "courseId": course_id,
+        "overallStatus": overall_status,
+        "lectureCount": total_lectures,
+        "completedLectureCount": completed_lectures,
+        "failedLectureCount": failed_lectures,
+        "progressPercent": course_progress_percent,
+    }
+    if include_lectures:
+        payload["lectures"] = lecture_progress
+    return payload
 
 
 
@@ -300,6 +421,9 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
 
 @app.post("/lectures/{lecture_id}/generate")
 def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
+    if payload.preset_id:
+        _ensure_valid_preset_id(payload.preset_id)
+
     db = get_database()
     course_id, preset_id = _resolve_generation_identifiers(db, lecture_id, payload)
     job_id = enqueue_job(
@@ -385,32 +509,19 @@ def lecture_progress(lecture_id: str) -> dict:
 
     jobs = db.fetch_jobs(lecture_id=lecture_id)
 
-    latest_by_type: dict[str, dict] = {}
-    for job in jobs:
-        job_type = job.get("job_type")
-        if not job_type or job_type in latest_by_type:
-            continue
-        latest_by_type[job_type] = job
-
     stage_order = ["transcription", "generation", "export"]
-    stages: dict[str, dict] = {}
-    for stage in stage_order:
-        latest = latest_by_type.get(stage)
-        stages[stage] = {
-            "status": latest.get("status") if latest else "not_started",
-            "jobId": latest.get("id") if latest else None,
-            "updatedAt": latest.get("updated_at") if latest else None,
-            "error": latest.get("error") if latest else None,
-        }
-
-    completed_count = sum(1 for stage in stage_order if stages[stage]["status"] == "completed")
+    progress = _compute_stage_progress(_latest_jobs_by_type(jobs), stage_order)
 
     return {
         "lectureId": lecture_id,
         "lectureStatus": lecture.get("status"),
-        "stageCount": len(stage_order),
-        "completedStageCount": completed_count,
-        "stages": stages,
+        "overallStatus": _derive_overall_status(progress),
+        "stageCount": progress["stageCount"],
+        "completedStageCount": progress["completedStageCount"],
+        "progressPercent": progress["progressPercent"],
+        "currentStage": progress["currentStage"],
+        "hasFailedStage": progress["hasFailedStage"],
+        "stages": progress["stages"],
     }
 
 
