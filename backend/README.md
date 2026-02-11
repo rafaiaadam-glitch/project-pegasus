@@ -58,6 +58,7 @@ processed consistently.
 - `POST /lectures/ingest` (multipart upload)
 - `GET /lectures` (supports `course_id`, `status`, `preset_id`, `limit`, and `offset`; includes `pagination`)
 - `GET /lectures/{lecture_id}`
+- `GET /lectures/{lecture_id}/transcript` (returns transcript text + segments; supports `include_text` and `segment_limit`)
 - `POST /lectures/{lecture_id}/transcribe`
 - `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `course_id` and `preset_id` optional and default from ingested lecture; if provided they must match ingested lecture)
 - `POST /lectures/{lecture_id}/export`

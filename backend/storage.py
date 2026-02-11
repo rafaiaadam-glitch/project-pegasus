@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from dataclasses import dataclass
@@ -128,3 +129,21 @@ def download_url(storage_path: str, expires_in: int = 900) -> Optional[str]:
         Params={"Bucket": bucket, "Key": key},
         ExpiresIn=expires_in,
     )
+
+
+
+def load_json_payload(storage_path: str) -> dict:
+    """Load a JSON payload from local or S3-backed storage."""
+    if storage_path.startswith("s3://"):
+        _, _, rest = storage_path.partition("s3://")
+        bucket, _, key = rest.partition("/")
+        if not bucket or not key:
+            raise FileNotFoundError("Invalid S3 storage path.")
+        response = _s3_client().get_object(Bucket=bucket, Key=key)
+        body = response["Body"].read().decode("utf-8")
+        return json.loads(body)
+
+    path = Path(storage_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Storage path not found: {storage_path}")
+    return json.loads(path.read_text(encoding="utf-8"))
