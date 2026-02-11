@@ -379,18 +379,33 @@ def get_course(course_id: str) -> dict:
 @app.get("/courses/{course_id}/lectures")
 def list_course_lectures(
     course_id: str,
+    status: Optional[str] = None,
+    preset_id: Optional[str] = None,
     limit: Optional[int] = Query(default=None, ge=0),
     offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
+    if preset_id:
+        _ensure_valid_preset_id(preset_id)
+
     db = get_database()
     _fetch_course_or_404(db, course_id)
-    lectures = db.fetch_lectures(course_id=course_id, limit=limit, offset=offset)
+    lectures = db.fetch_lectures(
+        course_id=course_id,
+        status=status,
+        preset_id=preset_id,
+        limit=limit,
+        offset=offset,
+    )
     total = _count_with_fallback(
         db,
         "count_lectures",
         lectures,
         course_id=course_id,
-        fallback_counter=lambda: len(db.fetch_lectures(course_id=course_id)),
+        status=status,
+        preset_id=preset_id,
+        fallback_counter=lambda: len(
+            db.fetch_lectures(course_id=course_id, status=status, preset_id=preset_id)
+        ),
     )
     return {
         "courseId": course_id,
@@ -526,17 +541,32 @@ def get_lecture(lecture_id: str) -> dict:
 @app.get("/lectures")
 def list_lectures(
     course_id: Optional[str] = None,
+    status: Optional[str] = None,
+    preset_id: Optional[str] = None,
     limit: Optional[int] = Query(default=None, ge=0),
     offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
+    if preset_id:
+        _ensure_valid_preset_id(preset_id)
+
     db = get_database()
-    lectures = db.fetch_lectures(course_id=course_id, limit=limit, offset=offset)
+    lectures = db.fetch_lectures(
+        course_id=course_id,
+        status=status,
+        preset_id=preset_id,
+        limit=limit,
+        offset=offset,
+    )
     total = _count_with_fallback(
         db,
         "count_lectures",
         lectures,
         course_id=course_id,
-        fallback_counter=lambda: len(db.fetch_lectures(course_id=course_id)),
+        status=status,
+        preset_id=preset_id,
+        fallback_counter=lambda: len(
+            db.fetch_lectures(course_id=course_id, status=status, preset_id=preset_id)
+        ),
     )
     return {
         "lectures": lectures,
@@ -704,6 +734,9 @@ def review_artifacts(
     limit: Optional[int] = Query(default=None, ge=0),
     offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
+    if preset_id:
+        _ensure_valid_preset_id(preset_id)
+
     db = get_database()
     artifact_records = db.fetch_artifacts(
         lecture_id,
