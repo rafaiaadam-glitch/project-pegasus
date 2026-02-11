@@ -105,6 +105,19 @@ class FakeDB:
     def fetch_exports(self, lecture_id: str):
         return [row for row in self.exports.values() if row["lecture_id"] == lecture_id]
 
+    def count_artifacts(
+        self,
+        lecture_id: str,
+        artifact_type: Optional[str] = None,
+        preset_id: Optional[str] = None,
+    ) -> int:
+        rows = [row for row in self.artifacts.values() if row["lecture_id"] == lecture_id]
+        if artifact_type:
+            rows = [row for row in rows if row["artifact_type"] == artifact_type]
+        if preset_id:
+            rows = [row for row in rows if row["preset_id"] == preset_id]
+        return len(rows)
+
 
 def _write_artifact(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

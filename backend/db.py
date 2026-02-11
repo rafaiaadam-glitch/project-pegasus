@@ -109,6 +109,19 @@ class Database:
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
+    def count_lectures(self, course_id: Optional[str] = None) -> int:
+        clauses = []
+        params: Dict[str, Any] = {}
+        if course_id:
+            clauses.append("course_id = %(course_id)s")
+            params["course_id"] = course_id
+        where_clause = f" where {' and '.join(clauses)}" if clauses else ""
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"select count(*) from lectures{where_clause};", params)
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+
     def upsert_course(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
             with conn.cursor() as cur:
@@ -154,6 +167,13 @@ class Database:
                 )
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
+
+    def count_courses(self) -> int:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("select count(*) from courses;")
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
 
     def create_job(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
@@ -238,6 +258,19 @@ class Database:
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
+    def count_jobs(self, lecture_id: Optional[str] = None) -> int:
+        clauses = []
+        params: Dict[str, Any] = {}
+        if lecture_id:
+            clauses.append("lecture_id = %(lecture_id)s")
+            params["lecture_id"] = lecture_id
+        where_clause = f" where {' and '.join(clauses)}" if clauses else ""
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"select count(*) from jobs{where_clause};", params)
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+
     def upsert_artifact(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
             with conn.cursor() as cur:
@@ -291,6 +324,27 @@ class Database:
                 )
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
+
+    def count_artifacts(
+        self,
+        lecture_id: str,
+        artifact_type: Optional[str] = None,
+        preset_id: Optional[str] = None,
+    ) -> int:
+        clauses = ["lecture_id = %(lecture_id)s"]
+        params: Dict[str, Any] = {"lecture_id": lecture_id}
+        if artifact_type:
+            clauses.append("artifact_type = %(artifact_type)s")
+            params["artifact_type"] = artifact_type
+        if preset_id:
+            clauses.append("preset_id = %(preset_id)s")
+            params["preset_id"] = preset_id
+        where_clause = " and ".join(clauses)
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"select count(*) from artifacts where {where_clause};", params)
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
 
     def upsert_thread(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
@@ -357,6 +411,19 @@ class Database:
                 )
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
+
+    def count_threads_for_course(self, course_id: str) -> int:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select count(*) from threads
+                    where course_id = %s;
+                    """,
+                    (course_id,),
+                )
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
 
     def upsert_export(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:

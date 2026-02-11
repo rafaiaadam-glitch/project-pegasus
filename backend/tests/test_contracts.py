@@ -125,6 +125,36 @@ class FakeDB:
             rows = rows[:limit]
         return rows
 
+    def count_courses(self) -> int:
+        return len(self.courses)
+
+    def count_lectures(self, course_id: Optional[str] = None) -> int:
+        if course_id:
+            return sum(1 for row in self.lectures.values() if row.get("course_id") == course_id)
+        return len(self.lectures)
+
+    def count_jobs(self, lecture_id: Optional[str] = None) -> int:
+        if lecture_id:
+            return sum(1 for row in self.jobs if row.get("lecture_id") == lecture_id)
+        return len(self.jobs)
+
+    def count_artifacts(
+        self,
+        lecture_id: str,
+        artifact_type: Optional[str] = None,
+        preset_id: Optional[str] = None,
+    ) -> int:
+        rows = [row for row in self.artifacts if row["lecture_id"] == lecture_id]
+        if artifact_type:
+            rows = [row for row in rows if row["artifact_type"] == artifact_type]
+        if preset_id:
+            rows = [row for row in rows if row["preset_id"] == preset_id]
+        return len(rows)
+
+    def count_threads_for_course(self, course_id: str) -> int:
+        return sum(1 for row in self.threads if row.get("course_id") == course_id)
+
+
 
 def test_artifacts_contract(monkeypatch, tmp_path):
     fake_db = FakeDB()
@@ -187,12 +217,22 @@ def test_artifacts_contract(monkeypatch, tmp_path):
     assert payload["lectureId"] == lecture_id
     assert "artifacts" in payload
     assert "artifactRecords" in payload
+    assert "pagination" in payload
     assert "artifactPaths" in payload
     assert "exportRecords" in payload
     assert "lecture" in payload
     assert payload["artifacts"]["summary"]["overview"] == "Overview"
     assert payload["artifactPaths"]["summary"] == str(summary_path)
     assert payload["artifacts"]["threads"][0]["id"] == "thread-1"
+    assert payload["pagination"] == {
+        "limit": None,
+        "offset": 0,
+        "count": 1,
+        "total": 1,
+        "hasMore": False,
+        "nextOffset": None,
+        "prevOffset": None,
+    }
 
 
 def test_summary_contract(monkeypatch):
@@ -310,8 +350,18 @@ def test_course_and_lecture_listings(monkeypatch):
 
     response = client.get("/courses")
     assert response.status_code == 200
-    courses = response.json()["courses"]
+    courses_payload = response.json()
+    courses = courses_payload["courses"]
     assert [course["id"] for course in courses] == ["course-2", "course-1"]
+    assert courses_payload["pagination"] == {
+        "limit": None,
+        "offset": 0,
+        "count": 2,
+        "total": 2,
+        "hasMore": False,
+        "nextOffset": None,
+        "prevOffset": None,
+    }
 
     response = client.get("/courses/course-1")
     assert response.status_code == 200
@@ -319,18 +369,48 @@ def test_course_and_lecture_listings(monkeypatch):
 
     response = client.get("/courses/course-1/lectures")
     assert response.status_code == 200
-    assert [lecture["id"] for lecture in response.json()["lectures"]] == ["lecture-1"]
+    lecture_payload = response.json()
+    assert [lecture["id"] for lecture in lecture_payload["lectures"]] == ["lecture-1"]
+    assert lecture_payload["pagination"] == {
+        "limit": None,
+        "offset": 0,
+        "count": 1,
+        "total": 1,
+        "hasMore": False,
+        "nextOffset": None,
+        "prevOffset": None,
+    }
 
     missing_course_lectures = client.get("/courses/missing/lectures")
     assert missing_course_lectures.status_code == 404
 
     response = client.get("/lectures", params={"course_id": "course-2"})
     assert response.status_code == 200
-    assert [lecture["id"] for lecture in response.json()["lectures"]] == ["lecture-2"]
+    lecture_listing = response.json()
+    assert [lecture["id"] for lecture in lecture_listing["lectures"]] == ["lecture-2"]
+    assert lecture_listing["pagination"] == {
+        "limit": None,
+        "offset": 0,
+        "count": 1,
+        "total": 1,
+        "hasMore": False,
+        "nextOffset": None,
+        "prevOffset": None,
+    }
 
     response = client.get("/lectures", params={"limit": 1})
     assert response.status_code == 200
-    assert len(response.json()["lectures"]) == 1
+    limited_listing = response.json()
+    assert len(limited_listing["lectures"]) == 1
+    assert limited_listing["pagination"] == {
+        "limit": 1,
+        "offset": 0,
+        "count": 1,
+        "total": 2,
+        "hasMore": True,
+        "nextOffset": 1,
+        "prevOffset": None,
+    }
 
 
 @pytest.mark.parametrize(
@@ -495,6 +575,63 @@ def test_course_threads_listing_supports_pagination(monkeypatch):
     payload = response.json()
     assert payload["courseId"] == "course-1"
     assert [thread["id"] for thread in payload["threads"]] == ["thread-2"]
+    assert payload["pagination"] == {
+        "limit": 1,
+        "offset": 1,
+        "count": 1,
+        "total": 3,
+        "hasMore": True,
+        "nextOffset": 2,
+        "prevOffset": 0,
+    }
+
+
+def test_lecture_jobs_listing_includes_pagination(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-1"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "course_id": "course-1",
+        "title": "Lecture One",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
+    fake_db.jobs.extend(
+        [
+            {
+                "id": "job-1",
+                "lecture_id": lecture_id,
+                "job_type": "transcription",
+                "status": "completed",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "id": "job-2",
+                "lecture_id": lecture_id,
+                "job_type": "generation",
+                "status": "queued",
+                "created_at": "2024-01-02T00:00:00Z",
+                "updated_at": "2024-01-02T00:00:00Z",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get(f"/lectures/{lecture_id}/jobs", params={"limit": 1, "offset": 0})
+    assert response.status_code == 200
+    payload = response.json()
+    assert [job["id"] for job in payload["jobs"]] == ["job-2"]
+    assert payload["pagination"] == {
+        "limit": 1,
+        "offset": 0,
+        "count": 1,
+        "total": 2,
+        "hasMore": True,
+        "nextOffset": 1,
+        "prevOffset": None,
+    }
 
 
 def test_course_threads_listing_rejects_negative_pagination(monkeypatch):

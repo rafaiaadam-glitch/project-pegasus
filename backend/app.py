@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from typing import Optional
+from typing import Callable, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -173,6 +173,45 @@ def _lecture_links(lecture_id: str) -> dict[str, str]:
     }
 
 
+def _pagination_payload(
+    *,
+    limit: Optional[int],
+    offset: Optional[int],
+    count: int,
+    total: int,
+) -> dict:
+    normalized_offset = offset or 0
+    normalized_limit = limit if limit is not None else count
+    has_more = normalized_offset + count < total
+    next_offset = normalized_offset + count if has_more else None
+    prev_offset = max(0, normalized_offset - normalized_limit) if normalized_offset > 0 else None
+    return {
+        "limit": limit,
+        "offset": normalized_offset,
+        "count": count,
+        "total": total,
+        "hasMore": has_more,
+        "nextOffset": next_offset,
+        "prevOffset": prev_offset,
+    }
+
+
+def _count_with_fallback(
+    db,
+    count_method: str,
+    fallback_rows: list[dict],
+    *args,
+    fallback_counter: Optional[Callable[[], int]] = None,
+    **kwargs,
+) -> int:
+    counter = getattr(db, count_method, None)
+    if callable(counter):
+        return int(counter(*args, **kwargs))
+    if callable(fallback_counter):
+        return int(fallback_counter())
+    return len(fallback_rows)
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "time": _iso_now()}
@@ -310,7 +349,22 @@ def list_courses(
     offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
-    return {"courses": db.fetch_courses(limit=limit, offset=offset)}
+    courses = db.fetch_courses(limit=limit, offset=offset)
+    total = _count_with_fallback(
+        db,
+        "count_courses",
+        courses,
+        fallback_counter=lambda: len(db.fetch_courses()),
+    )
+    return {
+        "courses": courses,
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(courses),
+            total=total,
+        ),
+    }
 
 
 @app.get("/courses/{course_id}")
@@ -330,9 +384,23 @@ def list_course_lectures(
 ) -> dict:
     db = get_database()
     _fetch_course_or_404(db, course_id)
+    lectures = db.fetch_lectures(course_id=course_id, limit=limit, offset=offset)
+    total = _count_with_fallback(
+        db,
+        "count_lectures",
+        lectures,
+        course_id=course_id,
+        fallback_counter=lambda: len(db.fetch_lectures(course_id=course_id)),
+    )
     return {
         "courseId": course_id,
-        "lectures": db.fetch_lectures(course_id=course_id, limit=limit, offset=offset),
+        "lectures": lectures,
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(lectures),
+            total=total,
+        ),
     }
 
 
@@ -344,9 +412,23 @@ def list_course_threads(
 ) -> dict:
     db = get_database()
     _fetch_course_or_404(db, course_id)
+    threads = db.fetch_threads_for_course(course_id, limit=limit, offset=offset)
+    total = _count_with_fallback(
+        db,
+        "count_threads_for_course",
+        threads,
+        course_id,
+        fallback_counter=lambda: len(db.fetch_threads_for_course(course_id)),
+    )
     return {
         "courseId": course_id,
-        "threads": db.fetch_threads_for_course(course_id, limit=limit, offset=offset),
+        "threads": threads,
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(threads),
+            total=total,
+        ),
     }
 
 
@@ -448,7 +530,23 @@ def list_lectures(
     offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
-    return {"lectures": db.fetch_lectures(course_id=course_id, limit=limit, offset=offset)}
+    lectures = db.fetch_lectures(course_id=course_id, limit=limit, offset=offset)
+    total = _count_with_fallback(
+        db,
+        "count_lectures",
+        lectures,
+        course_id=course_id,
+        fallback_counter=lambda: len(db.fetch_lectures(course_id=course_id)),
+    )
+    return {
+        "lectures": lectures,
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(lectures),
+            total=total,
+        ),
+    }
 
 
 @app.post("/lectures/{lecture_id}/transcribe")
@@ -537,6 +635,13 @@ def list_lecture_jobs(
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found.")
     jobs = db.fetch_jobs(lecture_id=lecture_id, limit=limit, offset=offset)
+    total = _count_with_fallback(
+        db,
+        "count_jobs",
+        jobs,
+        lecture_id=lecture_id,
+        fallback_counter=lambda: len(db.fetch_jobs(lecture_id=lecture_id)),
+    )
     return {
         "lectureId": lecture_id,
         "jobs": [
@@ -551,6 +656,12 @@ def list_lecture_jobs(
             }
             for job in jobs
         ],
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(jobs),
+            total=total,
+        ),
     }
 
 
@@ -601,6 +712,21 @@ def review_artifacts(
         limit=limit,
         offset=offset,
     )
+    total = _count_with_fallback(
+        db,
+        "count_artifacts",
+        artifact_records,
+        lecture_id,
+        artifact_type=artifact_type,
+        preset_id=preset_id,
+        fallback_counter=lambda: len(
+            db.fetch_artifacts(
+                lecture_id,
+                artifact_type=artifact_type,
+                preset_id=preset_id,
+            )
+        ),
+    )
     payload: dict[str, object] = {}
     artifact_paths: dict[str, str] = {}
     artifact_downloads: dict[str, str] = {}
@@ -626,6 +752,12 @@ def review_artifacts(
         "lectureId": lecture_id,
         "artifacts": payload,
         "artifactRecords": artifact_records,
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(artifact_records),
+            total=total,
+        ),
         "artifactPaths": artifact_paths,
         "artifactDownloadUrls": artifact_downloads,
         "exportRecords": db.fetch_exports(lecture_id),
