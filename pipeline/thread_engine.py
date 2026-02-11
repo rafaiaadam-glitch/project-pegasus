@@ -205,8 +205,11 @@ def _call_openai(
     transcript: str,
     existing_threads: List[Dict[str, Any]],
     model: str,
+    timeout: int = 90,
 ) -> Dict[str, Any]:
-    """Call OpenAI and return parsed JSON response."""
+    """Call OpenAI with retry logic and return parsed JSON response."""
+    from pipeline.retry_utils import with_retry, RetryConfig, NonRetryableError
+
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY is not set.")
@@ -230,27 +233,36 @@ def _call_openai(
         "response_format": {"type": "json_object"},
     }
 
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/responses",
-        data=data,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
+    def make_request() -> Dict[str, Any]:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
 
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        raw = json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
 
-    # Extract text from OpenAI responses API format
-    for output in raw.get("output", []):
-        for content in output.get("content", []):
-            if "text" in content:
-                return json.loads(content["text"])
+        # Extract text from OpenAI responses API format
+        for output in raw.get("output", []):
+            for content in output.get("content", []):
+                if "text" in content:
+                    return json.loads(content["text"])
 
-    raise ValueError("OpenAI response did not contain extractable JSON text.")
+        raise ValueError("OpenAI response did not contain extractable JSON text.")
+
+    config = RetryConfig(max_attempts=3, initial_delay=2.0, max_delay=30.0)
+
+    try:
+        return with_retry(make_request, config=config,
+                         operation_name="OpenAI thread detection")
+    except NonRetryableError as e:
+        raise RuntimeError(f"OpenAI thread detection failed: {e}") from e
 
 
 def _safe_change_type(value: Any) -> str:

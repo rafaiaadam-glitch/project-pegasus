@@ -5,7 +5,7 @@ import os
 import uuid
 import urllib.request
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 
 def _iso_now() -> str:
@@ -19,20 +19,31 @@ def _require_env(name: str) -> str:
     return value
 
 
-def _request_openai(payload: Dict[str, Any]) -> Dict[str, Any]:
-    api_key = _require_env("OPENAI_API_KEY")
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        "https://api.openai.com/v1/responses",
-        data=data,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def _request_openai(payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any]:
+    from pipeline.retry_utils import with_retry, RetryConfig, NonRetryableError
+
+    def make_request() -> Dict[str, Any]:
+        api_key = _require_env("OPENAI_API_KEY")
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/responses",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    config = RetryConfig(max_attempts=3, initial_delay=2.0, max_delay=30.0)
+
+    try:
+        return with_retry(make_request, config=config,
+                         operation_name="OpenAI API request")
+    except NonRetryableError as e:
+        raise RuntimeError(f"OpenAI API request failed: {e}") from e
 
 
 def _extract_text(response: Dict[str, Any]) -> str:
@@ -68,6 +79,7 @@ def generate_artifacts_with_llm(
     lecture_id: str,
     generated_at: str | None = None,
     model: str = "gpt-4o-mini",
+    thread_refs: List[str] | None = None,
 ) -> Dict[str, Dict[str, Any]]:
     if generated_at is None:
         generated_at = _iso_now()
@@ -124,6 +136,9 @@ def generate_artifacts_with_llm(
         )
         base.update(artifact)
         base["artifactType"] = artifact_type
+        # Add threadRefs if provided
+        if thread_refs:
+            base["threadRefs"] = thread_refs
         artifacts[artifact_type] = base
 
     return artifacts
