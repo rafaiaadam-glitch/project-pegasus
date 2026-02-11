@@ -50,20 +50,20 @@ processed consistently.
 - `GET /health/ready` (readiness probe for database, queue, and storage)
 - `GET /presets`
 - `GET /presets/{preset_id}`
-- `GET /courses`
+- `GET /courses` (supports `limit` and `offset`)
 - `GET /courses/{course_id}`
-- `GET /courses/{course_id}/lectures` (404 if course does not exist)
-- `GET /courses/{course_id}/threads`
-- `GET /courses/{course_id}/progress` (404 if course does not exist; supports `include_lectures=false`; includes `overallStatus` + course-level rollup and optional per-lecture `currentStage`, stage counts, and status snapshots)
+- `GET /courses/{course_id}/lectures` (404 if course does not exist; supports `limit` and `offset`)
+- `GET /courses/{course_id}/threads` (404 if course does not exist; supports `limit` and `offset`)
+- `GET /courses/{course_id}/progress` (404 if course does not exist; supports `include_lectures=false`; includes `overallStatus`, status-count rollups, `latestActivityAt`, and optional per-lecture stage snapshots with endpoint links)
 - `POST /lectures/ingest` (multipart upload)
-- `GET /lectures`
+- `GET /lectures` (supports `course_id`, `limit`, and `offset`)
 - `GET /lectures/{lecture_id}`
 - `POST /lectures/{lecture_id}/transcribe`
 - `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `course_id` and `preset_id` optional and default from ingested lecture; if provided they must match ingested lecture)
 - `POST /lectures/{lecture_id}/export`
-- `GET /lectures/{lecture_id}/jobs`
-- `GET /lectures/{lecture_id}/progress` (includes `overallStatus` and per-stage status plus `progressPercent`, `currentStage`, and `hasFailedStage`)
+- `GET /lectures/{lecture_id}/jobs` (supports `limit` and `offset`)
+- `GET /lectures/{lecture_id}/progress` (includes `overallStatus`, per-stage status, `progressPercent`, `currentStage`, `hasFailedStage`, and lecture endpoint links)
 - `GET /exports/{lecture_id}/{export_type}`
 - `GET /lectures/{lecture_id}/artifacts` (query params: `artifact_type`, `preset_id`, `limit`, `offset`; includes `artifactDownloadUrls` for S3-backed artifacts)
-- `GET /lectures/{lecture_id}/summary`
+- `GET /lectures/{lecture_id}/summary` (compact lecture dashboard: artifact/export counts + stage progress snapshot + lecture/export links)
 - `GET /jobs/{job_id}`

@@ -54,3 +54,6 @@ storage/threads/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# JavaScript dependencies
+mobile/node_modules/

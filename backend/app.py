@@ -7,7 +7,7 @@ from pathlib import Path
 
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from redis import Redis
@@ -112,6 +112,7 @@ def _compute_stage_progress(latest_by_type: dict[str, dict], stage_order: list[s
         stages[stage] = {
             "status": latest.get("status") if latest else "not_started",
             "jobId": latest.get("id") if latest else None,
+            "createdAt": latest.get("created_at") if latest else None,
             "updatedAt": latest.get("updated_at") if latest else None,
             "error": latest.get("error") if latest else None,
         }
@@ -142,6 +143,34 @@ def _derive_overall_status(stage_progress: dict) -> str:
     if stage_progress["completedStageCount"] > 0 or stage_progress["currentStage"] != "transcription":
         return "in_progress"
     return "not_started"
+
+
+def _build_lecture_progress_payload(db, lecture_id: str, lecture_status: Optional[str]) -> dict:
+    stage_order = ["transcription", "generation", "export"]
+    progress = _compute_stage_progress(
+        _latest_jobs_by_type(db.fetch_jobs(lecture_id=lecture_id)),
+        stage_order,
+    )
+    return {
+        "lectureId": lecture_id,
+        "lectureStatus": lecture_status,
+        "overallStatus": _derive_overall_status(progress),
+        "stageCount": progress["stageCount"],
+        "completedStageCount": progress["completedStageCount"],
+        "progressPercent": progress["progressPercent"],
+        "currentStage": progress["currentStage"],
+        "hasFailedStage": progress["hasFailedStage"],
+        "stages": progress["stages"],
+    }
+
+
+def _lecture_links(lecture_id: str) -> dict[str, str]:
+    return {
+        "summary": f"/lectures/{lecture_id}/summary",
+        "progress": f"/lectures/{lecture_id}/progress",
+        "artifacts": f"/lectures/{lecture_id}/artifacts",
+        "jobs": f"/lectures/{lecture_id}/jobs",
+    }
 
 
 @app.get("/health")
@@ -276,7 +305,10 @@ def ingest_lecture(
 
 
 @app.get("/courses")
-def list_courses(limit: Optional[int] = None, offset: Optional[int] = None) -> dict:
+def list_courses(
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
+) -> dict:
     db = get_database()
     return {"courses": db.fetch_courses(limit=limit, offset=offset)}
 
@@ -293,8 +325,8 @@ def get_course(course_id: str) -> dict:
 @app.get("/courses/{course_id}/lectures")
 def list_course_lectures(
     course_id: str,
-    limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
     _fetch_course_or_404(db, course_id)
@@ -305,11 +337,16 @@ def list_course_lectures(
 
 
 @app.get("/courses/{course_id}/threads")
-def list_course_threads(course_id: str) -> dict:
+def list_course_threads(
+    course_id: str,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
+) -> dict:
     db = get_database()
+    _fetch_course_or_404(db, course_id)
     return {
         "courseId": course_id,
-        "threads": db.fetch_threads_for_course(course_id),
+        "threads": db.fetch_threads_for_course(course_id, limit=limit, offset=offset),
     }
 
 
@@ -322,32 +359,46 @@ def course_progress(course_id: str, include_lectures: bool = True) -> dict:
     stage_order = ["transcription", "generation", "export"]
 
     lecture_progress = []
-    completed_lectures = 0
-    failed_lectures = 0
+    status_counts = {
+        "not_started": 0,
+        "in_progress": 0,
+        "completed": 0,
+        "failed": 0,
+    }
+    latest_activity_at: Optional[str] = None
 
     for lecture in lectures:
         lecture_id = lecture["id"]
-        progress = _compute_stage_progress(_latest_jobs_by_type(db.fetch_jobs(lecture_id=lecture_id)), stage_order)
-        overall_status = _derive_overall_status(progress)
+        progress_payload = _build_lecture_progress_payload(db, lecture_id, lecture.get("status"))
 
-        if overall_status == "completed":
-            completed_lectures += 1
-        if overall_status == "failed":
-            failed_lectures += 1
+        overall_status = progress_payload["overallStatus"]
+        if overall_status in status_counts:
+            status_counts[overall_status] += 1
+
+        lecture_timestamps = []
+        for stage in stage_order:
+            stage_payload = progress_payload["stages"][stage]
+            stage_activity = stage_payload.get("updatedAt") or stage_payload.get("createdAt")
+            if stage_activity:
+                lecture_timestamps.append(stage_activity)
+        lecture_timestamps.extend(
+            [
+                lecture.get("updated_at"),
+                lecture.get("created_at"),
+            ]
+        )
+        lecture_timestamps = [value for value in lecture_timestamps if value]
+        lecture_latest = max(lecture_timestamps) if lecture_timestamps else None
+        if lecture_latest and (latest_activity_at is None or lecture_latest > latest_activity_at):
+            latest_activity_at = lecture_latest
 
         lecture_progress.append(
             {
-                "lectureId": lecture_id,
-                "lectureStatus": lecture.get("status"),
-                "overallStatus": overall_status,
-                "stageCount": progress["stageCount"],
-                "completedStageCount": progress["completedStageCount"],
-                "progressPercent": progress["progressPercent"],
-                "currentStage": progress["currentStage"],
-                "hasFailedStage": progress["hasFailedStage"],
+                **progress_payload,
                 "stageStatuses": {
-                    stage: progress["stages"][stage]["status"] for stage in stage_order
+                    stage: progress_payload["stages"][stage]["status"] for stage in stage_order
                 },
+                "links": _lecture_links(lecture_id),
             }
         )
 
@@ -356,9 +407,9 @@ def course_progress(course_id: str, include_lectures: bool = True) -> dict:
         (sum(row["progressPercent"] for row in lecture_progress) / total_lectures)
     ) if total_lectures else 0
 
-    if failed_lectures > 0:
+    if status_counts["failed"] > 0:
         overall_status = "failed"
-    elif total_lectures > 0 and completed_lectures == total_lectures:
+    elif total_lectures > 0 and status_counts["completed"] == total_lectures:
         overall_status = "completed"
     elif course_progress_percent > 0:
         overall_status = "in_progress"
@@ -369,9 +420,12 @@ def course_progress(course_id: str, include_lectures: bool = True) -> dict:
         "courseId": course_id,
         "overallStatus": overall_status,
         "lectureCount": total_lectures,
-        "completedLectureCount": completed_lectures,
-        "failedLectureCount": failed_lectures,
+        "completedLectureCount": status_counts["completed"],
+        "failedLectureCount": status_counts["failed"],
+        "inProgressLectureCount": status_counts["in_progress"],
+        "notStartedLectureCount": status_counts["not_started"],
         "progressPercent": course_progress_percent,
+        "latestActivityAt": latest_activity_at,
     }
     if include_lectures:
         payload["lectures"] = lecture_progress
@@ -390,8 +444,8 @@ def get_lecture(lecture_id: str) -> dict:
 @app.get("/lectures")
 def list_lectures(
     course_id: Optional[str] = None,
-    limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
     return {"lectures": db.fetch_lectures(course_id=course_id, limit=limit, offset=offset)}
@@ -475,8 +529,8 @@ def get_job(job_id: str) -> dict:
 @app.get("/lectures/{lecture_id}/jobs")
 def list_lecture_jobs(
     lecture_id: str,
-    limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
     lecture = db.fetch_lecture(lecture_id)
@@ -507,22 +561,9 @@ def lecture_progress(lecture_id: str) -> dict:
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found.")
 
-    jobs = db.fetch_jobs(lecture_id=lecture_id)
-
-    stage_order = ["transcription", "generation", "export"]
-    progress = _compute_stage_progress(_latest_jobs_by_type(jobs), stage_order)
-
-    return {
-        "lectureId": lecture_id,
-        "lectureStatus": lecture.get("status"),
-        "overallStatus": _derive_overall_status(progress),
-        "stageCount": progress["stageCount"],
-        "completedStageCount": progress["completedStageCount"],
-        "progressPercent": progress["progressPercent"],
-        "currentStage": progress["currentStage"],
-        "hasFailedStage": progress["hasFailedStage"],
-        "stages": progress["stages"],
-    }
+    payload = _build_lecture_progress_payload(db, lecture_id, lecture.get("status"))
+    payload["links"] = _lecture_links(lecture_id)
+    return payload
 
 
 @app.get("/exports/{lecture_id}/{export_type}")
@@ -549,8 +590,8 @@ def review_artifacts(
     lecture_id: str,
     artifact_type: Optional[str] = None,
     preset_id: Optional[str] = None,
-    limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
     artifact_records = db.fetch_artifacts(
@@ -600,15 +641,20 @@ def lecture_summary(lecture_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Lecture not found.")
     artifacts = db.fetch_artifacts(lecture_id)
     exports = db.fetch_exports(lecture_id)
+    progress = _build_lecture_progress_payload(db, lecture_id, lecture.get("status"))
     return {
         "lecture": lecture,
         "artifactCount": len(artifacts),
         "exportCount": len(exports),
         "artifactTypes": [row["artifact_type"] for row in artifacts],
         "exportTypes": [row["export_type"] for row in exports],
+        "overallStatus": progress["overallStatus"],
+        "progressPercent": progress["progressPercent"],
+        "currentStage": progress["currentStage"],
+        "hasFailedStage": progress["hasFailedStage"],
+        "stages": progress["stages"],
         "links": {
-            "artifacts": f"/lectures/{lecture_id}/artifacts",
+            **_lecture_links(lecture_id),
             "exports": f"/exports/{lecture_id}/{{export_type}}",
-            "jobs": "/jobs/{job_id}",
         },
     }
