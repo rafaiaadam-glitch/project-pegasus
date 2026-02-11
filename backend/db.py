@@ -84,6 +84,8 @@ class Database:
     def fetch_lectures(
         self,
         course_id: Optional[str] = None,
+        status: Optional[str] = None,
+        preset_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
     ) -> list[Dict[str, Any]]:
@@ -92,6 +94,12 @@ class Database:
         if course_id:
             clauses.append("course_id = %(course_id)s")
             params["course_id"] = course_id
+        if status:
+            clauses.append("status = %(status)s")
+            params["status"] = status
+        if preset_id:
+            clauses.append("preset_id = %(preset_id)s")
+            params["preset_id"] = preset_id
         where_clause = f" where {' and '.join(clauses)}" if clauses else ""
         limit_clause = ""
         if limit is not None:
@@ -109,12 +117,23 @@ class Database:
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
-    def count_lectures(self, course_id: Optional[str] = None) -> int:
+    def count_lectures(
+        self,
+        course_id: Optional[str] = None,
+        status: Optional[str] = None,
+        preset_id: Optional[str] = None,
+    ) -> int:
         clauses = []
         params: Dict[str, Any] = {}
         if course_id:
             clauses.append("course_id = %(course_id)s")
             params["course_id"] = course_id
+        if status:
+            clauses.append("status = %(status)s")
+            params["status"] = status
+        if preset_id:
+            clauses.append("preset_id = %(preset_id)s")
+            params["preset_id"] = preset_id
         where_clause = f" where {' and '.join(clauses)}" if clauses else ""
         with self.connect() as conn:
             with conn.cursor() as cur:

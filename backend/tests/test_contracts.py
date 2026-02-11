@@ -41,12 +41,18 @@ class FakeDB:
     def fetch_lectures(
         self,
         course_id: Optional[str] = None,
+        status: Optional[str] = None,
+        preset_id: Optional[str] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
     ):
         rows = list(self.lectures.values())
         if course_id:
             rows = [row for row in rows if row.get("course_id") == course_id]
+        if status:
+            rows = [row for row in rows if row.get("status") == status]
+        if preset_id:
+            rows = [row for row in rows if row.get("preset_id") == preset_id]
         rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
         if offset is not None:
             rows = rows[offset:]
@@ -128,10 +134,20 @@ class FakeDB:
     def count_courses(self) -> int:
         return len(self.courses)
 
-    def count_lectures(self, course_id: Optional[str] = None) -> int:
+    def count_lectures(
+        self,
+        course_id: Optional[str] = None,
+        status: Optional[str] = None,
+        preset_id: Optional[str] = None,
+    ) -> int:
+        rows = list(self.lectures.values())
         if course_id:
-            return sum(1 for row in self.lectures.values() if row.get("course_id") == course_id)
-        return len(self.lectures)
+            rows = [row for row in rows if row.get("course_id") == course_id]
+        if status:
+            rows = [row for row in rows if row.get("status") == status]
+        if preset_id:
+            rows = [row for row in rows if row.get("preset_id") == preset_id]
+        return len(rows)
 
     def count_jobs(self, lecture_id: Optional[str] = None) -> int:
         if lecture_id:
@@ -336,12 +352,16 @@ def test_course_and_lecture_listings(monkeypatch):
         "id": "lecture-1",
         "course_id": "course-1",
         "title": "Lecture One",
+        "status": "uploaded",
+        "preset_id": "exam-mode",
         "created_at": "2024-01-01T00:00:00Z",
     }
     fake_db.lectures["lecture-2"] = {
         "id": "lecture-2",
         "course_id": "course-2",
         "title": "Lecture Two",
+        "status": "generated",
+        "preset_id": "research-mode",
         "created_at": "2024-01-03T00:00:00Z",
     }
 
@@ -381,6 +401,46 @@ def test_course_and_lecture_listings(monkeypatch):
         "prevOffset": None,
     }
 
+    response = client.get("/courses/course-2/lectures", params={"status": "generated"})
+    assert response.status_code == 200
+    filtered_course_lectures = response.json()
+    assert [lecture["id"] for lecture in filtered_course_lectures["lectures"]] == ["lecture-2"]
+    assert filtered_course_lectures["pagination"] == {
+        "limit": None,
+        "offset": 0,
+        "count": 1,
+        "total": 1,
+        "hasMore": False,
+        "nextOffset": None,
+        "prevOffset": None,
+    }
+
+    response = client.get("/courses/course-2/lectures", params={"preset_id": "research-mode"})
+    assert response.status_code == 200
+    filtered_by_preset = response.json()
+    assert [lecture["id"] for lecture in filtered_by_preset["lectures"]] == ["lecture-2"]
+    assert filtered_by_preset["pagination"]["total"] == 1
+
+    response = client.get("/courses/course-2/lectures", params={"preset_id": "exam-mode"})
+    assert response.status_code == 200
+    filtered_by_preset_empty = response.json()
+    assert filtered_by_preset_empty["lectures"] == []
+    assert filtered_by_preset_empty["pagination"]["total"] == 0
+
+    response = client.get("/courses/course-2/lectures", params={"status": "uploaded"})
+    assert response.status_code == 200
+    filtered_empty = response.json()
+    assert filtered_empty["lectures"] == []
+    assert filtered_empty["pagination"] == {
+        "limit": None,
+        "offset": 0,
+        "count": 0,
+        "total": 0,
+        "hasMore": False,
+        "nextOffset": None,
+        "prevOffset": None,
+    }
+
     missing_course_lectures = client.get("/courses/missing/lectures")
     assert missing_course_lectures.status_code == 404
 
@@ -397,6 +457,33 @@ def test_course_and_lecture_listings(monkeypatch):
         "nextOffset": None,
         "prevOffset": None,
     }
+
+
+    response = client.get("/lectures", params={"status": "generated"})
+    assert response.status_code == 200
+    status_filtered = response.json()
+    assert [lecture["id"] for lecture in status_filtered["lectures"]] == ["lecture-2"]
+    assert status_filtered["pagination"] == {
+        "limit": None,
+        "offset": 0,
+        "count": 1,
+        "total": 1,
+        "hasMore": False,
+        "nextOffset": None,
+        "prevOffset": None,
+    }
+
+    response = client.get("/lectures", params={"preset_id": "research-mode"})
+    assert response.status_code == 200
+    preset_filtered = response.json()
+    assert [lecture["id"] for lecture in preset_filtered["lectures"]] == ["lecture-2"]
+    assert preset_filtered["pagination"]["total"] == 1
+
+    response = client.get("/lectures", params={"status": "generated", "preset_id": "exam-mode"})
+    assert response.status_code == 200
+    preset_status_filtered_empty = response.json()
+    assert preset_status_filtered_empty["lectures"] == []
+    assert preset_status_filtered_empty["pagination"]["total"] == 0
 
     response = client.get("/lectures", params={"limit": 1})
     assert response.status_code == 200
@@ -755,6 +842,7 @@ def test_course_progress_summary_without_lectures(monkeypatch):
         "course_id": "course-1",
         "title": "Lecture One",
         "status": "uploaded",
+        "preset_id": "exam-mode",
         "created_at": "2024-01-01T00:00:00Z",
     }
 
@@ -785,6 +873,46 @@ def test_course_progress_missing_course(monkeypatch):
     assert response.status_code == 404
     assert response.json()["detail"] == "Course not found."
 
+
+
+
+def test_listing_endpoints_reject_invalid_preset_id(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.courses["course-1"] = {
+        "id": "course-1",
+        "title": "Course One",
+        "created_at": "2024-01-01T00:00:00Z",
+        "updated_at": "2024-01-01T00:00:00Z",
+    }
+    fake_db.lectures["lecture-1"] = {
+        "id": "lecture-1",
+        "course_id": "course-1",
+        "preset_id": "exam-mode",
+        "status": "uploaded",
+        "title": "Lecture One",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    global_listing = client.get("/lectures", params={"preset_id": "invalid-preset"})
+    assert global_listing.status_code == 400
+    assert global_listing.json()["detail"] == "Invalid preset_id."
+
+    course_listing = client.get(
+        "/courses/course-1/lectures",
+        params={"preset_id": "invalid-preset"},
+    )
+    assert course_listing.status_code == 400
+    assert course_listing.json()["detail"] == "Invalid preset_id."
+
+    artifact_listing = client.get(
+        "/lectures/lecture-1/artifacts",
+        params={"preset_id": "invalid-preset"},
+    )
+    assert artifact_listing.status_code == 400
+    assert artifact_listing.json()["detail"] == "Invalid preset_id."
 
 def test_generate_rejects_invalid_preset_id():
     client = TestClient(app_module.app)

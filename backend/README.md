@@ -52,11 +52,11 @@ processed consistently.
 - `GET /presets/{preset_id}`
 - `GET /courses` (supports `limit` and `offset`; listing responses include a `pagination` object with `count`, `total`, `hasMore`, `nextOffset`, and `prevOffset`)
 - `GET /courses/{course_id}`
-- `GET /courses/{course_id}/lectures` (404 if course does not exist; supports `limit` and `offset`; includes `pagination`)
+- `GET /courses/{course_id}/lectures` (404 if course does not exist; supports `status`, `preset_id`, `limit`, and `offset`; includes `pagination`)
 - `GET /courses/{course_id}/threads` (404 if course does not exist; supports `limit` and `offset`; includes `pagination`)
 - `GET /courses/{course_id}/progress` (404 if course does not exist; supports `include_lectures=false`; includes `overallStatus`, status-count rollups, `latestActivityAt`, and optional per-lecture stage snapshots with endpoint links)
 - `POST /lectures/ingest` (multipart upload)
-- `GET /lectures` (supports `course_id`, `limit`, and `offset`; includes `pagination`)
+- `GET /lectures` (supports `course_id`, `status`, `preset_id`, `limit`, and `offset`; includes `pagination`)
 - `GET /lectures/{lecture_id}`
 - `POST /lectures/{lecture_id}/transcribe`
 - `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `course_id` and `preset_id` optional and default from ingested lecture; if provided they must match ingested lecture)
