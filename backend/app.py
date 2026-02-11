@@ -7,7 +7,7 @@ from pathlib import Path
 
 from typing import Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from redis import Redis
@@ -305,7 +305,10 @@ def ingest_lecture(
 
 
 @app.get("/courses")
-def list_courses(limit: Optional[int] = None, offset: Optional[int] = None) -> dict:
+def list_courses(
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
+) -> dict:
     db = get_database()
     return {"courses": db.fetch_courses(limit=limit, offset=offset)}
 
@@ -322,8 +325,8 @@ def get_course(course_id: str) -> dict:
 @app.get("/courses/{course_id}/lectures")
 def list_course_lectures(
     course_id: str,
-    limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
     _fetch_course_or_404(db, course_id)
@@ -334,11 +337,16 @@ def list_course_lectures(
 
 
 @app.get("/courses/{course_id}/threads")
-def list_course_threads(course_id: str) -> dict:
+def list_course_threads(
+    course_id: str,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
+) -> dict:
     db = get_database()
+    _fetch_course_or_404(db, course_id)
     return {
         "courseId": course_id,
-        "threads": db.fetch_threads_for_course(course_id),
+        "threads": db.fetch_threads_for_course(course_id, limit=limit, offset=offset),
     }
 
 
@@ -436,8 +444,8 @@ def get_lecture(lecture_id: str) -> dict:
 @app.get("/lectures")
 def list_lectures(
     course_id: Optional[str] = None,
-    limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
     return {"lectures": db.fetch_lectures(course_id=course_id, limit=limit, offset=offset)}
@@ -521,8 +529,8 @@ def get_job(job_id: str) -> dict:
 @app.get("/lectures/{lecture_id}/jobs")
 def list_lecture_jobs(
     lecture_id: str,
-    limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
     lecture = db.fetch_lecture(lecture_id)
@@ -582,8 +590,8 @@ def review_artifacts(
     lecture_id: str,
     artifact_type: Optional[str] = None,
     preset_id: Optional[str] = None,
-    limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
     db = get_database()
     artifact_records = db.fetch_artifacts(
