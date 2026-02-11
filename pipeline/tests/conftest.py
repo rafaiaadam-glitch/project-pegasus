@@ -1,10 +1,15 @@
 """Pytest configuration and shared fixtures for pipeline tests."""
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
 import pytest
+
+# Add project root to Python path for imports
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
 @pytest.fixture

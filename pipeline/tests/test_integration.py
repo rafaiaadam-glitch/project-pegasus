@@ -4,10 +4,6 @@ import json
 import pytest
 from pathlib import Path
 
-# Add project root to path for imports
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from pipeline.run_pipeline import PipelineContext, _base_artifact, _validate, ARTIFACT_SCHEMA_DIR
 
 
