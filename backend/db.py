@@ -331,16 +331,29 @@ class Database:
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
-    def fetch_threads_for_course(self, course_id: str) -> list[Dict[str, Any]]:
+    def fetch_threads_for_course(
+        self,
+        course_id: str,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        limit_clause = ""
+        params: Dict[str, Any] = {"course_id": course_id}
+        if limit is not None:
+            limit_clause += " limit %(limit)s"
+            params["limit"] = limit
+        if offset is not None:
+            limit_clause += " offset %(offset)s"
+            params["offset"] = offset
         with self.connect() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(
-                    """
+                    f"""
                     select * from threads
-                    where course_id = %s
-                    order by created_at desc;
+                    where course_id = %(course_id)s
+                    order by created_at desc{limit_clause};
                     """,
-                    (course_id,),
+                    params,
                 )
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]

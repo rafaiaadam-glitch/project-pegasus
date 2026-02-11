@@ -48,7 +48,7 @@ class FakeDB:
         if course_id:
             rows = [row for row in rows if row.get("course_id") == course_id]
         rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
-        if offset:
+        if offset is not None:
             rows = rows[offset:]
         if limit is not None:
             rows = rows[:limit]
@@ -95,9 +95,18 @@ class FakeDB:
     def fetch_threads(self, lecture_id: str):
         return [row for row in getattr(self, "threads", []) if lecture_id in row.get("lecture_refs", [])]
 
-    def fetch_threads_for_course(self, course_id: str):
+    def fetch_threads_for_course(
+        self,
+        course_id: str,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ):
         rows = [row for row in self.threads if row.get("course_id") == course_id]
         rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
+        if offset:
+            rows = rows[offset:]
+        if limit is not None:
+            rows = rows[:limit]
         return rows
 
     def fetch_jobs(
@@ -324,6 +333,22 @@ def test_course_and_lecture_listings(monkeypatch):
     assert len(response.json()["lectures"]) == 1
 
 
+@pytest.mark.parametrize(
+    "path,params",
+    [
+        ("/courses", {"limit": -1}),
+        ("/lectures", {"offset": -1}),
+    ],
+)
+def test_listing_endpoints_reject_negative_pagination(monkeypatch, path, params):
+    fake_db = FakeDB()
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get(path, params=params)
+    assert response.status_code == 422
+
+
 def test_presets_catalog():
     client = TestClient(app_module.app)
 
@@ -351,6 +376,11 @@ def test_presets_catalog():
 
 def test_course_threads_listing(monkeypatch):
     fake_db = FakeDB()
+    fake_db.courses["course-1"] = {
+        "id": "course-1",
+        "title": "Course One",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
     fake_db.threads = [
         {
             "id": "thread-1",
@@ -392,6 +422,94 @@ def test_course_threads_listing(monkeypatch):
     payload = response.json()
     assert payload["courseId"] == "course-1"
     assert [thread["id"] for thread in payload["threads"]] == ["thread-2", "thread-1"]
+
+
+def test_course_threads_listing_requires_existing_course(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.threads = [
+        {
+            "id": "thread-1",
+            "course_id": "course-1",
+            "title": "Foundations",
+            "summary": "Base concept",
+            "status": "foundational",
+            "complexity_level": 1,
+            "lecture_refs": ["lecture-1"],
+            "created_at": "2024-01-02T00:00:00Z",
+        }
+    ]
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/courses/missing-course/threads")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Course not found."}
+
+
+def test_course_threads_listing_supports_pagination(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.courses["course-1"] = {
+        "id": "course-1",
+        "title": "Course One",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
+    fake_db.threads = [
+        {
+            "id": "thread-1",
+            "course_id": "course-1",
+            "title": "Foundations",
+            "summary": "Base concept",
+            "status": "foundational",
+            "complexity_level": 1,
+            "lecture_refs": ["lecture-1"],
+            "created_at": "2024-01-02T00:00:00Z",
+        },
+        {
+            "id": "thread-2",
+            "course_id": "course-1",
+            "title": "Advanced Topic",
+            "summary": "Later concept",
+            "status": "advanced",
+            "complexity_level": 3,
+            "lecture_refs": ["lecture-2"],
+            "created_at": "2024-01-03T00:00:00Z",
+        },
+        {
+            "id": "thread-3",
+            "course_id": "course-1",
+            "title": "Applied Topic",
+            "summary": "Even later concept",
+            "status": "advanced",
+            "complexity_level": 4,
+            "lecture_refs": ["lecture-3"],
+            "created_at": "2024-01-04T00:00:00Z",
+        },
+    ]
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/courses/course-1/threads", params={"limit": 1, "offset": 1})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["courseId"] == "course-1"
+    assert [thread["id"] for thread in payload["threads"]] == ["thread-2"]
+
+
+def test_course_threads_listing_rejects_negative_pagination(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.courses["course-1"] = {
+        "id": "course-1",
+        "title": "Course One",
+        "created_at": "2024-01-01T00:00:00Z",
+    }
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/courses/course-1/threads", params={"offset": -1})
+    assert response.status_code == 422
 
 
 def test_course_progress_rollup(monkeypatch):
