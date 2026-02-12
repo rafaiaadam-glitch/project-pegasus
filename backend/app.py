@@ -58,6 +58,12 @@ def _ensure_valid_preset_id(preset_id: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid preset_id.")
 
 
+def _ensure_course_exists(db, course_id: str) -> None:
+    fetch_course = getattr(db, "fetch_course", None)
+    if callable(fetch_course) and not fetch_course(course_id):
+        raise HTTPException(status_code=404, detail="Course not found.")
+
+
 def _validate_generation_context(db, lecture_id: str, course_id: str, preset_id: str) -> None:
     lecture = db.fetch_lecture(lecture_id)
     if not lecture:
@@ -85,6 +91,7 @@ def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateReques
 
     _ensure_valid_preset_id(preset_id)
     _validate_generation_context(db, lecture_id, course_id, preset_id)
+    _ensure_course_exists(db, course_id)
     return course_id, preset_id
 
 
@@ -140,8 +147,16 @@ def _derive_overall_status(stage_progress: dict) -> str:
         return "failed"
     if stage_progress["completedStageCount"] == stage_progress["stageCount"]:
         return "completed"
-    if stage_progress["completedStageCount"] > 0 or stage_progress["currentStage"] != "transcription":
+
+    # A lecture is considered in progress as soon as any stage has started,
+    # including queued/running work before the first completion.
+    any_started = any(
+        stage.get("status") not in {None, "not_started"}
+        for stage in stage_progress.get("stages", {}).values()
+    )
+    if any_started:
         return "in_progress"
+
     return "not_started"
 
 
@@ -182,9 +197,10 @@ def _pagination_payload(
 ) -> dict:
     normalized_offset = offset or 0
     normalized_limit = limit if limit is not None else count
+    page_size_for_prev = normalized_limit if normalized_limit > 0 else 1
     has_more = normalized_offset + count < total
     next_offset = normalized_offset + count if has_more else None
-    prev_offset = max(0, normalized_offset - normalized_limit) if normalized_offset > 0 else None
+    prev_offset = max(0, normalized_offset - page_size_for_prev) if normalized_offset > 0 else None
     return {
         "limit": limit,
         "offset": normalized_offset,

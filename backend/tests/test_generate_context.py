@@ -16,9 +16,13 @@ import backend.app as app_module
 @dataclass
 class FakeDB:
     lecture: dict | None
+    course: dict | None = None
 
     def fetch_lecture(self, lecture_id: str):
         return self.lecture
+
+    def fetch_course(self, course_id: str):
+        return self.course
 
 
 def test_resolve_generation_identifiers_defaults_to_stored_values():
@@ -27,7 +31,8 @@ def test_resolve_generation_identifiers_defaults_to_stored_values():
             "id": "lecture-1",
             "course_id": "course-1",
             "preset_id": "exam-mode",
-        }
+        },
+        course={"id": "course-1"},
     )
 
     course_id, preset_id = app_module._resolve_generation_identifiers(
@@ -46,7 +51,8 @@ def test_resolve_generation_identifiers_rejects_mismatched_course():
             "id": "lecture-1",
             "course_id": "course-1",
             "preset_id": "exam-mode",
-        }
+        },
+        course={"id": "course-2"},
     )
 
     with pytest.raises(HTTPException) as exc:
@@ -66,7 +72,8 @@ def test_resolve_generation_identifiers_requires_preset():
             "id": "lecture-1",
             "course_id": "course-1",
             "preset_id": None,
-        }
+        },
+        course={"id": "course-1"},
     )
 
     with pytest.raises(HTTPException) as exc:
@@ -78,3 +85,24 @@ def test_resolve_generation_identifiers_requires_preset():
 
     assert exc.value.status_code == 400
     assert exc.value.detail == "preset_id is required."
+
+
+def test_resolve_generation_identifiers_requires_existing_course():
+    db = FakeDB(
+        lecture={
+            "id": "lecture-1",
+            "course_id": "course-1",
+            "preset_id": "exam-mode",
+        },
+        course=None,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        app_module._resolve_generation_identifiers(
+            db,
+            "lecture-1",
+            app_module.GenerateRequest(),
+        )
+
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Course not found."
