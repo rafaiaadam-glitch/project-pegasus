@@ -135,7 +135,8 @@ def with_retry(
         MaxRetriesExceeded: If all retry attempts are exhausted
     """
     if config is None:
-        config = RetryConfig()
+        # Respect environment-based retry tuning when callers do not pass config.
+        config = retry_config_from_env()
 
     last_error: Optional[Exception] = None
     delay = config.initial_delay

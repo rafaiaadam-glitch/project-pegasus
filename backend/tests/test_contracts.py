@@ -938,6 +938,25 @@ def test_generate_rejects_missing_lecture(monkeypatch):
     assert response.json()["detail"] == "Lecture not found."
 
 
+def test_generate_rejects_missing_course(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.lectures["lecture-001"] = {
+        "id": "lecture-001",
+        "course_id": "course-missing",
+        "preset_id": "exam-mode",
+        "title": "Lecture",
+    }
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/lectures/lecture-001/generate",
+        json={"preset_id": "exam-mode"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Course not found."
+
+
 def test_generate_rejects_course_mismatch(monkeypatch):
     fake_db = FakeDB()
     fake_db.lectures["lecture-001"] = {
@@ -1116,6 +1135,41 @@ def test_lecture_progress_contract(monkeypatch):
 
     missing = client.get("/lectures/missing/progress")
     assert missing.status_code == 404
+
+
+def test_lecture_progress_contract_transcription_queued_is_in_progress(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-011b"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "title": "Lecture Eleven B",
+        "status": "processing",
+    }
+    fake_db.jobs.append(
+        {
+            "id": "job-transcription-queued",
+            "lecture_id": lecture_id,
+            "job_type": "transcription",
+            "status": "queued",
+            "result": None,
+            "error": None,
+            "created_at": "2024-01-02T00:00:00Z",
+            "updated_at": "2024-01-02T00:00:00Z",
+        }
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get(f"/lectures/{lecture_id}/progress")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["overallStatus"] == "in_progress"
+    assert payload["completedStageCount"] == 0
+    assert payload["progressPercent"] == 0
+    assert payload["currentStage"] == "transcription"
+    assert payload["stages"]["transcription"]["status"] == "queued"
 
 
 def test_lecture_progress_contract_failed_stage(monkeypatch):

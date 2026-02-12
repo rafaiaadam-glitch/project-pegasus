@@ -231,3 +231,17 @@ def test_retry_config_from_env_invalid_values_fallback(monkeypatch):
     assert config.max_delay == 0.0
     # multiplier clamps to minimum 1.0
     assert config.backoff_multiplier == 1.0
+
+
+def test_with_retry_uses_env_config_when_none_provided(monkeypatch):
+    """Test with_retry picks up env-derived config when config is omitted."""
+    monkeypatch.setenv("PLC_RETRY_MAX_ATTEMPTS", "2")
+    monkeypatch.setenv("PLC_RETRY_INITIAL_DELAY", "0")
+
+    mock_op = Mock(side_effect=HTTPError("url", 503, "Service Unavailable", {}, None))
+
+    with pytest.raises(MaxRetriesExceeded):
+        with_retry(mock_op, operation_name="env_default")
+
+    # Uses env max attempts (2) instead of dataclass default (3)
+    assert mock_op.call_count == 2
