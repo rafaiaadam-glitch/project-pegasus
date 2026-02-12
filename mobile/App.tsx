@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'react-native';
+import HomeScreen from './src/screens/HomeScreen';
 import CourseListScreen from './src/screens/CourseListScreen';
 import LectureListScreen from './src/screens/LectureListScreen';
 import LectureDetailScreen from './src/screens/LectureDetailScreen';
@@ -20,7 +21,7 @@ function AppNavigator() {
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <NavigationContainer>
         <Stack.Navigator
-          initialRouteName="CourseList"
+          initialRouteName="Home"
           screenOptions={{
             headerStyle: {
               backgroundColor: theme.surface,
@@ -33,6 +34,13 @@ function AppNavigator() {
             headerShadowVisible: false,
           }}
         >
+          <Stack.Screen
+            name="Home"
+            component={HomeScreen}
+            options={{
+              headerShown: false,
+            }}
+          />
           <Stack.Screen
             name="CourseList"
             component={CourseListScreen}
