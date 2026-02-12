@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -15,6 +16,13 @@ from backend.storage import save_artifact_file, save_export, save_export_file, s
 from pipeline.export_artifacts import export_artifacts
 from pipeline.run_pipeline import PipelineContext, run_pipeline
 from pipeline.transcribe_audio import _load_whisper
+
+
+LOGGER = logging.getLogger("pegasus.jobs")
+
+
+def _log_job_event(event: str, **fields: Any) -> None:
+    LOGGER.info(event, extra={k: v for k, v in fields.items() if v is not None})
 
 
 def _iso_now() -> str:
@@ -135,6 +143,7 @@ def _create_job_record(job_id: str, job_type: str, lecture_id: Optional[str]) ->
             "updated_at": now,
         }
     )
+    _log_job_event("job.created", job_id=job_id, lecture_id=lecture_id, job_type=job_type, status="queued")
 
 
 def _update_job(
@@ -151,6 +160,7 @@ def _update_job(
         error=error,
         updated_at=_iso_now(),
     )
+    _log_job_event("job.updated", job_id=job_id, status=status, error=error)
 
 
 def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs) -> str:
@@ -158,11 +168,13 @@ def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs)
     _create_job_record(job_id, job_type, lecture_id)
 
     if _should_run_jobs_inline():
+        _log_job_event("job.dispatch", job_id=job_id, lecture_id=lecture_id, job_type=job_type, mode="inline")
         _run_job_inline(job_id, task, *args, **kwargs)
         return job_id
 
     try:
         queue = _get_queue()
+        _log_job_event("job.dispatch", job_id=job_id, lecture_id=lecture_id, job_type=job_type, mode="queue")
         queue.enqueue(
             task,
             job_id,
@@ -172,6 +184,7 @@ def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs)
             **kwargs,
         )
     except Exception as exc:
+        _log_job_event("job.dispatch_failed", job_id=job_id, lecture_id=lecture_id, job_type=job_type, error=str(exc))
         _update_job(job_id, "running", result={"queueFallback": "inline", "reason": str(exc)})
         _run_job_inline(job_id, task, *args, **kwargs)
 
@@ -179,6 +192,7 @@ def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs)
 
 
 def run_transcription_job(job_id: str, lecture_id: str, model: str) -> Dict[str, Any]:
+    _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="transcription")
     _update_job(job_id, "running")
     try:
         _ensure_dirs()
@@ -220,9 +234,11 @@ def run_transcription_job(job_id: str, lecture_id: str, model: str) -> Dict[str,
         )
         payload = {"lectureId": lecture_id, "transcriptPath": transcript_path}
         _update_job(job_id, "completed", result=payload)
+        _log_job_event("job.run.completed", job_id=job_id, lecture_id=lecture_id, job_type="transcription")
         return payload
     except Exception as exc:
         _update_job(job_id, "failed", error=str(exc))
+        _log_job_event("job.run.failed", job_id=job_id, lecture_id=lecture_id, job_type="transcription", error=str(exc))
         raise
 
 
@@ -233,6 +249,7 @@ def run_generation_job(
     preset_id: str,
     openai_model: str,
 ) -> Dict[str, Any]:
+    _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="generation")
     _update_job(job_id, "running")
     try:
         storage_dir = _storage_dir()
@@ -330,13 +347,16 @@ def run_generation_job(
             "artifactPaths": artifact_paths,
         }
         _update_job(job_id, "completed", result=payload)
+        _log_job_event("job.run.completed", job_id=job_id, lecture_id=lecture_id, job_type="generation")
         return payload
     except Exception as exc:
         _update_job(job_id, "failed", error=str(exc))
+        _log_job_event("job.run.failed", job_id=job_id, lecture_id=lecture_id, job_type="generation", error=str(exc))
         raise
 
 
 def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
+    _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="export")
     _update_job(job_id, "running")
     try:
         _ensure_dirs()
@@ -378,7 +398,9 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
             f"{lecture_id}.json",
         )
         _update_job(job_id, "completed", result=exports_manifest)
+        _log_job_event("job.run.completed", job_id=job_id, lecture_id=lecture_id, job_type="export")
         return exports_manifest
     except Exception as exc:
         _update_job(job_id, "failed", error=str(exc))
+        _log_job_event("job.run.failed", job_id=job_id, lecture_id=lecture_id, job_type="export", error=str(exc))
         raise

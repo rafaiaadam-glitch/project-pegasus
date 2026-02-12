@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
+from uuid import uuid4
 
 from typing import Callable, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from redis import Redis
@@ -23,7 +26,31 @@ from backend.presets import PRESETS, PRESETS_BY_ID
 from backend.storage import download_url, load_json_payload, save_audio
 
 app = FastAPI(title="Pegasus Lecture Copilot API")
+LOGGER = logging.getLogger("pegasus.api")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid4())
+    request.state.request_id = request_id
+
+    started_at = perf_counter()
+    response = await call_next(request)
+    duration_ms = (perf_counter() - started_at) * 1000
+
+    response.headers["x-request-id"] = request_id
+    LOGGER.info(
+        "request.complete",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration_ms, 2),
+        },
+    )
+    return response
 
 
 class GenerateRequest(BaseModel):
@@ -42,6 +69,18 @@ def _ensure_dirs() -> None:
     (STORAGE_DIR / "transcripts").mkdir(parents=True, exist_ok=True)
     (STORAGE_DIR / "exports").mkdir(parents=True, exist_ok=True)
 
+
+
+
+def _max_audio_upload_bytes() -> int:
+    raw_value = os.getenv("PLC_MAX_AUDIO_UPLOAD_MB", "200").strip()
+    try:
+        limit_mb = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError("PLC_MAX_AUDIO_UPLOAD_MB must be an integer.") from exc
+    if limit_mb <= 0:
+        raise RuntimeError("PLC_MAX_AUDIO_UPLOAD_MB must be a positive integer.")
+    return limit_mb * 1024 * 1024
 
 def _sha256(path: Path) -> str:
     import hashlib
@@ -94,6 +133,30 @@ def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateReques
     _ensure_course_exists(db, course_id)
     return course_id, preset_id
 
+
+
+
+def _find_active_job_for_lecture(db, lecture_id: str, job_type: str) -> Optional[dict]:
+    fetch_jobs = getattr(db, "fetch_jobs", None)
+    if not callable(fetch_jobs):
+        return None
+
+    try:
+        jobs = fetch_jobs(lecture_id=lecture_id)
+    except Exception:
+        return None
+
+    if not isinstance(jobs, list):
+        return None
+
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        if job.get("job_type") != job_type:
+            continue
+        if job.get("status") in {"queued", "running"}:
+            return job
+    return None
 
 def _latest_jobs_by_type(jobs: list[dict]) -> dict[str, dict]:
     latest_by_type: dict[str, dict] = {}
@@ -307,7 +370,14 @@ def ingest_lecture(
     _ensure_valid_preset_id(preset_id)
     _ensure_dirs()
     ext = Path(audio.filename or "").suffix or ".bin"
-    stored_audio = save_audio(audio.file, f"{lecture_id}{ext}")
+    try:
+        stored_audio = save_audio(
+            audio.file,
+            f"{lecture_id}{ext}",
+            max_bytes=_max_audio_upload_bytes(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     metadata = {
         "id": lecture_id,
@@ -634,6 +704,16 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
     audio_files = list((STORAGE_DIR / "audio").glob(f"{lecture_id}.*"))
     if not audio_files:
         raise HTTPException(status_code=404, detail="Audio not found for lecture.")
+    db = get_database()
+    active_job = _find_active_job_for_lecture(db, lecture_id, "transcription")
+    if active_job:
+        return {
+            "jobId": active_job.get("id"),
+            "status": active_job.get("status", "queued"),
+            "jobType": "transcription",
+            "deduplicated": True,
+        }
+
     job_id = enqueue_job(
         "transcription",
         lecture_id,
@@ -641,7 +721,6 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
         lecture_id,
         model,
     )
-    db = get_database()
     job = db.fetch_job(job_id)
     return {
         "jobId": job_id,
@@ -657,6 +736,17 @@ def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
 
     db = get_database()
     course_id, preset_id = _resolve_generation_identifiers(db, lecture_id, payload)
+    active_job = _find_active_job_for_lecture(db, lecture_id, "generation")
+    if active_job:
+        return {
+            "jobId": active_job.get("id"),
+            "status": active_job.get("status", "queued"),
+            "jobType": "generation",
+            "courseId": course_id,
+            "presetId": preset_id,
+            "deduplicated": True,
+        }
+
     job_id = enqueue_job(
         "generation",
         lecture_id,
@@ -678,8 +768,17 @@ def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
 
 @app.post("/lectures/{lecture_id}/export")
 def export_lecture(lecture_id: str) -> dict:
-    job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
     db = get_database()
+    active_job = _find_active_job_for_lecture(db, lecture_id, "export")
+    if active_job:
+        return {
+            "jobId": active_job.get("id"),
+            "status": active_job.get("status", "queued"),
+            "jobType": "export",
+            "deduplicated": True,
+        }
+
+    job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
     job = db.fetch_job(job_id)
     return {
         "jobId": job_id,
