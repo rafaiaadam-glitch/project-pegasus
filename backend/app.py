@@ -3,12 +3,15 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
 from typing import Callable, Optional
+import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -16,6 +19,11 @@ from pydantic import BaseModel
 from redis import Redis
 
 from backend.db import get_database
+from backend.idempotency import (
+    InMemoryIdempotencyStore,
+    maybe_replay_response,
+    store_idempotent_response,
+)
 from backend.jobs import (
     enqueue_job,
     run_export_job,
@@ -23,12 +31,19 @@ from backend.jobs import (
     run_transcription_job,
 )
 from backend.presets import PRESETS, PRESETS_BY_ID
+from backend.runtime_config import validate_runtime_environment
 from backend.storage import download_url, load_json_payload, save_audio
 
 app = FastAPI(title="Pegasus Lecture Copilot API")
 LOGGER = logging.getLogger("pegasus.api")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
 
+
+
+
+@app.on_event("startup")
+def validate_environment_on_startup() -> None:
+    validate_runtime_environment("api")
 
 @app.middleware("http")
 async def request_context_middleware(request: Request, call_next):
@@ -53,6 +68,28 @@ async def request_context_middleware(request: Request, call_next):
     return response
 
 
+
+
+class _InMemoryRateLimiter:
+    def __init__(self) -> None:
+        self._events_by_key: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, *, limit: int, window_seconds: int, now: float) -> bool:
+        cutoff = now - window_seconds
+        with self._lock:
+            events = self._events_by_key[key]
+            while events and events[0] <= cutoff:
+                events.popleft()
+            if len(events) >= limit:
+                return False
+            events.append(now)
+            return True
+
+
+_WRITE_RATE_LIMITER = _InMemoryRateLimiter()
+_IDEMPOTENCY_STORE = InMemoryIdempotencyStore()
+
 class GenerateRequest(BaseModel):
     course_id: Optional[str] = None
     preset_id: Optional[str] = None
@@ -62,6 +99,88 @@ class GenerateRequest(BaseModel):
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+
+def _enforce_write_auth(request: Request) -> None:
+    expected_token = os.getenv("PLC_WRITE_API_TOKEN", "").strip()
+    if not expected_token:
+        return
+
+    authorization = request.headers.get("authorization", "")
+    scheme, _, provided_token = authorization.partition(" ")
+
+    if scheme.lower() != "bearer" or not provided_token.strip():
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+
+    if not secrets.compare_digest(provided_token.strip(), expected_token):
+        raise HTTPException(status_code=403, detail="Invalid API token.")
+
+
+
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name, str(default)).strip()
+    try:
+        parsed = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer.") from exc
+    if parsed <= 0:
+        raise RuntimeError(f"{name} must be a positive integer.")
+    return parsed
+
+
+def _write_rate_limit_config() -> tuple[int, int]:
+    max_requests = _parse_positive_int_env("PLC_WRITE_RATE_LIMIT_MAX_REQUESTS", 60)
+    window_seconds = _parse_positive_int_env("PLC_WRITE_RATE_LIMIT_WINDOW_SEC", 60)
+    return max_requests, window_seconds
+
+
+def _client_identifier(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for.strip():
+        return forwarded_for.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_write_rate_limit(request: Request, *, now: Optional[float] = None) -> None:
+    max_requests, window_seconds = _write_rate_limit_config()
+    timestamp = now if now is not None else perf_counter()
+    if not _WRITE_RATE_LIMITER.allow(
+        _client_identifier(request),
+        limit=max_requests,
+        window_seconds=window_seconds,
+        now=timestamp,
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many write requests. Please retry shortly.",
+        )
+
+
+
+def _idempotency_fingerprint(operation: str, payload: dict) -> str:
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return operation + ":" + serialized
+
+
+def _replay_or_none(request: Request, operation: str, payload: dict) -> Optional[dict]:
+    return maybe_replay_response(
+        request,
+        _IDEMPOTENCY_STORE,
+        scope=operation,
+        fingerprint=_idempotency_fingerprint(operation, payload),
+    )
+
+
+def _remember_response(request: Request, operation: str, payload: dict, response_payload: dict) -> None:
+    store_idempotent_response(
+        request,
+        _IDEMPOTENCY_STORE,
+        scope=operation,
+        fingerprint=_idempotency_fingerprint(operation, payload),
+        response_payload=response_payload,
+    )
 
 def _ensure_dirs() -> None:
     (STORAGE_DIR / "audio").mkdir(parents=True, exist_ok=True)
@@ -358,6 +477,7 @@ def get_preset(preset_id: str) -> dict:
 
 @app.post("/lectures/ingest")
 def ingest_lecture(
+    request: Request,
     course_id: str = Form(...),
     lecture_id: str = Form(...),
     preset_id: str = Form(...),
@@ -367,6 +487,20 @@ def ingest_lecture(
     source_type: str = Form("upload"),
     audio: UploadFile = File(...),
 ) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    idempotency_payload = {
+        "course_id": course_id,
+        "lecture_id": lecture_id,
+        "preset_id": preset_id,
+        "title": title,
+        "duration_sec": duration_sec,
+        "source_type": source_type,
+        "audio_filename": audio.filename or "",
+    }
+    replay = _replay_or_none(request, "lectures.ingest", idempotency_payload)
+    if replay is not None:
+        return replay
     _ensure_valid_preset_id(preset_id)
     _ensure_dirs()
     ext = Path(audio.filename or "").suffix or ".bin"
@@ -422,11 +556,13 @@ def ingest_lecture(
             "updated_at": _iso_now(),
         }
     )
-    return {
+    response_payload = {
         "lectureId": lecture_id,
         "metadataPath": str(metadata_path),
         "audioPath": stored_audio,
     }
+    _remember_response(request, "lectures.ingest", idempotency_payload, response_payload)
+    return response_payload
 
 
 @app.get("/courses")
@@ -699,7 +835,13 @@ def list_lectures(
 
 
 @app.post("/lectures/{lecture_id}/transcribe")
-def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
+def transcribe_lecture(request: Request, lecture_id: str, model: str = "base") -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    idempotency_payload = {"lecture_id": lecture_id, "model": model}
+    replay = _replay_or_none(request, "lectures.transcribe", idempotency_payload)
+    if replay is not None:
+        return replay
     _ensure_dirs()
     audio_files = list((STORAGE_DIR / "audio").glob(f"{lecture_id}.*"))
     if not audio_files:
@@ -707,12 +849,14 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
     db = get_database()
     active_job = _find_active_job_for_lecture(db, lecture_id, "transcription")
     if active_job:
-        return {
+        response_payload = {
             "jobId": active_job.get("id"),
             "status": active_job.get("status", "queued"),
             "jobType": "transcription",
             "deduplicated": True,
         }
+        _remember_response(request, "lectures.transcribe", idempotency_payload, response_payload)
+        return response_payload
 
     job_id = enqueue_job(
         "transcription",
@@ -722,15 +866,28 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
         model,
     )
     job = db.fetch_job(job_id)
-    return {
+    response_payload = {
         "jobId": job_id,
         "status": job["status"] if job else "queued",
         "jobType": job.get("job_type") if job else "transcription",
     }
+    _remember_response(request, "lectures.transcribe", idempotency_payload, response_payload)
+    return response_payload
 
 
 @app.post("/lectures/{lecture_id}/generate")
-def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
+def generate_artifacts(request: Request, lecture_id: str, payload: GenerateRequest) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    idempotency_payload = {
+        "lecture_id": lecture_id,
+        "course_id": payload.course_id,
+        "preset_id": payload.preset_id,
+        "openai_model": payload.openai_model,
+    }
+    replay = _replay_or_none(request, "lectures.generate", idempotency_payload)
+    if replay is not None:
+        return replay
     if payload.preset_id:
         _ensure_valid_preset_id(payload.preset_id)
 
@@ -738,7 +895,7 @@ def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
     course_id, preset_id = _resolve_generation_identifiers(db, lecture_id, payload)
     active_job = _find_active_job_for_lecture(db, lecture_id, "generation")
     if active_job:
-        return {
+        response_payload = {
             "jobId": active_job.get("id"),
             "status": active_job.get("status", "queued"),
             "jobType": "generation",
@@ -746,6 +903,8 @@ def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
             "presetId": preset_id,
             "deduplicated": True,
         }
+        _remember_response(request, "lectures.generate", idempotency_payload, response_payload)
+        return response_payload
 
     job_id = enqueue_job(
         "generation",
@@ -757,34 +916,109 @@ def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
         payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     )
     job = db.fetch_job(job_id)
-    return {
+    response_payload = {
         "jobId": job_id,
         "status": job["status"] if job else "queued",
         "jobType": job.get("job_type") if job else "generation",
         "courseId": course_id,
         "presetId": preset_id,
     }
+    _remember_response(request, "lectures.generate", idempotency_payload, response_payload)
+    return response_payload
 
 
 @app.post("/lectures/{lecture_id}/export")
-def export_lecture(lecture_id: str) -> dict:
+def export_lecture(request: Request, lecture_id: str) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    idempotency_payload = {"lecture_id": lecture_id}
+    replay = _replay_or_none(request, "lectures.export", idempotency_payload)
+    if replay is not None:
+        return replay
     db = get_database()
     active_job = _find_active_job_for_lecture(db, lecture_id, "export")
     if active_job:
-        return {
+        response_payload = {
             "jobId": active_job.get("id"),
             "status": active_job.get("status", "queued"),
             "jobType": "export",
             "deduplicated": True,
         }
+        _remember_response(request, "lectures.export", idempotency_payload, response_payload)
+        return response_payload
 
     job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
     job = db.fetch_job(job_id)
-    return {
+    response_payload = {
         "jobId": job_id,
         "status": job["status"] if job else "queued",
         "jobType": job.get("job_type") if job else "export",
     }
+    _remember_response(request, "lectures.export", idempotency_payload, response_payload)
+    return response_payload
+
+
+def _enqueue_replay_job(db, job: dict) -> dict:
+    if job.get("status") != "failed":
+        raise HTTPException(status_code=409, detail="Only failed jobs can be replayed.")
+
+    job_type = job.get("job_type")
+    lecture_id = job.get("lecture_id")
+    if not lecture_id:
+        raise HTTPException(status_code=400, detail="Job is missing lecture context.")
+
+    if job_type == "transcription":
+        new_job_id = enqueue_job(
+            "transcription",
+            lecture_id,
+            run_transcription_job,
+            lecture_id,
+            "base",
+        )
+    elif job_type == "generation":
+        lecture = db.fetch_lecture(lecture_id)
+        if not lecture:
+            raise HTTPException(status_code=404, detail="Lecture not found.")
+        course_id = lecture.get("course_id")
+        preset_id = lecture.get("preset_id")
+        if not course_id or not preset_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Lecture is missing course_id or preset_id for generation replay.",
+            )
+        new_job_id = enqueue_job(
+            "generation",
+            lecture_id,
+            run_generation_job,
+            lecture_id,
+            course_id,
+            preset_id,
+            os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        )
+    elif job_type == "export":
+        new_job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
+    else:
+        raise HTTPException(status_code=400, detail="Replay is unsupported for this job type.")
+
+    replayed_job = db.fetch_job(new_job_id)
+    return {
+        "jobId": new_job_id,
+        "status": replayed_job["status"] if replayed_job else "queued",
+        "jobType": replayed_job.get("job_type") if replayed_job else job_type,
+        "lectureId": lecture_id,
+        "replayedFromJobId": job.get("id"),
+    }
+
+
+@app.post("/jobs/{job_id}/replay")
+def replay_job(request: Request, job_id: str) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    db = get_database()
+    job = db.fetch_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return _enqueue_replay_job(db, job)
 
 
 @app.get("/jobs/{job_id}")
