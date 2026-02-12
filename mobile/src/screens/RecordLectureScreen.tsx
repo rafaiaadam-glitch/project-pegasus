@@ -8,11 +8,13 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
 import { Preset } from '../types';
 import api from '../services/api';
+import { useTheme } from '../theme';
 
 interface Props {
   navigation: any;
@@ -20,12 +22,15 @@ interface Props {
 }
 
 export default function RecordLectureScreen({ navigation, route }: Props) {
+  const { theme } = useTheme();
   const { courseId } = route.params;
   const [title, setTitle] = useState('');
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string>('exam-mode');
   const [uploading, setUploading] = useState(false);
+
+  const isWeb = Platform.OS === 'web';
 
   // Recording state
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
@@ -75,6 +80,14 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   };
 
   const startRecording = async () => {
+    if (isWeb) {
+      Alert.alert(
+        'Recording Not Available',
+        'Audio recording is only available on iOS and Android devices.'
+      );
+      return;
+    }
+
     try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
@@ -227,6 +240,8 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const styles = createStyles(theme);
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.sectionTitle}>Lecture Title</Text>
@@ -377,32 +392,33 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F2F2F7',
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#8E8E93',
-    textTransform: 'uppercase',
-    marginBottom: 12,
-    marginTop: 24,
-  },
-  input: {
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    fontSize: 16,
-    color: '#000',
-    borderWidth: 1,
-    borderColor: '#E5E5EA',
-  },
+const createStyles = (theme: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    content: {
+      padding: 20,
+      paddingBottom: 40,
+    },
+    sectionTitle: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.textTertiary,
+      textTransform: 'uppercase',
+      marginBottom: 12,
+      marginTop: 24,
+    },
+    input: {
+      backgroundColor: theme.surface,
+      padding: 16,
+      borderRadius: 12,
+      fontSize: 16,
+      color: theme.text,
+      borderWidth: 1,
+      borderColor: theme.border,
+    },
   presetContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -412,39 +428,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: '#FFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#E5E5EA',
+    borderColor: theme.border,
   },
   presetBadgeActive: {
-    backgroundColor: '#007AFF',
-    borderColor: '#007AFF',
+    backgroundColor: theme.primary,
+    borderColor: theme.primary,
   },
   presetText: {
     fontSize: 14,
-    color: '#007AFF',
+    color: theme.primary,
     fontWeight: '500',
   },
   presetTextActive: {
     color: '#FFF',
   },
   recordStartButton: {
-    backgroundColor: '#FFF',
+    backgroundColor: theme.surface,
     padding: 40,
     borderRadius: 20,
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#FF3B30',
+    borderColor: theme.error,
     borderStyle: 'dashed',
   },
   recordIconLarge: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#FFF',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
+    shadowColor: theme.shadowColor,
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 3,
@@ -454,12 +470,12 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#FF3B30',
+    backgroundColor: theme.error,
   },
   recordStartText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#FF3B30',
+    color: theme.error,
   },
   divider: {
     flexDirection: 'row',
@@ -469,22 +485,22 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E5E5EA',
+    backgroundColor: theme.border,
   },
   dividerText: {
     marginHorizontal: 16,
     fontSize: 13,
-    color: '#8E8E93',
+    color: theme.textTertiary,
     fontWeight: '600',
   },
   filePickerButton: {
-    backgroundColor: '#FFF',
+    backgroundColor: theme.surface,
     padding: 20,
     borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 2,
-    borderColor: '#E5E5EA',
+    borderColor: theme.border,
     borderStyle: 'dashed',
   },
   filePickerIcon: {
@@ -497,15 +513,15 @@ const styles = StyleSheet.create({
   filePickerTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
+    color: theme.text,
     marginBottom: 4,
   },
   filePickerSubtitle: {
     fontSize: 13,
-    color: '#8E8E93',
+    color: theme.textTertiary,
   },
   recordingPanel: {
-    backgroundColor: '#FFF',
+    backgroundColor: theme.surface,
     borderRadius: 20,
     padding: 24,
     marginTop: 24,
@@ -535,12 +551,12 @@ const styles = StyleSheet.create({
   durationText: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#000',
+    color: theme.text,
     fontVariant: ['tabular-nums'],
   },
   waveformPlaceholder: {
     height: 100,
-    backgroundColor: '#F2F2F7',
+    backgroundColor: theme.inputBackground,
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
@@ -548,7 +564,7 @@ const styles = StyleSheet.create({
   },
   waveformText: {
     fontSize: 16,
-    color: '#8E8E93',
+    color: theme.textTertiary,
   },
   recordingControls: {
     flexDirection: 'row',
@@ -565,11 +581,11 @@ const styles = StyleSheet.create({
   },
   controlLabel: {
     fontSize: 13,
-    color: '#8E8E93',
+    color: theme.textTertiary,
     fontWeight: '500',
   },
   selectedFilePanel: {
-    backgroundColor: '#FFF',
+    backgroundColor: theme.surface,
     borderRadius: 12,
     padding: 16,
     marginTop: 24,
@@ -588,20 +604,20 @@ const styles = StyleSheet.create({
   fileName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#000',
+    color: theme.text,
     marginBottom: 4,
   },
   fileSize: {
     fontSize: 13,
-    color: '#8E8E93',
+    color: theme.textTertiary,
   },
   removeButton: {
     fontSize: 24,
-    color: '#8E8E93',
+    color: theme.textTertiary,
     padding: 8,
   },
   uploadButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: theme.primary,
     padding: 18,
     borderRadius: 12,
     alignItems: 'center',
@@ -617,9 +633,9 @@ const styles = StyleSheet.create({
   },
   hint: {
     fontSize: 13,
-    color: '#8E8E93',
+    color: theme.textTertiary,
     textAlign: 'center',
     marginTop: 16,
     lineHeight: 20,
   },
-});
+  });
