@@ -5,7 +5,7 @@ import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Optional
+from typing import BinaryIO, Mapping, Optional
 
 
 @dataclass(frozen=True)
@@ -29,16 +29,17 @@ def _validate_config(config: StorageConfig) -> None:
             raise RuntimeError("S3_PREFIX must be a non-empty path segment for S3 storage.")
 
 
-def _config() -> StorageConfig:
-    mode = os.getenv("STORAGE_MODE", "local")
-    local_dir = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
+def _config(env: Mapping[str, str] | None = None) -> StorageConfig:
+    active_env = env or os.environ
+    mode = active_env.get("STORAGE_MODE", "local")
+    local_dir = Path(active_env.get("PLC_STORAGE_DIR", "storage")).resolve()
     config = StorageConfig(
         mode=mode,
         local_dir=local_dir,
-        s3_bucket=os.getenv("S3_BUCKET"),
-        s3_prefix=os.getenv("S3_PREFIX", "pegasus"),
-        s3_endpoint_url=os.getenv("S3_ENDPOINT_URL"),
-        s3_region=os.getenv("AWS_REGION") or os.getenv("S3_REGION"),
+        s3_bucket=active_env.get("S3_BUCKET"),
+        s3_prefix=active_env.get("S3_PREFIX", "pegasus"),
+        s3_endpoint_url=active_env.get("S3_ENDPOINT_URL"),
+        s3_region=active_env.get("AWS_REGION") or active_env.get("S3_REGION"),
     )
     _validate_config(config)
     return config
