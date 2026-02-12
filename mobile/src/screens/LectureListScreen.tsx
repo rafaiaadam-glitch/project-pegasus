@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,12 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  TextInput,
+  ScrollView,
 } from 'react-native';
 import { Lecture } from '../types';
 import api from '../services/api';
+import { useTheme } from '../theme';
 
 interface Props {
   navigation: any;
@@ -18,15 +21,38 @@ interface Props {
 }
 
 export default function LectureListScreen({ navigation, route }: Props) {
+  const { theme } = useTheme();
   const { courseId, courseTitle } = route.params;
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
 
   useEffect(() => {
     navigation.setOptions({ title: courseTitle || 'Lectures' });
     loadLectures();
   }, [courseId]);
+
+  // Filter lectures based on search and status
+  const filteredLectures = useMemo(() => {
+    let filtered = lectures;
+
+    // Filter by status
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter((lecture) => lecture.status === statusFilter);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((lecture) =>
+        lecture.title.toLowerCase().includes(query)
+      );
+    }
+
+    return filtered;
+  }, [lectures, searchQuery, statusFilter]);
 
   const loadLectures = async () => {
     try {
@@ -122,23 +148,54 @@ export default function LectureListScreen({ navigation, route }: Props) {
     </TouchableOpacity>
   );
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyIcon}>🎤</Text>
-      <Text style={styles.emptyTitle}>No Lectures Yet</Text>
-      <Text style={styles.emptyText}>
-        Start by recording or uploading your first lecture
-      </Text>
-      <TouchableOpacity style={styles.addButton} onPress={handleAddLecture}>
-        <Text style={styles.addButtonText}>+ Add Lecture</Text>
+  const renderEmpty = () => {
+    if (searchQuery.trim() || statusFilter !== 'all') {
+      return (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyIcon}>🔍</Text>
+          <Text style={styles.emptyTitle}>No Results Found</Text>
+          <Text style={styles.emptyText}>
+            Try adjusting your search or filters
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyIcon}>🎤</Text>
+        <Text style={styles.emptyTitle}>No Lectures Yet</Text>
+        <Text style={styles.emptyText}>
+          Start by recording or uploading your first lecture
+        </Text>
+        <TouchableOpacity style={styles.addButton} onPress={handleAddLecture}>
+          <Text style={styles.addButtonText}>+ Add Lecture</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const renderFilterChip = (label: string, value: string) => {
+    const isActive = statusFilter === value;
+    return (
+      <TouchableOpacity
+        key={value}
+        style={[styles.filterChip, isActive && styles.filterChipActive]}
+        onPress={() => setStatusFilter(value)}
+      >
+        <Text style={[styles.filterChipText, isActive && styles.filterChipTextActive]}>
+          {label}
+        </Text>
       </TouchableOpacity>
-    </View>
-  );
+    );
+  };
+
+  const styles = createStyles(theme);
 
   if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={theme.primary} />
         <Text style={styles.loadingText}>Loading lectures...</Text>
       </View>
     );
@@ -146,8 +203,43 @@ export default function LectureListScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.container}>
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search lectures..."
+            placeholderTextColor="#8E8E93"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Text style={styles.clearButton}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Filter Chips */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterContainer}
+        contentContainerStyle={styles.filterContent}
+      >
+        {renderFilterChip('All', 'all')}
+        {renderFilterChip('Ready', 'generated')}
+        {renderFilterChip('Processing', 'processing')}
+        {renderFilterChip('Uploaded', 'uploaded')}
+        {renderFilterChip('Failed', 'failed')}
+      </ScrollView>
+
       <FlatList
-        data={lectures}
+        data={filteredLectures}
         renderItem={renderLecture}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
@@ -155,7 +247,7 @@ export default function LectureListScreen({ navigation, route }: Props) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor="#007AFF"
+            tintColor={theme.primary}
           />
         }
         ListEmptyComponent={renderEmpty}
@@ -173,123 +265,181 @@ export default function LectureListScreen({ navigation, route }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F2F2F7',
-  },
-  listContent: {
-    padding: 16,
-    flexGrow: 1,
-  },
-  lectureCard: {
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  lectureHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  lectureTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#000',
-    flex: 1,
-    marginRight: 8,
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  lectureDate: {
-    fontSize: 13,
-    color: '#8E8E93',
-    marginBottom: 4,
-  },
-  lectureDuration: {
-    fontSize: 13,
-    color: '#8E8E93',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F2F2F7',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#8E8E93',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-    paddingTop: 60,
-  },
-  emptyIcon: {
-    fontSize: 64,
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 15,
-    color: '#8E8E93',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  addButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 24,
-  },
-  addButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  floatingButton: {
-    position: 'absolute',
-    right: 20,
-    bottom: 30,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#007AFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 8,
-  },
-  floatingButtonText: {
-    color: '#FFF',
-    fontSize: 32,
-    fontWeight: '300',
-    lineHeight: 32,
-  },
-});
+const createStyles = (theme: any) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: theme.background,
+    },
+    searchContainer: {
+      backgroundColor: theme.surface,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: 0.5,
+      borderBottomColor: theme.border,
+    },
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: theme.inputBackground,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      height: 40,
+    },
+    searchIcon: {
+      fontSize: 16,
+      marginRight: 8,
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 16,
+      color: theme.text,
+    },
+    clearButton: {
+      fontSize: 18,
+      color: theme.textTertiary,
+      paddingHorizontal: 8,
+    },
+    filterContainer: {
+      backgroundColor: theme.surface,
+      borderBottomWidth: 0.5,
+      borderBottomColor: theme.border,
+    },
+    filterContent: {
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      gap: 8,
+    },
+    filterChip: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 20,
+      backgroundColor: theme.inputBackground,
+      marginRight: 8,
+    },
+    filterChipActive: {
+      backgroundColor: theme.primary,
+    },
+    filterChipText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: theme.textTertiary,
+    },
+    filterChipTextActive: {
+      color: '#FFF',
+    },
+    listContent: {
+      padding: 16,
+      flexGrow: 1,
+    },
+    lectureCard: {
+      backgroundColor: theme.surface,
+      padding: 16,
+      borderRadius: 12,
+      marginBottom: 12,
+      shadowColor: theme.shadowColor,
+      shadowOpacity: 0.05,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 2,
+    },
+    lectureHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 8,
+    },
+    lectureTitle: {
+      fontSize: 17,
+      fontWeight: '600',
+      color: theme.text,
+      flex: 1,
+      marginRight: 8,
+    },
+    statusBadge: {
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 12,
+    },
+    statusText: {
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    lectureDate: {
+      fontSize: 13,
+      color: theme.textTertiary,
+      marginBottom: 4,
+    },
+    lectureDuration: {
+      fontSize: 13,
+      color: theme.textTertiary,
+    },
+    loadingContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: theme.background,
+    },
+    loadingText: {
+      marginTop: 12,
+      fontSize: 16,
+      color: theme.textTertiary,
+    },
+    emptyContainer: {
+      flex: 1,
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingHorizontal: 40,
+      paddingTop: 60,
+    },
+    emptyIcon: {
+      fontSize: 64,
+      marginBottom: 16,
+    },
+    emptyTitle: {
+      fontSize: 20,
+      fontWeight: '600',
+      color: theme.text,
+      marginBottom: 8,
+    },
+    emptyText: {
+      fontSize: 15,
+      color: theme.textTertiary,
+      textAlign: 'center',
+      lineHeight: 22,
+      marginBottom: 24,
+    },
+    addButton: {
+      backgroundColor: theme.primary,
+      paddingHorizontal: 32,
+      paddingVertical: 14,
+      borderRadius: 24,
+    },
+    addButtonText: {
+      color: '#FFF',
+      fontSize: 16,
+      fontWeight: '600',
+    },
+    floatingButton: {
+      position: 'absolute',
+      right: 20,
+      bottom: 30,
+      width: 60,
+      height: 60,
+      borderRadius: 30,
+      backgroundColor: theme.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      shadowColor: theme.shadowColor,
+      shadowOpacity: 0.3,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 4 },
+      elevation: 8,
+    },
+    floatingButtonText: {
+      color: '#FFF',
+      fontSize: 32,
+      fontWeight: '300',
+      lineHeight: 32,
+    },
+  });

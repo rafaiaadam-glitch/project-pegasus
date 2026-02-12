@@ -8,8 +8,11 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import api from '../services/api';
+import * as ExportUtils from '../services/exportUtils';
+import { useTheme } from '../theme';
 
 interface Props {
   navigation: any;
@@ -17,6 +20,7 @@ interface Props {
 }
 
 export default function LectureDetailScreen({ navigation, route }: Props) {
+  const { theme } = useTheme();
   const { lectureId, lectureTitle } = route.params;
   const [activeTab, setActiveTab] = useState<'artifacts' | 'progress'>('artifacts');
   const [loading, setLoading] = useState(true);
@@ -24,6 +28,8 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const [summary, setSummary] = useState<any>(null);
   const [artifacts, setArtifacts] = useState<any>(null);
   const [progress, setProgress] = useState<any>(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({ title: lectureTitle || 'Lecture Details' });
@@ -52,6 +58,63 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
+  };
+
+  const handleExport = async (type: 'all' | 'summary' | 'flashcards' | 'questions') => {
+    try {
+      setExporting(true);
+      setShowExportMenu(false);
+
+      switch (type) {
+        case 'all':
+          if (artifacts?.artifacts) {
+            await ExportUtils.exportAllArtifacts(
+              artifacts.artifacts,
+              lectureTitle,
+              route.params.courseTitle
+            );
+            Alert.alert('Success', 'All artifacts exported successfully!');
+          }
+          break;
+
+        case 'summary':
+          if (artifacts?.artifacts?.summary) {
+            await ExportUtils.exportSummary(
+              artifacts.artifacts.summary,
+              lectureTitle,
+              route.params.courseTitle
+            );
+            Alert.alert('Success', 'Summary exported successfully!');
+          }
+          break;
+
+        case 'flashcards':
+          if (artifacts?.artifacts?.flashcards) {
+            await ExportUtils.exportFlashcards(
+              artifacts.artifacts.flashcards,
+              lectureTitle
+            );
+            Alert.alert('Success', 'Flashcards exported as Anki CSV!');
+          }
+          break;
+
+        case 'questions':
+          if (artifacts?.artifacts['exam-questions']) {
+            await ExportUtils.exportExamQuestions(
+              artifacts.artifacts['exam-questions'],
+              lectureTitle,
+              route.params.courseTitle
+            );
+            Alert.alert('Success', 'Exam questions exported successfully!');
+          }
+          break;
+      }
+    } catch (error: any) {
+      Alert.alert('Export Failed', error.message || 'Could not export file');
+      console.error('Export error:', error);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const renderProgressBar = () => {
@@ -209,10 +272,12 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
     );
   };
 
+  const styles = createStyles(theme);
+
   if (loading && !refreshing) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
+        <ActivityIndicator size="large" color={theme.primary} />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
@@ -220,6 +285,19 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.container}>
+      {/* Export Button */}
+      <View style={styles.exportButtonContainer}>
+        <TouchableOpacity
+          style={styles.exportButton}
+          onPress={() => setShowExportMenu(true)}
+          disabled={exporting || !artifacts}
+        >
+          <Text style={styles.exportButtonText}>
+            {exporting ? '⏳' : '📤'} Export
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Tab Switcher */}
       <View style={styles.tabContainer}>
         <View style={styles.segmentBackground}>
@@ -257,29 +335,106 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
 
         {activeTab === 'artifacts' ? renderArtifacts() : renderProgressDetails()}
       </ScrollView>
+
+      {/* Export Menu Modal */}
+      <Modal
+        visible={showExportMenu}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowExportMenu(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowExportMenu(false)}
+        >
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Export Options</Text>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => handleExport('all')}
+            >
+              <Text style={styles.modalOptionIcon}>📦</Text>
+              <View style={styles.modalOptionText}>
+                <Text style={styles.modalOptionTitle}>Export All</Text>
+                <Text style={styles.modalOptionSubtitle}>
+                  Complete study guide with all artifacts
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => handleExport('summary')}
+            >
+              <Text style={styles.modalOptionIcon}>📄</Text>
+              <View style={styles.modalOptionText}>
+                <Text style={styles.modalOptionTitle}>Summary Only</Text>
+                <Text style={styles.modalOptionSubtitle}>
+                  Markdown file with lecture summary
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => handleExport('flashcards')}
+            >
+              <Text style={styles.modalOptionIcon}>🎴</Text>
+              <View style={styles.modalOptionText}>
+                <Text style={styles.modalOptionTitle}>Flashcards (Anki CSV)</Text>
+                <Text style={styles.modalOptionSubtitle}>
+                  Import into Anki or other apps
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalOption}
+              onPress={() => handleExport('questions')}
+            >
+              <Text style={styles.modalOptionIcon}>❓</Text>
+              <View style={styles.modalOptionText}>
+                <Text style={styles.modalOptionTitle}>Exam Questions</Text>
+                <Text style={styles.modalOptionSubtitle}>
+                  Practice questions with answers
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.modalCancelButton}
+              onPress={() => setShowExportMenu(false)}
+            >
+              <Text style={styles.modalCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F2F2F7' },
-  tabContainer: { padding: 16, backgroundColor: '#F2F2F7' },
+const createStyles = (theme: any) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
+  tabContainer: { padding: 16, backgroundColor: theme.background },
   segmentBackground: {
     flexDirection: 'row',
-    backgroundColor: '#E3E3E8',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 8,
     padding: 2,
   },
   segment: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
   segmentActive: {
-    backgroundColor: '#FFF',
-    shadowColor: '#000',
+    backgroundColor: theme.surface,
+    shadowColor: theme.shadowColor,
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
   },
-  segmentText: { fontSize: 13, color: '#8E8E93', fontWeight: '500' },
-  segmentTextActive: { color: '#000', fontWeight: '600' },
+  segmentText: { fontSize: 13, color: theme.textTertiary, fontWeight: '500' },
+  segmentTextActive: { color: theme.text, fontWeight: '600' },
   scrollArea: { flex: 1, padding: 20 },
   progressSection: { marginBottom: 24 },
   progressHeader: {
@@ -288,23 +443,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  progressTitle: { fontSize: 16, fontWeight: '600', color: '#000' },
-  progressPercent: { fontSize: 16, fontWeight: '700', color: '#007AFF' },
+  progressTitle: { fontSize: 16, fontWeight: '600', color: theme.text },
+  progressPercent: { fontSize: 16, fontWeight: '700', color: theme.primary },
   progressBarContainer: {
     height: 8,
-    backgroundColor: '#E5E5EA',
+    backgroundColor: theme.border,
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 8,
   },
-  progressBarFill: { height: '100%', backgroundColor: '#007AFF' },
-  progressStage: { fontSize: 13, color: '#8E8E93' },
+  progressBarFill: { height: '100%', backgroundColor: theme.primary },
+  progressStage: { fontSize: 13, color: theme.textTertiary },
   card: {
-    backgroundColor: '#FFF',
+    backgroundColor: theme.surface,
     padding: 20,
     borderRadius: 16,
     marginBottom: 16,
-    shadowColor: '#000',
+    shadowColor: theme.shadowColor,
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 2,
@@ -312,15 +467,15 @@ const styles = StyleSheet.create({
   cardTag: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#007AFF',
+    color: theme.primary,
     letterSpacing: 1,
     marginBottom: 8,
   },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: '#000', marginBottom: 8 },
-  cardBody: { fontSize: 15, lineHeight: 22, color: '#3A3A3C', marginBottom: 12 },
-  viewButton: { fontSize: 15, fontWeight: '600', color: '#007AFF', marginTop: 8 },
+  cardTitle: { fontSize: 18, fontWeight: '700', color: theme.text, marginBottom: 8 },
+  cardBody: { fontSize: 15, lineHeight: 22, color: theme.textSecondary, marginBottom: 12 },
+  viewButton: { fontSize: 15, fontWeight: '600', color: theme.primary, marginTop: 8 },
   stageCard: {
-    backgroundColor: '#FFF',
+    backgroundColor: theme.surface,
     padding: 16,
     borderRadius: 12,
     marginBottom: 12,
@@ -330,7 +485,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  stageName: { fontSize: 16, fontWeight: '600', color: '#000' },
+  stageName: { fontSize: 16, fontWeight: '600', color: theme.text },
   stageStatus: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -341,13 +496,96 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F2F2F7',
+    backgroundColor: theme.background,
   },
-  loadingText: { marginTop: 12, fontSize: 16, color: '#8E8E93' },
+  loadingText: { marginTop: 12, fontSize: 16, color: theme.textTertiary },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
   },
   emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyText: { fontSize: 15, color: '#8E8E93' },
+  emptyText: { fontSize: 15, color: theme.textTertiary },
+  exportButtonContainer: {
+    padding: 16,
+    paddingBottom: 8,
+    backgroundColor: theme.background,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  exportButton: {
+    backgroundColor: theme.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: theme.shadowColor,
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  exportButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFF',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: theme.surface,
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: theme.shadowColor,
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: theme.text,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  modalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.inputBackground,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  modalOptionIcon: {
+    fontSize: 28,
+    marginRight: 16,
+  },
+  modalOptionText: {
+    flex: 1,
+  },
+  modalOptionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.text,
+    marginBottom: 4,
+  },
+  modalOptionSubtitle: {
+    fontSize: 13,
+    color: theme.textTertiary,
+  },
+  modalCancelButton: {
+    marginTop: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF3B30',
+  },
 });
