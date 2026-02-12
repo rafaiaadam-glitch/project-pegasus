@@ -15,6 +15,7 @@ import FavoritesScreen from './src/screens/FavoritesScreen';
 import StatisticsScreen from './src/screens/StatisticsScreen';
 import DownloadsScreen from './src/screens/DownloadsScreen';
 import GestureSettingsScreen from './src/screens/GestureSettingsScreen';
+import WidgetsScreen from './src/screens/WidgetsScreen';
 import { ThemeProvider, useTheme } from './src/theme';
 
 const Stack = createNativeStackNavigator();
@@ -132,6 +133,13 @@ function AppNavigator() {
             component={GestureSettingsScreen}
             options={{
               title: 'Gesture Controls',
+            }}
+          />
+          <Stack.Screen
+            name="Widgets"
+            component={WidgetsScreen}
+            options={{
+              title: 'Widgets',
             }}
           />
         </Stack.Navigator>
