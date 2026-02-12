@@ -12,6 +12,7 @@ import ExamViewerScreen from './src/screens/ExamViewerScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import SearchScreen from './src/screens/SearchScreen';
 import FavoritesScreen from './src/screens/FavoritesScreen';
+import StatisticsScreen from './src/screens/StatisticsScreen';
 import { ThemeProvider, useTheme } from './src/theme';
 
 const Stack = createNativeStackNavigator();
@@ -108,6 +109,13 @@ function AppNavigator() {
             component={FavoritesScreen}
             options={{
               title: 'Favorites',
+            }}
+          />
+          <Stack.Screen
+            name="Statistics"
+            component={StatisticsScreen}
+            options={{
+              title: 'Statistics',
             }}
           />
         </Stack.Navigator>
