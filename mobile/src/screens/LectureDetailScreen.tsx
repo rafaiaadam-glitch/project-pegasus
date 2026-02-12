@@ -132,12 +132,66 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const renderProgressBar = () => {
     if (!progress) return null;
 
+    const stages = [
+      { key: 'transcription', icon: '📝', label: 'Transcribe' },
+      { key: 'generation', icon: '🧠', label: 'Generate' },
+      { key: 'export', icon: '📦', label: 'Export' },
+    ];
+
     return (
       <View style={styles.progressSection}>
         <View style={styles.progressHeader}>
-          <Text style={styles.progressTitle}>Processing Status</Text>
+          <Text style={styles.progressTitle}>Pipeline Progress</Text>
           <Text style={styles.progressPercent}>{progress.progressPercent}%</Text>
         </View>
+
+        {/* Visual Pipeline */}
+        <View style={styles.pipelineContainer}>
+          {stages.map((stage, index) => {
+            const stageData = progress.stages?.[stage.key];
+            const isCompleted = stageData?.status === 'completed';
+            const isProcessing = stageData?.status === 'processing';
+            const isFailed = stageData?.status === 'failed';
+            const isActive = progress.currentStage === stage.key;
+
+            return (
+              <React.Fragment key={stage.key}>
+                <View style={styles.pipelineStage}>
+                  <View
+                    style={[
+                      styles.pipelineIcon,
+                      isCompleted && styles.pipelineIconCompleted,
+                      isProcessing && styles.pipelineIconProcessing,
+                      isFailed && styles.pipelineIconFailed,
+                    ]}
+                  >
+                    <Text style={styles.pipelineIconText}>
+                      {isCompleted ? '✓' : isFailed ? '✕' : stage.icon}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.pipelineLabel,
+                      (isCompleted || isProcessing) && styles.pipelineLabelActive,
+                    ]}
+                  >
+                    {stage.label}
+                  </Text>
+                  {isActive && <Text style={styles.pipelineActiveIndicator}>●</Text>}
+                </View>
+                {index < stages.length - 1 && (
+                  <View
+                    style={[
+                      styles.pipelineConnector,
+                      isCompleted && styles.pipelineConnectorCompleted,
+                    ]}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </View>
+
         <View style={styles.progressBarContainer}>
           <View
             style={[
@@ -453,10 +507,71 @@ const createStyles = (theme: any) => StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   progressTitle: { fontSize: 16, fontWeight: '600', color: theme.text },
   progressPercent: { fontSize: 16, fontWeight: '700', color: theme.primary },
+  pipelineContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingHorizontal: 8,
+  },
+  pipelineStage: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  pipelineIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: theme.surfaceSecondary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: theme.border,
+  },
+  pipelineIconCompleted: {
+    backgroundColor: theme.success + '20',
+    borderColor: theme.success,
+  },
+  pipelineIconProcessing: {
+    backgroundColor: theme.warning + '20',
+    borderColor: theme.warning,
+  },
+  pipelineIconFailed: {
+    backgroundColor: theme.error + '20',
+    borderColor: theme.error,
+  },
+  pipelineIconText: {
+    fontSize: 20,
+  },
+  pipelineLabel: {
+    fontSize: 12,
+    color: theme.textTertiary,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  pipelineLabelActive: {
+    color: theme.text,
+    fontWeight: '600',
+  },
+  pipelineActiveIndicator: {
+    fontSize: 8,
+    color: theme.primary,
+    marginTop: 4,
+  },
+  pipelineConnector: {
+    height: 2,
+    flex: 0.5,
+    backgroundColor: theme.border,
+    marginBottom: 32,
+  },
+  pipelineConnectorCompleted: {
+    backgroundColor: theme.success,
+  },
   progressBarContainer: {
     height: 8,
     backgroundColor: theme.border,

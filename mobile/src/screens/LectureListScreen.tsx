@@ -190,6 +190,20 @@ export default function LectureListScreen({ navigation, route }: Props) {
     );
   };
 
+  const renderHeader = () => (
+    <TouchableOpacity style={styles.recordPrompt} onPress={handleAddLecture}>
+      <View style={styles.recordPromptIcon}>
+        <Text style={styles.recordPromptIconText}>🎙️</Text>
+      </View>
+      <View style={styles.recordPromptContent}>
+        <Text style={styles.recordPromptTitle}>Record New Lecture</Text>
+        <Text style={styles.recordPromptSubtitle}>
+          Tap to start recording or upload audio →
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+
   const styles = createStyles(theme);
 
   if (loading && !refreshing) {
@@ -243,6 +257,7 @@ export default function LectureListScreen({ navigation, route }: Props) {
         renderItem={renderLecture}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
+        ListHeaderComponent={lectures.length > 0 ? renderHeader : null}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -424,22 +439,60 @@ const createStyles = (theme: any) =>
       position: 'absolute',
       right: 20,
       bottom: 30,
-      width: 60,
-      height: 60,
-      borderRadius: 30,
+      width: 64,
+      height: 64,
+      borderRadius: 32,
       backgroundColor: theme.primary,
       justifyContent: 'center',
       alignItems: 'center',
       shadowColor: theme.shadowColor,
-      shadowOpacity: 0.3,
-      shadowRadius: 10,
-      shadowOffset: { width: 0, height: 4 },
-      elevation: 8,
+      shadowOpacity: 0.4,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 6 },
+      elevation: 10,
+      borderWidth: 3,
+      borderColor: theme.background,
     },
     floatingButtonText: {
       color: '#FFF',
-      fontSize: 32,
-      fontWeight: '300',
-      lineHeight: 32,
+      fontSize: 36,
+      fontWeight: '400',
+      lineHeight: 36,
+    },
+    recordPrompt: {
+      backgroundColor: theme.primary + '15',
+      borderRadius: 16,
+      padding: 20,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 16,
+      borderWidth: 2,
+      borderColor: theme.primary + '30',
+      borderStyle: 'dashed',
+    },
+    recordPromptIcon: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: theme.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 16,
+    },
+    recordPromptIconText: {
+      fontSize: 28,
+    },
+    recordPromptContent: {
+      flex: 1,
+    },
+    recordPromptTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: theme.text,
+      marginBottom: 4,
+    },
+    recordPromptSubtitle: {
+      fontSize: 14,
+      color: theme.textSecondary,
     },
   });
