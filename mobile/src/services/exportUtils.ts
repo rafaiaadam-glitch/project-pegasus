@@ -1,6 +1,18 @@
 // Export utilities for study materials
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
+import { Platform } from 'react-native';
+
+// Conditionally import native modules (only available on iOS/Android)
+let FileSystem: any = null;
+let Sharing: any = null;
+
+try {
+  if (Platform.OS !== 'web') {
+    FileSystem = require('expo-file-system');
+    Sharing = require('expo-sharing');
+  }
+} catch (error) {
+  console.warn('Native modules not available - exports disabled');
+}
 
 export interface ExportOptions {
   format: 'markdown' | 'pdf' | 'anki-csv';

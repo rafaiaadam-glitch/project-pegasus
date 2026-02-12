@@ -9,10 +9,13 @@ import {
   Alert,
   RefreshControl,
   Modal,
+  Platform,
 } from 'react-native';
 import api from '../services/api';
-import * as ExportUtils from '../services/exportUtils';
 import { useTheme } from '../theme';
+
+// Lazy load export utils only on native platforms
+const ExportUtils = Platform.OS !== 'web' ? require('../services/exportUtils') : null;
 
 interface Props {
   navigation: any;
@@ -64,6 +67,15 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
     try {
       setExporting(true);
       setShowExportMenu(false);
+
+      // Export only works on native platforms (iOS/Android)
+      if (Platform.OS === 'web' || !ExportUtils) {
+        Alert.alert(
+          'Export Not Available',
+          'File export is only available on iOS and Android devices. Please use the mobile app to export files.'
+        );
+        return;
+      }
 
       switch (type) {
         case 'all':
