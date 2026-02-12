@@ -9,6 +9,9 @@ import LectureDetailScreen from './src/screens/LectureDetailScreen';
 import RecordLectureScreen from './src/screens/RecordLectureScreen';
 import FlashcardViewerScreen from './src/screens/FlashcardViewerScreen';
 import ExamViewerScreen from './src/screens/ExamViewerScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
+import SearchScreen from './src/screens/SearchScreen';
+import FavoritesScreen from './src/screens/FavoritesScreen';
 import { ThemeProvider, useTheme } from './src/theme';
 
 const Stack = createNativeStackNavigator();
@@ -84,6 +87,27 @@ function AppNavigator() {
             options={{
               title: 'Practice Exam',
               presentation: 'modal',
+            }}
+          />
+          <Stack.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{
+              title: 'Settings',
+            }}
+          />
+          <Stack.Screen
+            name="Search"
+            component={SearchScreen}
+            options={{
+              title: 'Search',
+            }}
+          />
+          <Stack.Screen
+            name="Favorites"
+            component={FavoritesScreen}
+            options={{
+              title: 'Favorites',
             }}
           />
         </Stack.Navigator>
