@@ -47,6 +47,7 @@ Startup validates runtime configuration with clear errors: `DATABASE_URL` is alw
 - `PLC_WRITE_RATE_LIMIT_MAX_REQUESTS` (optional, default: `60`; max write requests per client within the rate-limit window)
 - `PLC_WRITE_RATE_LIMIT_WINDOW_SEC` (optional, default: `60`; sliding-window duration for write rate limiting)
 - `PLC_IDEMPOTENCY_TTL_SEC` (optional, default: `3600`; retention window for `Idempotency-Key` response replay)
+- `PLC_EXPORT_MIN_SUMMARY_SECTIONS` (optional, default: `2`; export jobs fail when summary quality is below this threshold)
 - `STORAGE_MODE` (`local` or `s3`)
 - `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`, and `S3_PREFIX` must be non-empty)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
@@ -70,6 +71,8 @@ Startup validates runtime configuration with clear errors: `DATABASE_URL` is alw
 - `POST /lectures/{lecture_id}/transcribe` (deduplicates when a transcription job for the lecture is already `queued`/`running`)
 - `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `course_id` and `preset_id` optional and default from ingested lecture; if provided they must match ingested lecture; deduplicates when a generation job for the lecture is already `queued`/`running`)
 - `POST /lectures/{lecture_id}/export` (deduplicates when an export job for the lecture is already `queued`/`running`)
+- `DELETE /lectures/{lecture_id}` (deletes lecture row plus related jobs/artifacts/exports; optional `purge_storage=true|false`)
+- `DELETE /courses/{course_id}` (deletes course and cascades lecture deletions; optional `purge_storage=true|false`)
 
 When `PLC_WRITE_API_TOKEN` is configured, every `POST /lectures/*` endpoint requires a matching bearer token. Missing/invalid auth returns `401`; wrong token returns `403`.
 Write endpoints are also rate-limited per client (`x-forwarded-for` first, then socket IP) and return `429` with `Too many write requests. Please retry shortly.` when limits are exceeded.
@@ -79,5 +82,6 @@ Write endpoints also support optional `Idempotency-Key` headers: repeated reques
 - `GET /exports/{lecture_id}/{export_type}`
 - `GET /lectures/{lecture_id}/artifacts` (query params: `artifact_type`, `preset_id`, `limit`, `offset`; includes `artifactDownloadUrls` and `pagination` (`nextOffset`/`prevOffset` included))
 - `GET /lectures/{lecture_id}/summary` (compact lecture dashboard: artifact/export counts + stage progress snapshot + lecture/export links)
+- `GET /lectures/{lecture_id}/integrity` (verifies DB-referenced storage paths for audio/transcript/artifacts/exports and reports missing files)
 - `GET /jobs/{job_id}`
 - `POST /jobs/{job_id}/replay` (requeues only `failed` jobs for transcription/generation/export; returns 409 for non-failed jobs)

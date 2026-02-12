@@ -1,0 +1,21 @@
+{
+  "artifactType": "summary",
+  "presetId": "beginner-mode",
+  "overview": "Plain-language recap focused on core intuition and examples.",
+  "sections": [
+    {
+      "title": "Big idea",
+      "bullets": [
+        "Core concept from snapshot-lecture: fundamental principles explained simply.",
+        "Key mechanism: how the main process works in practice."
+      ]
+    },
+    {
+      "title": "Why it matters",
+      "bullets": [
+        "Practical applications and real-world relevance.",
+        "Foundation for understanding advanced topics."
+      ]
+    }
+  ]
+}

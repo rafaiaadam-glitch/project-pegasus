@@ -106,6 +106,49 @@ def _resolve_thread_refs(db, course_id: str) -> list[str]:
         refs.append(normalized)
     return refs
 
+
+
+def _parse_quality_threshold(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer.") from exc
+    if value < 0:
+        raise RuntimeError(f"{name} must be zero or greater.")
+    return value
+
+
+def _assert_minimum_artifact_quality(db, lecture_id: str) -> None:
+    fetch_artifacts = getattr(db, "fetch_artifacts", None)
+    if not callable(fetch_artifacts):
+        raise RuntimeError("Database does not support artifact quality checks.")
+
+    artifacts = fetch_artifacts(lecture_id)
+    by_type = {row.get("artifact_type"): row for row in artifacts if isinstance(row, dict)}
+
+    required_types = {"summary", "outline", "key-terms", "flashcards", "exam-questions"}
+    missing_types = sorted(required_types - set(by_type))
+    if missing_types:
+        raise ValueError(
+            "Cannot export lecture before all required artifacts are generated: "
+            + ", ".join(missing_types)
+        )
+
+    min_summary_sections = _parse_quality_threshold("PLC_EXPORT_MIN_SUMMARY_SECTIONS", 2)
+    summary = by_type.get("summary") or {}
+    section_count = summary.get("summary_section_count")
+    if section_count is None:
+        section_count = 0
+    if int(section_count) < min_summary_sections:
+        raise ValueError(
+            f"Summary quality threshold not met: requires >= {min_summary_sections} sections."
+        )
+
+    overview = str(summary.get("summary_overview") or "").strip()
+    if not overview:
+        raise ValueError("Summary quality threshold not met: overview is empty.")
+
 def _get_queue() -> Queue:
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     connection = Redis.from_url(redis_url)
@@ -365,10 +408,11 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
             raise FileNotFoundError("Artifacts not found.")
         storage_dir = _storage_dir()
         export_dir = storage_dir / "exports" / lecture_id
+        db = get_database()
+        _assert_minimum_artifact_quality(db, lecture_id)
         export_artifacts(
             lecture_id=lecture_id, artifact_dir=artifact_dir, export_dir=export_dir
         )
-        db = get_database()
         now = _iso_now()
         export_files = {
             "markdown": export_dir / f"{lecture_id}.md",

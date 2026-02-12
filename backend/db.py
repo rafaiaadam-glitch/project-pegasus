@@ -471,6 +471,47 @@ class Database:
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
+    def update_thread_lecture_refs(self, thread_id: str, lecture_refs: list[str]) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    update threads
+                    set lecture_refs = %s
+                    where id = %s;
+                    """,
+                    (Json(lecture_refs), thread_id),
+                )
+
+    def delete_thread(self, thread_id: str) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("delete from threads where id = %s;", (thread_id,))
+
+    def delete_lecture_records(self, lecture_id: str) -> dict[str, int]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("delete from artifacts where lecture_id = %s;", (lecture_id,))
+                artifacts_deleted = cur.rowcount
+                cur.execute("delete from exports where lecture_id = %s;", (lecture_id,))
+                exports_deleted = cur.rowcount
+                cur.execute("delete from jobs where lecture_id = %s;", (lecture_id,))
+                jobs_deleted = cur.rowcount
+                cur.execute("delete from lectures where id = %s;", (lecture_id,))
+                lectures_deleted = cur.rowcount
+                return {
+                    "artifacts": artifacts_deleted,
+                    "exports": exports_deleted,
+                    "jobs": jobs_deleted,
+                    "lectures": lectures_deleted,
+                }
+
+    def delete_course(self, course_id: str) -> int:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("delete from courses where id = %s;", (course_id,))
+                return cur.rowcount
+
 
 def get_database() -> Database:
     dsn = os.getenv("DATABASE_URL")
