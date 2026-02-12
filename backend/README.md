@@ -23,7 +23,7 @@ python -m backend.worker
 ```
 
 Job status is persisted in Postgres (see `DATABASE_URL`) and processed via Redis/RQ
-with retry/backoff defaults.
+with retry/backoff defaults. API requests emit `x-request-id`, and worker/API job updates include structured job event logs (`job_id`, `lecture_id`, `job_type`, `status`) for traceability.
 
 Migrations are applied from `backend/migrations` on startup.
 
@@ -39,8 +39,9 @@ processed consistently.
 - `DATABASE_URL` (required, Postgres/Supabase)
 - `REDIS_URL` (optional, default: `redis://localhost:6379/0`)
 - `PLC_INLINE_JOBS` (optional, `true/1/on` runs jobs inline in API process; useful for local MVP without Redis)
+- `PLC_MAX_AUDIO_UPLOAD_MB` (optional, default: `200`; upload size limit enforced by `POST /lectures/ingest`)
 - `STORAGE_MODE` (`local` or `s3`)
-- `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`)
+- `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`, and `S3_PREFIX` must be non-empty)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
 - `S3_REGION` / `AWS_REGION` (optional, for S3-compatible storage)
 
@@ -59,9 +60,9 @@ processed consistently.
 - `GET /lectures` (supports `course_id`, `status`, `preset_id`, `limit`, and `offset`; includes `pagination`)
 - `GET /lectures/{lecture_id}`
 - `GET /lectures/{lecture_id}/transcript` (returns transcript text + segments; supports `include_text` and `segment_limit`)
-- `POST /lectures/{lecture_id}/transcribe`
-- `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `course_id` and `preset_id` optional and default from ingested lecture; if provided they must match ingested lecture)
-- `POST /lectures/{lecture_id}/export`
+- `POST /lectures/{lecture_id}/transcribe` (deduplicates when a transcription job for the lecture is already `queued`/`running`)
+- `POST /lectures/{lecture_id}/generate` (JSON body: `{"course_id":"...","preset_id":"...","openai_model":"..."}`; `course_id` and `preset_id` optional and default from ingested lecture; if provided they must match ingested lecture; deduplicates when a generation job for the lecture is already `queued`/`running`)
+- `POST /lectures/{lecture_id}/export` (deduplicates when an export job for the lecture is already `queued`/`running`)
 - `GET /lectures/{lecture_id}/jobs` (supports `limit` and `offset`; includes `pagination`)
 - `GET /lectures/{lecture_id}/progress` (includes `overallStatus`, per-stage status, `progressPercent`, `currentStage`, `hasFailedStage`, and lecture endpoint links)
 - `GET /exports/{lecture_id}/{export_type}`

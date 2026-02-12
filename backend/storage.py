@@ -18,10 +18,21 @@ class StorageConfig:
     s3_region: Optional[str]
 
 
+def _validate_config(config: StorageConfig) -> None:
+    if config.mode not in {"local", "s3"}:
+        raise RuntimeError("STORAGE_MODE must be either 'local' or 's3'.")
+
+    if config.mode == "s3":
+        if not config.s3_bucket:
+            raise RuntimeError("S3_BUCKET must be set for S3 storage.")
+        if not config.s3_prefix:
+            raise RuntimeError("S3_PREFIX must be a non-empty path segment for S3 storage.")
+
+
 def _config() -> StorageConfig:
     mode = os.getenv("STORAGE_MODE", "local")
     local_dir = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
-    return StorageConfig(
+    config = StorageConfig(
         mode=mode,
         local_dir=local_dir,
         s3_bucket=os.getenv("S3_BUCKET"),
@@ -29,6 +40,8 @@ def _config() -> StorageConfig:
         s3_endpoint_url=os.getenv("S3_ENDPOINT_URL"),
         s3_region=os.getenv("AWS_REGION") or os.getenv("S3_REGION"),
     )
+    _validate_config(config)
+    return config
 
 
 def _s3_client():
@@ -49,25 +62,42 @@ def _local_path(category: str, filename: str) -> Path:
     return target
 
 
-def save_audio(fileobj: BinaryIO, filename: str) -> str:
+def _copy_with_limit(fileobj: BinaryIO, handle: BinaryIO, max_bytes: Optional[int] = None) -> int:
+    total = 0
+    while True:
+        chunk = fileobj.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if max_bytes is not None and total > max_bytes:
+            raise ValueError(f"Audio file exceeds upload limit of {max_bytes} bytes.")
+        handle.write(chunk)
+    return total
+
+
+def save_audio(fileobj: BinaryIO, filename: str, max_bytes: Optional[int] = None) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        if not cfg.s3_bucket:
-            raise RuntimeError("S3_BUCKET must be set for S3 storage.")
+        if max_bytes is not None:
+            # Enforce size limit consistently in both local and S3 modes.
+            import io
+
+            buffer = io.BytesIO()
+            _copy_with_limit(fileobj, buffer, max_bytes=max_bytes)
+            buffer.seek(0)
+            fileobj = buffer
         key = f"{cfg.s3_prefix}/audio/{filename}"
         _s3_client().upload_fileobj(fileobj, cfg.s3_bucket, key)
         return f"s3://{cfg.s3_bucket}/{key}"
     target = _local_path("audio", filename)
     with target.open("wb") as handle:
-        shutil.copyfileobj(fileobj, handle)
+        _copy_with_limit(fileobj, handle, max_bytes=max_bytes)
     return str(target)
 
 
 def save_transcript(payload: str, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        if not cfg.s3_bucket:
-            raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/transcripts/{filename}"
         _s3_client().put_object(
             Bucket=cfg.s3_bucket, Key=key, Body=payload.encode("utf-8")
@@ -81,8 +111,6 @@ def save_transcript(payload: str, filename: str) -> str:
 def save_export(payload: bytes, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        if not cfg.s3_bucket:
-            raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/exports/{filename}"
         _s3_client().put_object(Bucket=cfg.s3_bucket, Key=key, Body=payload)
         return f"s3://{cfg.s3_bucket}/{key}"
@@ -94,8 +122,6 @@ def save_export(payload: bytes, filename: str) -> str:
 def save_artifact_file(source: Path, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        if not cfg.s3_bucket:
-            raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/artifacts/{filename}"
         _s3_client().upload_file(str(source), cfg.s3_bucket, key)
         return f"s3://{cfg.s3_bucket}/{key}"
@@ -107,8 +133,6 @@ def save_artifact_file(source: Path, filename: str) -> str:
 def save_export_file(source: Path, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":
-        if not cfg.s3_bucket:
-            raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         key = f"{cfg.s3_prefix}/exports/{filename}"
         _s3_client().upload_file(str(source), cfg.s3_bucket, key)
         return f"s3://{cfg.s3_bucket}/{key}"
