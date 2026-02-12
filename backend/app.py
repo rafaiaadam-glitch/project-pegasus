@@ -90,8 +90,8 @@ def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateReques
         raise HTTPException(status_code=400, detail="preset_id is required.")
 
     _ensure_valid_preset_id(preset_id)
-    _ensure_course_exists(db, course_id)
     _validate_generation_context(db, lecture_id, course_id, preset_id)
+    _ensure_course_exists(db, course_id)
     return course_id, preset_id
 
 
