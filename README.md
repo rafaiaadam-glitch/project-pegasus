@@ -170,6 +170,8 @@ Early milestones:
 - React Native (Expo) scaffold under `mobile/`.
 - Deployment notes under `docs/deploy.md`.
 - MVP→v1 launch execution checklist under `docs/mvp-launch-checklist.md`.
+- Observability/SLO baseline under `docs/observability-slos.md`.
+- Incident runbook under `docs/incident-runbook.md`.
 
 ---
 

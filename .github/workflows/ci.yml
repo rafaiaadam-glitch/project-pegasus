@@ -51,6 +51,8 @@ jobs:
           pip install -r pipeline/requirements.txt
       - name: Run schema drift check
         run: python -m pipeline.schema_drift_check
+      - name: Run thread continuity check
+        run: python -m pipeline.thread_continuity_check --threads-file pipeline/tests/fixtures/thread_continuity/threads.good.json --min-ratio 0.5
       - name: Run backend tests
         run: pytest backend/tests
       - name: Run pipeline tests

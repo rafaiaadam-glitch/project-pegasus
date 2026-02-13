@@ -8,12 +8,12 @@ Use this as the default execution plan unless a milestone-specific roadmap super
 
 ## 1) Must-ship backend hardening
 
-- [ ] Add auth for write endpoints (`/lectures/*` POST routes)
-- [ ] Add API rate limiting and request size limits for ingest/transcript paths
-- [ ] Add structured logging (request IDs, lecture IDs, job IDs) across API and worker
-- [ ] Add dead-letter / failed-job replay workflow for queue processing
-- [ ] Add idempotency keys for ingest/generate/export operations
-- [ ] Validate all required env vars at startup with clear failure messages
+- [x] Add auth for write endpoints (`/lectures/*` POST routes)
+- [x] Add API rate limiting and request size limits for ingest/transcript paths
+- [x] Add structured logging (request IDs, lecture IDs, job IDs) across API and worker
+- [x] Add dead-letter / failed-job replay workflow for queue processing
+- [x] Add idempotency keys for ingest/generate/export operations
+- [x] Validate all required env vars at startup with clear failure messages
 
 **Definition of done:**
 - 401/403 behavior is tested for protected endpoints
@@ -26,8 +26,8 @@ Use this as the default execution plan unless a milestone-specific roadmap super
 
 - [ ] Add backup/restore procedure for Postgres and object storage
 - [ ] Add migration rollback guidance for production incidents
-- [ ] Enforce retention lifecycle for raw uploads and intermediate artifacts
-- [ ] Add integrity checks for artifact files referenced in DB records
+- [x] Enforce retention lifecycle for raw uploads and intermediate artifacts
+- [x] Add integrity checks for artifact files referenced in DB records
 
 **Definition of done:**
 - restore drill completes in staging
@@ -37,10 +37,10 @@ Use this as the default execution plan unless a milestone-specific roadmap super
 
 ## 3) Pipeline quality gates
 
-- [ ] Add golden-output regression snapshots for each preset mode
-- [ ] Add schema drift CI check against `schemas/`
-- [ ] Add thread continuity scoring checks (cross-lecture consistency)
-- [ ] Add minimum quality thresholds for generated artifacts before export
+- [x] Add golden-output regression snapshots for each preset mode
+- [x] Add schema drift CI check against `schemas/`
+- [x] Add thread continuity scoring checks (cross-lecture consistency)
+- [x] Add minimum quality thresholds for generated artifacts before export
 
 **Definition of done:**
 - CI fails on schema-breaking output changes
@@ -77,8 +77,8 @@ Use this as the default execution plan unless a milestone-specific roadmap super
 
 - [ ] Add secrets management guidance for each deploy target
 - [ ] Add PII handling policy for transcripts and generated artifacts
-- [ ] Add data deletion endpoint/workflow per lecture/course
-- [ ] Add dependency and container vulnerability scanning in CI
+- [x] Add data deletion endpoint/workflow per lecture/course
+- [x] Add dependency and container vulnerability scanning in CI
 
 **Definition of done:**
 - documented deletion flow and auditability for destructive operations
@@ -104,8 +104,8 @@ Before launch, all must be true:
 - [ ] Critical-path integration tests pass (ingest → transcribe → generate → export)
 - [ ] API and worker deploy from main with reproducible config
 - [ ] At least one mobile build (iOS/Android) validated end-to-end against staging
-- [ ] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
-- [ ] Monitoring + alerting verified by synthetic canary jobs
+- [x] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
+- [x] Monitoring + alerting verified by synthetic canary jobs
 
 ---
 
