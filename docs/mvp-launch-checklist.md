@@ -65,8 +65,8 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 5) Observability & SLOs
 
-- [ ] Define SLOs (ingest success, generation success, p95 processing time)
-- [ ] Emit metrics for queue depth, job latency, failure rate, retries
+- [x] Define SLOs (ingest success, generation success, p95 processing time) → `docs/observability-slos.md`
+- [x] Emit metrics for queue depth, job latency, failure rate, retries *(queue depth, failure rate, replay-count, and latency exposed at `/metrics/operational`; retry-attempt metric still pending)*
 - [ ] Add alerting for sustained failure spikes and queue backlogs
 - [ ] Add dashboards for per-stage pipeline timings
 
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **9**
-- Items remaining: **27**
-- Completion: **25%**
+- Items marked complete: **11**
+- Items remaining: **25**
+- Completion: **31%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -150,6 +150,8 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Golden-output preset snapshots → `pipeline/tests/test_preset_summary_snapshots.py` + `pipeline/tests/snapshots/`
 - Schema drift checks → `pipeline/tests/test_schema_drift_check.py`
 - Export quality threshold (`PLC_EXPORT_MIN_SUMMARY_SECTIONS`) → `backend/jobs.py`, `backend/tests/test_jobs.py`
+- Operational metrics endpoint (`GET /metrics/operational`) → `backend/app.py`, `backend/tests/test_operational_metrics.py`, `backend/tests/test_operational_metrics_helpers.py`
+- SLO baseline definition → `docs/observability-slos.md`
 
 ## Progress notes
 
@@ -166,5 +168,5 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 ### Still open before launch
 - Operational reliability runbooks (backup/restore, rollback, retention automation).
 - Mobile UX completion for a no-terminal first-time flow.
-- SLO definitions, metrics, dashboards, and alerting.
+- SLO definitions, dashboards, and alerting. *(core operational metrics endpoint now available)*
 - Security/compliance baseline work and final launch gate rehearsal.

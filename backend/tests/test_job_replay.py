@@ -22,6 +22,14 @@ class FakeDB:
     def fetch_job(self, job_id: str):
         return self.jobs.get(job_id)
 
+    def update_job(self, job_id: str, *, result=None, updated_at=None, **_kwargs):
+        current = self.jobs.get(job_id) or {}
+        if result is not None:
+            current["result"] = result
+        if updated_at is not None:
+            current["updated_at"] = updated_at
+        self.jobs[job_id] = current
+
 
 def test_replay_rejects_non_failed_job():
     fake_db = FakeDB()
@@ -74,3 +82,24 @@ def test_replay_generation_enqueues_job(monkeypatch):
     assert calls["lecture_id"] == "lec-1"
     assert payload["jobId"] == "job-new"
     assert payload["replayedFromJobId"] == "job-old"
+
+
+def test_replay_generation_preserves_existing_result_fields(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.lectures["lec-1"] = {"id": "lec-1", "course_id": "course-1", "preset_id": "exam-mode"}
+    fake_db.jobs["job-new"] = {
+        "id": "job-new",
+        "status": "queued",
+        "job_type": "generation",
+        "result": {"queueFallback": "inline"},
+    }
+
+    monkeypatch.setattr(app_module, "enqueue_job", lambda *args, **kwargs: "job-new")
+
+    app_module._enqueue_replay_job(
+        fake_db,
+        {"id": "job-old", "status": "failed", "job_type": "generation", "lecture_id": "lec-1"},
+    )
+
+    assert fake_db.jobs["job-new"]["result"]["queueFallback"] == "inline"
+    assert fake_db.jobs["job-new"]["result"]["replayOfJobId"] == "job-old"
