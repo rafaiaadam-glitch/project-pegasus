@@ -42,7 +42,8 @@ def test_app_startup_lifespan_validates_runtime_environment(monkeypatch, tmp_pat
     monkeypatch.setattr(app_module, "STORAGE_DIR", (tmp_path / "storage"))
 
     with TestClient(app_module.app) as client:
-        response = client.get("/health/live")
+        response = client.get("/health")
 
     assert response.status_code == 200
+    assert response.json()["status"] == "ok"
     assert observed == ["api"]
