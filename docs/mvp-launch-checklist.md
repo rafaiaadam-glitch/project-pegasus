@@ -41,7 +41,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 - [x] Add golden-output regression snapshots for each preset mode
 - [x] Add schema drift CI check against `schemas/`
-- [ ] Add thread continuity scoring checks (cross-lecture consistency)
+- [x] Add thread continuity scoring checks (cross-lecture consistency)
 - [x] Add minimum quality thresholds for generated artifacts before export
 
 **Definition of done:**
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **9**
-- Items remaining: **27**
-- Completion: **25%**
+- Items marked complete: **10**
+- Items remaining: **26**
+- Completion: **28%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -149,6 +149,7 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Artifact path integrity checks (`GET /lectures/{lecture_id}/integrity`) → `backend/tests/test_integrity_endpoint.py`
 - Golden-output preset snapshots → `pipeline/tests/test_preset_summary_snapshots.py` + `pipeline/tests/snapshots/`
 - Schema drift checks → `pipeline/tests/test_schema_drift_check.py`
+- Thread continuity scoring checks → `pipeline/thread_continuity.py`, `pipeline/tests/test_thread_continuity_scoring.py`
 - Export quality threshold (`PLC_EXPORT_MIN_SUMMARY_SECTIONS`) → `backend/jobs.py`, `backend/tests/test_jobs.py`
 
 ## Progress notes

@@ -76,6 +76,7 @@ From a single transcript, the pipeline produces:
 - **Threads** - Cross-lecture concept tracking
 - **Thread Occurrences** - Where concepts appear
 - **Thread Updates** - How concepts evolve
+- **Thread Continuity** - Continuity metrics and gate pass/fail status
 
 All outputs are **validated against JSON schemas** and written to `pipeline/output/<lecture-id>/`.
 
@@ -102,6 +103,7 @@ python pipeline/run_pipeline.py --help
 - `--output-dir PATH` - Output directory (default: `pipeline/output`)
 - `--progress-log-file PATH` - Optional file to append progress events and summary
 - `--quiet` - Disable console progress/status output (useful in automation)
+- `--continuity-threshold FLOAT` - Optional quality-gate threshold (0-1) for thread continuity score
 
 ---
 

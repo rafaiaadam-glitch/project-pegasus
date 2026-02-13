@@ -245,6 +245,7 @@ class TestEndToEnd:
             "threads.json",
             "thread-occurrences.json",
             "thread-updates.json",
+            "thread-continuity.json",
         ]
 
         for filename in expected_files:
@@ -259,3 +260,26 @@ class TestEndToEnd:
         # Verify progress tracker recorded steps
         assert len(tracker.steps) == 3
         assert all(step.status == "completed" for step in tracker.steps)
+
+
+    def test_pipeline_continuity_threshold_failure(self, sample_transcript, temp_dir):
+        """Pipeline should fail when continuity score is below configured threshold."""
+        from pipeline.run_pipeline import run_pipeline
+
+        output_dir = temp_dir / "output"
+        context = PipelineContext(
+            course_id="test-course-threshold",
+            lecture_id="test-lecture-threshold",
+            preset_id="exam-mode",
+            generated_at="2026-02-11T10:00:00Z",
+            thread_refs=[],
+        )
+
+        with pytest.raises(ValueError, match="Thread continuity gate failed"):
+            run_pipeline(
+                transcript=sample_transcript,
+                context=context,
+                output_dir=output_dir,
+                use_llm=False,
+                continuity_threshold=0.99,
+            )
