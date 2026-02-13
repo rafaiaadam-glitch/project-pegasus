@@ -4,6 +4,8 @@ This checklist translates the current project state into a practical path to a s
 
 Use this as the default execution plan unless a milestone-specific roadmap supersedes it.
 
+Status policy: checkboxes represent launch-readiness for the specific item (implementation + required operational artifacts where applicable).
+
 ---
 
 ## 1) Must-ship backend hardening
@@ -11,7 +13,7 @@ Use this as the default execution plan unless a milestone-specific roadmap super
 - [x] Add auth for write endpoints (`/lectures/*` POST routes)
 - [x] Add API rate limiting and request size limits for ingest/transcript paths
 - [x] Add structured logging (request IDs, lecture IDs, job IDs) across API and worker
-- [x] Add dead-letter / failed-job replay workflow for queue processing
+- [ ] Add dead-letter / failed-job replay workflow for queue processing *(failed-job replay is implemented; dead-letter queue/runbook still pending)*
 - [x] Add idempotency keys for ingest/generate/export operations
 - [x] Validate all required env vars at startup with clear failure messages
 
@@ -26,7 +28,7 @@ Use this as the default execution plan unless a milestone-specific roadmap super
 
 - [ ] Add backup/restore procedure for Postgres and object storage
 - [ ] Add migration rollback guidance for production incidents
-- [x] Enforce retention lifecycle for raw uploads and intermediate artifacts
+- [ ] Enforce retention lifecycle for raw uploads and intermediate artifacts
 - [x] Add integrity checks for artifact files referenced in DB records
 
 **Definition of done:**
@@ -39,7 +41,7 @@ Use this as the default execution plan unless a milestone-specific roadmap super
 
 - [x] Add golden-output regression snapshots for each preset mode
 - [x] Add schema drift CI check against `schemas/`
-- [x] Add thread continuity scoring checks (cross-lecture consistency)
+- [ ] Add thread continuity scoring checks (cross-lecture consistency)
 - [x] Add minimum quality thresholds for generated artifacts before export
 
 **Definition of done:**
@@ -109,6 +111,17 @@ Before launch, all must be true:
 
 ---
 
+## Current completion snapshot (checklist-only)
+
+- Total launch checklist items: **36**
+- Items marked complete: **9**
+- Items remaining: **27**
+- Completion: **25%**
+
+> Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
+
+---
+
 ## Suggested execution order (highest ROI)
 
 1. Backend hardening
@@ -119,3 +132,39 @@ Before launch, all must be true:
 6. Final launch gate run
 
 This sequence minimizes launch risk by first stabilizing the processing core and operational visibility before polishing distribution surfaces.
+
+---
+
+
+## Evidence map (implemented today)
+
+Use this section to quickly verify which checked items are backed by code/tests.
+
+Last verified by targeted test run in this repo: backend hardening + pipeline quality-gate tests.
+
+- Write endpoint auth → `backend/tests/test_write_auth.py`
+- Write rate limiting + upload size limits → `backend/tests/test_rate_limit.py`, `backend/tests/test_upload_limits.py`
+- Idempotency keys/replay semantics → `backend/tests/test_idempotency.py`
+- Failed-job replay endpoint (`POST /jobs/{job_id}/replay`) → `backend/tests/test_job_replay.py`
+- Artifact path integrity checks (`GET /lectures/{lecture_id}/integrity`) → `backend/tests/test_integrity_endpoint.py`
+- Golden-output preset snapshots → `pipeline/tests/test_preset_summary_snapshots.py` + `pipeline/tests/snapshots/`
+- Schema drift checks → `pipeline/tests/test_schema_drift_check.py`
+- Export quality threshold (`PLC_EXPORT_MIN_SUMMARY_SECTIONS`) → `backend/jobs.py`, `backend/tests/test_jobs.py`
+
+## Progress notes
+
+### Completed in-repo
+- Write endpoint auth, rate limits, idempotency support, and startup env validation are implemented and covered by backend tests.
+- Integrity verification endpoint exists (`GET /lectures/{lecture_id}/integrity`) and has tests for missing/present storage paths.
+- Pipeline quality gates include preset snapshots and schema drift checks under `pipeline/tests/`.
+- Export quality threshold support is wired via `PLC_EXPORT_MIN_SUMMARY_SECTIONS`.
+
+### Clarifications from review
+- The queue recovery path currently supports **failed job replay** (`POST /jobs/{job_id}/replay`), but a dedicated dead-letter queue workflow and operational runbook are not complete yet.
+- This checklist treats launch-readiness as requiring both implementation **and** operational readiness (runbooks/drills), so any item missing operational artifacts remains unchecked.
+
+### Still open before launch
+- Operational reliability runbooks (backup/restore, rollback, retention automation).
+- Mobile UX completion for a no-terminal first-time flow.
+- SLO definitions, metrics, dashboards, and alerting.
+- Security/compliance baseline work and final launch gate rehearsal.
