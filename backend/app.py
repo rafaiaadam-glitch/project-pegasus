@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import secrets
+import statistics
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -563,6 +564,14 @@ def _percentile(values: list[float], percentile: float) -> float:
     return value if value is not None else 0.0
 
 
+
+
+def _median_high(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    return float(statistics.median_high(values))
+
+
 def _job_latency_ms(job: dict) -> Optional[float]:
     started_at = _to_datetime(job.get("created_at"))
     ended_at = _to_datetime(job.get("updated_at"))
@@ -611,7 +620,7 @@ def operational_metrics(window: int = Query(200, ge=25, le=5000)) -> JSONRespons
             "replayed": len(replay_jobs),
             "failureRate": round(failure_rate, 4),
             "latencyMs": {
-                "p50": round(_percentile(completed_latencies, 0.50), 2),
+                "p50": round(_median_high(completed_latencies), 2),
                 "p95": round(_percentile(completed_latencies, 0.95), 2),
             },
         },
