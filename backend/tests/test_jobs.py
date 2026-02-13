@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 import sys
 
 from pathlib import Path
@@ -325,3 +326,58 @@ def test_create_and_update_job_record_logs(monkeypatch):
     assert updated_event == "job.updated"
     assert updated_fields["job_id"] == "job-logger"
     assert updated_fields["status"] == "running"
+
+
+
+def test_assert_minimum_artifact_quality_passes_with_required_artifacts():
+    class FakeExportDB:
+        def fetch_artifacts(self, _lecture_id: str):
+            return [
+                {"artifact_type": "summary", "summary_section_count": 3, "summary_overview": "Overview"},
+                {"artifact_type": "outline"},
+                {"artifact_type": "key-terms"},
+                {"artifact_type": "flashcards"},
+                {"artifact_type": "exam-questions"},
+            ]
+
+    jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")
+
+
+def test_assert_minimum_artifact_quality_fails_when_artifacts_missing():
+    class FakeExportDB:
+        def fetch_artifacts(self, _lecture_id: str):
+            return [{"artifact_type": "summary", "summary_section_count": 3, "summary_overview": "Overview"}]
+
+    with pytest.raises(ValueError, match="required artifacts"):
+        jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")
+
+
+def test_assert_minimum_artifact_quality_fails_for_low_summary_sections(monkeypatch):
+    class FakeExportDB:
+        def fetch_artifacts(self, _lecture_id: str):
+            return [
+                {"artifact_type": "summary", "summary_section_count": 1, "summary_overview": "Overview"},
+                {"artifact_type": "outline"},
+                {"artifact_type": "key-terms"},
+                {"artifact_type": "flashcards"},
+                {"artifact_type": "exam-questions"},
+            ]
+
+    monkeypatch.setenv("PLC_EXPORT_MIN_SUMMARY_SECTIONS", "2")
+    with pytest.raises(ValueError, match="requires >= 2 sections"):
+        jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")
+
+
+def test_assert_minimum_artifact_quality_fails_for_empty_summary_overview():
+    class FakeExportDB:
+        def fetch_artifacts(self, _lecture_id: str):
+            return [
+                {"artifact_type": "summary", "summary_section_count": 3, "summary_overview": "   "},
+                {"artifact_type": "outline"},
+                {"artifact_type": "key-terms"},
+                {"artifact_type": "flashcards"},
+                {"artifact_type": "exam-questions"},
+            ]
+
+    with pytest.raises(ValueError, match="overview is empty"):
+        jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")

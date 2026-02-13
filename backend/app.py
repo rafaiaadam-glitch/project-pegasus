@@ -32,7 +32,13 @@ from backend.jobs import (
 )
 from backend.presets import PRESETS, PRESETS_BY_ID
 from backend.runtime_config import validate_runtime_environment
-from backend.storage import download_url, load_json_payload, save_audio
+from backend.storage import (
+    delete_storage_path,
+    download_url,
+    load_json_payload,
+    save_audio,
+    storage_path_exists,
+)
 
 app = FastAPI(title="Pegasus Lecture Copilot API")
 LOGGER = logging.getLogger("pegasus.api")
@@ -222,10 +228,7 @@ def _ensure_course_exists(db, course_id: str) -> None:
         raise HTTPException(status_code=404, detail="Course not found.")
 
 
-def _validate_generation_context(db, lecture_id: str, course_id: str, preset_id: str) -> None:
-    lecture = db.fetch_lecture(lecture_id)
-    if not lecture:
-        raise HTTPException(status_code=404, detail="Lecture not found.")
+def _validate_generation_context(lecture: dict, course_id: str, preset_id: str) -> None:
     lecture_course_id = lecture.get("course_id")
     if lecture_course_id and lecture_course_id != course_id:
         raise HTTPException(status_code=400, detail="course_id does not match lecture.")
@@ -248,7 +251,7 @@ def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateReques
         raise HTTPException(status_code=400, detail="preset_id is required.")
 
     _ensure_valid_preset_id(preset_id)
-    _validate_generation_context(db, lecture_id, course_id, preset_id)
+    _validate_generation_context(lecture, course_id, preset_id)
     _ensure_course_exists(db, course_id)
     return course_id, preset_id
 
@@ -369,6 +372,111 @@ def _lecture_links(lecture_id: str) -> dict[str, str]:
         "jobs": f"/lectures/{lecture_id}/jobs",
     }
 
+
+
+
+def _delete_lecture_data(lecture_id: str, *, purge_storage: bool) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+
+    artifacts = db.fetch_artifacts(lecture_id)
+    exports = db.fetch_exports(lecture_id)
+    threads = db.fetch_threads(lecture_id)
+
+    storage_paths: list[str] = []
+    for path in (
+        lecture.get("audio_path"),
+        lecture.get("transcript_path"),
+        *[row.get("storage_path") for row in artifacts],
+        *[row.get("storage_path") for row in exports],
+    ):
+        if path:
+            storage_paths.append(path)
+
+    for thread in threads:
+        thread_id = thread.get("id")
+        if not thread_id:
+            continue
+        refs = [ref for ref in (thread.get("lecture_refs") or []) if ref != lecture_id]
+        if refs:
+            update_refs = getattr(db, "update_thread_lecture_refs", None)
+            if callable(update_refs):
+                update_refs(thread_id, refs)
+        else:
+            delete_thread = getattr(db, "delete_thread", None)
+            if callable(delete_thread):
+                delete_thread(thread_id)
+
+    delete_records = getattr(db, "delete_lecture_records", None)
+    if not callable(delete_records):
+        raise HTTPException(status_code=500, detail="Database does not support lecture deletion.")
+    deleted_counts = delete_records(lecture_id)
+
+    metadata_path = STORAGE_DIR / "metadata" / f"{lecture_id}.json"
+    storage_deleted = 0
+    if purge_storage:
+        for storage_path in storage_paths:
+            if delete_storage_path(storage_path):
+                storage_deleted += 1
+        if metadata_path.exists():
+            metadata_path.unlink()
+            storage_deleted += 1
+
+    return {
+        "lectureId": lecture_id,
+        "deleted": {
+            **deleted_counts,
+            "threadsUpdated": len(threads),
+            "storagePaths": storage_deleted,
+            "metadataRemoved": purge_storage and not metadata_path.exists(),
+        },
+    }
+
+
+
+def _build_lecture_integrity_payload(lecture_id: str) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+
+    checks: list[dict[str, object]] = []
+
+    def add_check(label: str, path: Optional[str]) -> None:
+        if not path:
+            checks.append({"kind": label, "path": None, "exists": False, "state": "missing_reference"})
+            return
+        exists = storage_path_exists(path)
+        checks.append(
+            {
+                "kind": label,
+                "path": path,
+                "exists": exists,
+                "state": "ok" if exists else "missing_file",
+            }
+        )
+
+    add_check("audio", lecture.get("audio_path"))
+    add_check("transcript", lecture.get("transcript_path"))
+
+    artifacts = db.fetch_artifacts(lecture_id)
+    for artifact in artifacts:
+        add_check(f"artifact:{artifact.get('artifact_type')}", artifact.get("storage_path"))
+
+    exports = db.fetch_exports(lecture_id)
+    for export in exports:
+        add_check(f"export:{export.get('export_type')}", export.get("storage_path"))
+
+    missing_count = sum(1 for check in checks if not check["exists"])
+    return {
+        "lectureId": lecture_id,
+        "status": "ok" if missing_count == 0 else "degraded",
+        "missingCount": missing_count,
+        "checkCount": len(checks),
+        "checks": checks,
+    }
 
 def _pagination_payload(
     *,
@@ -1010,6 +1118,44 @@ def _enqueue_replay_job(db, job: dict) -> dict:
     }
 
 
+
+
+@app.delete("/lectures/{lecture_id}")
+def delete_lecture(lecture_id: str, request: Request, purge_storage: bool = Query(default=True)) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    return _delete_lecture_data(lecture_id, purge_storage=purge_storage)
+
+
+@app.delete("/courses/{course_id}")
+def delete_course(course_id: str, request: Request, purge_storage: bool = Query(default=True)) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+
+    db = get_database()
+    course = db.fetch_course(course_id) if hasattr(db, "fetch_course") else None
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
+
+    lectures = db.fetch_lectures(course_id=course_id) if hasattr(db, "fetch_lectures") else []
+    deleted_lectures: list[dict] = []
+    for lecture in lectures:
+        deleted_lectures.append(
+            _delete_lecture_data(lecture["id"], purge_storage=purge_storage)
+        )
+
+    delete_course_method = getattr(db, "delete_course", None)
+    if not callable(delete_course_method):
+        raise HTTPException(status_code=500, detail="Database does not support course deletion.")
+    removed = delete_course_method(course_id)
+
+    return {
+        "courseId": course_id,
+        "courseDeleted": removed > 0,
+        "lecturesDeleted": len(deleted_lectures),
+        "lectureDeletions": deleted_lectures,
+    }
+
 @app.post("/jobs/{job_id}/replay")
 def replay_job(request: Request, job_id: str) -> dict:
     _enforce_write_auth(request)
@@ -1179,6 +1325,12 @@ def review_artifacts(
         "lecture": db.fetch_lecture(lecture_id),
     }
 
+
+
+
+@app.get("/lectures/{lecture_id}/integrity")
+def lecture_integrity(lecture_id: str) -> dict:
+    return _build_lecture_integrity_payload(lecture_id)
 
 @app.get("/lectures/{lecture_id}/summary")
 def lecture_summary(lecture_id: str) -> dict:

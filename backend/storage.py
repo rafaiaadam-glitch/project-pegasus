@@ -156,6 +156,49 @@ def download_url(storage_path: str, expires_in: int = 900) -> Optional[str]:
     )
 
 
+def delete_storage_path(storage_path: str) -> bool:
+    """Delete an artifact/export/audio path from local or S3-backed storage."""
+    if not storage_path:
+        return False
+
+    if storage_path.startswith("s3://"):
+        _, _, rest = storage_path.partition("s3://")
+        bucket, _, key = rest.partition("/")
+        if not bucket or not key:
+            return False
+        _s3_client().delete_object(Bucket=bucket, Key=key)
+        return True
+
+    path = Path(storage_path)
+    if not path.exists():
+        return False
+    if path.is_file():
+        path.unlink()
+        return True
+    shutil.rmtree(path)
+    return True
+
+
+
+
+
+def storage_path_exists(storage_path: str) -> bool:
+    """Check whether a storage path exists in local or S3-backed storage."""
+    if not storage_path:
+        return False
+
+    if storage_path.startswith("s3://"):
+        _, _, rest = storage_path.partition("s3://")
+        bucket, _, key = rest.partition("/")
+        if not bucket or not key:
+            return False
+        try:
+            _s3_client().head_object(Bucket=bucket, Key=key)
+            return True
+        except Exception:
+            return False
+
+    return Path(storage_path).exists()
 
 def load_json_payload(storage_path: str) -> dict:
     """Load a JSON payload from local or S3-backed storage."""
