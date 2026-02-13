@@ -535,26 +535,32 @@ def _to_datetime(value: object) -> Optional[datetime]:
         return None
 
 
-def _percentile(values: list[float], percentile: float) -> float:
+def percentile_linear(values: list[float], p: float) -> Optional[float]:
     if not values:
-        return 0.0
+        return None
 
     ordered = sorted(values)
     if len(ordered) == 1:
-        return ordered[0]
+        return float(ordered[0])
 
-    bounded = min(max(percentile, 0.0), 1.0)
-    position = (len(ordered) - 1) * bounded
-    lower_index = math.floor(position)
-    upper_index = math.ceil(position)
+    bounded = min(max(p, 0.0), 1.0)
+    position = bounded * (len(ordered) - 1)
+    lower_index = int(math.floor(position))
+    upper_index = int(math.ceil(position))
 
-    lower_value = ordered[lower_index]
-    upper_value = ordered[upper_index]
+    lower_value = float(ordered[lower_index])
+    upper_value = float(ordered[upper_index])
     if lower_index == upper_index:
         return lower_value
 
     weight = position - lower_index
-    return lower_value + (upper_value - lower_value) * weight
+    return float(lower_value + (upper_value - lower_value) * weight)
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    """Backward-compatible helper that returns 0.0 when no values are present."""
+    value = percentile_linear(values, percentile)
+    return value if value is not None else 0.0
 
 
 def _job_latency_ms(job: dict) -> Optional[float]:
