@@ -228,10 +228,7 @@ def _ensure_course_exists(db, course_id: str) -> None:
         raise HTTPException(status_code=404, detail="Course not found.")
 
 
-def _validate_generation_context(db, lecture_id: str, course_id: str, preset_id: str) -> None:
-    lecture = db.fetch_lecture(lecture_id)
-    if not lecture:
-        raise HTTPException(status_code=404, detail="Lecture not found.")
+def _validate_generation_context(lecture: dict, course_id: str, preset_id: str) -> None:
     lecture_course_id = lecture.get("course_id")
     if lecture_course_id and lecture_course_id != course_id:
         raise HTTPException(status_code=400, detail="course_id does not match lecture.")
@@ -254,7 +251,7 @@ def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateReques
         raise HTTPException(status_code=400, detail="preset_id is required.")
 
     _ensure_valid_preset_id(preset_id)
-    _validate_generation_context(db, lecture_id, course_id, preset_id)
+    _validate_generation_context(lecture, course_id, preset_id)
     _ensure_course_exists(db, course_id)
     return course_id, preset_id
 

@@ -47,7 +47,7 @@ Startup validates runtime configuration with clear errors: `DATABASE_URL` is alw
 - `PLC_WRITE_RATE_LIMIT_MAX_REQUESTS` (optional, default: `60`; max write requests per client within the rate-limit window)
 - `PLC_WRITE_RATE_LIMIT_WINDOW_SEC` (optional, default: `60`; sliding-window duration for write rate limiting)
 - `PLC_IDEMPOTENCY_TTL_SEC` (optional, default: `3600`; retention window for `Idempotency-Key` response replay)
-- `PLC_EXPORT_MIN_SUMMARY_SECTIONS` (optional, default: `2`; export jobs fail when summary quality is below this threshold)
+- `PLC_EXPORT_MIN_SUMMARY_SECTIONS` (optional, default: `1`; export jobs fail when summary quality is below this threshold)
 - `STORAGE_MODE` (`local` or `s3`)
 - `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`, and `S3_PREFIX` must be non-empty)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)

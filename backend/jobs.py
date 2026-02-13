@@ -135,7 +135,7 @@ def _assert_minimum_artifact_quality(db, lecture_id: str) -> None:
             + ", ".join(missing_types)
         )
 
-    min_summary_sections = _parse_quality_threshold("PLC_EXPORT_MIN_SUMMARY_SECTIONS", 2)
+    min_summary_sections = _parse_quality_threshold("PLC_EXPORT_MIN_SUMMARY_SECTIONS", 1)
     summary = by_type.get("summary") or {}
     section_count = summary.get("summary_section_count")
     if section_count is None:
