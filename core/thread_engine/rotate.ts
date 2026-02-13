@@ -1,6 +1,15 @@
 // core/thread_engine/rotate.ts
 
-import permutations from "../dice/permutations.json"
+import { generatePermutations } from "../dice/permutations"
+
+const ALL_PERMUTATIONS = generatePermutations()
+
+function selectPermutation(threadId: string, segmentIndex: number) {
+  const key = `${threadId}-${segmentIndex}`
+  const hash = simpleHash(key)
+  const index = hash % ALL_PERMUTATIONS.length
+  return [...ALL_PERMUTATIONS[index]]
+}
 
 export type DiceFace =
   | "RED"
