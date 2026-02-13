@@ -518,6 +518,94 @@ def _count_with_fallback(
     return len(fallback_rows)
 
 
+def _to_datetime(value: object) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = int(round((len(ordered) - 1) * percentile))
+    return ordered[min(max(index, 0), len(ordered) - 1)]
+
+
+def _job_latency_ms(job: dict) -> Optional[float]:
+    started_at = _to_datetime(job.get("created_at"))
+    ended_at = _to_datetime(job.get("updated_at"))
+    if not started_at or not ended_at:
+        return None
+    return max((ended_at - started_at).total_seconds() * 1000, 0.0)
+
+
+@app.get("/metrics/operational")
+def operational_metrics(window: int = Query(200, ge=25, le=5000)) -> JSONResponse:
+    """Operational metrics for launch-readiness dashboards and alerting."""
+    db = get_database()
+    jobs = db.fetch_jobs(limit=window)
+    total_jobs = len(jobs)
+    failed_jobs = [job for job in jobs if job.get("status") == "failed"]
+    completed_jobs = [job for job in jobs if job.get("status") == "completed"]
+    replay_jobs = [
+        job
+        for job in jobs
+        if isinstance(job.get("result"), dict) and job["result"].get("replayOfJobId")
+    ]
+
+    completed_latencies = [latency for job in completed_jobs if (latency := _job_latency_ms(job)) is not None]
+    failure_rate = (len(failed_jobs) / total_jobs) if total_jobs else 0.0
+
+    queue_status = "skipped"
+    queue_depth = 0
+    queue_error: Optional[str] = None
+    inline_jobs = os.getenv("PLC_INLINE_JOBS", "").strip().lower() in {"1", "true", "yes", "on"}
+    if not inline_jobs:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        try:
+            queue_depth = int(Redis.from_url(redis_url).llen("rq:queue:pegasus"))
+            queue_status = "ok"
+        except Exception as exc:
+            queue_status = "error"
+            queue_error = str(exc)
+
+    payload = {
+        "time": _iso_now(),
+        "windowSize": window,
+        "jobs": {
+            "total": total_jobs,
+            "completed": len(completed_jobs),
+            "failed": len(failed_jobs),
+            "replayed": len(replay_jobs),
+            "failureRate": round(failure_rate, 4),
+            "latencyMs": {
+                "p50": round(_percentile(completed_latencies, 0.50), 2),
+                "p95": round(_percentile(completed_latencies, 0.95), 2),
+            },
+        },
+        "queue": {
+            "status": queue_status,
+            "depth": queue_depth,
+        },
+    }
+    if queue_error:
+        payload["queue"]["error"] = queue_error
+
+    status_code = 200 if queue_status in {"ok", "skipped"} else 503
+    return JSONResponse(status_code=status_code, content=payload)
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "time": _iso_now()}
@@ -1109,6 +1197,17 @@ def _enqueue_replay_job(db, job: dict) -> dict:
         raise HTTPException(status_code=400, detail="Replay is unsupported for this job type.")
 
     replayed_job = db.fetch_job(new_job_id)
+    updater = getattr(db, "update_job", None)
+    if callable(updater):
+        existing_result = replayed_job.get("result") if isinstance(replayed_job, dict) else None
+        merged_result = dict(existing_result) if isinstance(existing_result, dict) else {}
+        merged_result["replayOfJobId"] = job.get("id")
+        updater(
+            new_job_id,
+            result=merged_result,
+            updated_at=_iso_now(),
+        )
+        replayed_job = db.fetch_job(new_job_id)
     return {
         "jobId": new_job_id,
         "status": replayed_job["status"] if replayed_job else "queued",
