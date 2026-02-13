@@ -16,6 +16,11 @@ from typing import Any, Dict, List, Sequence
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from pipeline.schema_validator import SchemaValidator
+from pipeline.thread_continuity import (
+    DEFAULT_CONTINUITY_THRESHOLD,
+    continuity_gate_passes,
+    score_thread_continuity,
+)
 
 
 ARTIFACT_SCHEMA_DIR = Path("schemas/artifacts")
@@ -130,6 +135,7 @@ def run_pipeline(
     use_llm: bool = False,
     openai_model: str = "gpt-4o-mini",
     progress_tracker=None,
+    continuity_threshold: float | None = None,
 ) -> None:
     # STEP 1: Generate threads FIRST to get real UUIDs
     if progress_tracker:
@@ -153,6 +159,22 @@ def run_pipeline(
         generated_at=context.generated_at,
         thread_refs=thread_ids,  # Real UUIDs from actual threads
     )
+
+    continuity_metrics = score_thread_continuity(
+        threads=threads,
+        occurrences=thread_occurrences,
+        updates=thread_updates,
+    )
+    continuity_payload = {
+        "metrics": continuity_metrics,
+        "threshold": continuity_threshold,
+        "passed": continuity_gate_passes(
+            continuity_metrics,
+            threshold=continuity_threshold
+            if continuity_threshold is not None
+            else DEFAULT_CONTINUITY_THRESHOLD,
+        ),
+    }
 
     # STEP 4: Generate artifacts with real thread references
     if progress_tracker:
@@ -209,6 +231,16 @@ def run_pipeline(
         output_dir / updated_context.lecture_id / "thread-updates.json",
         {"updates": thread_updates},
     )
+    _write_json(
+        output_dir / updated_context.lecture_id / "thread-continuity.json",
+        continuity_payload,
+    )
+
+    if continuity_threshold is not None and not continuity_payload["passed"]:
+        score = continuity_metrics["score"]
+        raise ValueError(
+            f"Thread continuity gate failed: score={score} threshold={continuity_threshold}"
+        )
 
     if progress_tracker:
         progress_tracker.complete_step("validation_and_save")
@@ -257,6 +289,15 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable console progress output (use with --progress-log-file for persisted logs).",
     )
+    parser.add_argument(
+        "--continuity-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Optional minimum thread continuity score (0-1). "
+            "If set, pipeline exits with an error when score is below threshold."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -292,6 +333,7 @@ def main() -> None:
         use_llm=args.use_llm,
         openai_model=args.openai_model,
         progress_tracker=tracker,
+        continuity_threshold=args.continuity_threshold,
     )
     tracker.print_summary()
     if not args.quiet:
