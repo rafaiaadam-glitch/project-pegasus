@@ -253,6 +253,58 @@ curl -sS "$API_BASE_URL/lectures/smoke-lecture/artifacts"
 
 and export download endpoints under `/exports/{lecture_id}/{export_type}`.
 
+## Retention automation
+
+Run periodic retention cleanup for local storage (recommended via cron/systemd timer):
+
+```bash
+python scripts/enforce_retention.py --storage-dir storage
+```
+
+Example nightly cron entry:
+
+```bash
+0 2 * * * cd /path/to/project-pegasus && /usr/bin/python3 scripts/enforce_retention.py --storage-dir storage >> /var/log/pegasus-retention.log 2>&1
+```
+
+## Failed-job replay workflow (dead-letter handling)
+
+List failed jobs and replay them in bulk:
+
+```bash
+API_BASE_URL=http://localhost:8000 scripts/replay_failed_jobs.sh
+```
+
+Replay failed jobs for one lecture only:
+
+```bash
+API_BASE_URL=http://localhost:8000 LECTURE_ID=lecture-123 scripts/replay_failed_jobs.sh
+```
+
+If write auth is enabled, pass bearer token header:
+
+```bash
+AUTH_HEADER="Bearer <token>" API_BASE_URL=http://localhost:8000 scripts/replay_failed_jobs.sh
+```
+
+## Synthetic canary
+
+Run a synthetic health/readiness canary from CI or cron:
+
+```bash
+API_BASE_URL=http://localhost:8000 scripts/synthetic_canary.sh
+```
+
+To exercise ingest too, pass an audio file:
+
+```bash
+API_BASE_URL=http://localhost:8000 \
+AUDIO_FILE=path/to/sample.mp3 \
+COURSE_ID=canary-course \
+LECTURE_ID=canary-lecture \
+scripts/synthetic_canary.sh
+```
+
 ## Mobile
 
 Use EAS Build (Expo) for iOS/Android distribution.

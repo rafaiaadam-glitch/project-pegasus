@@ -79,8 +79,8 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 - [ ] Add secrets management guidance for each deploy target
 - [ ] Add PII handling policy for transcripts and generated artifacts
-- [ ] Add data deletion endpoint/workflow per lecture/course
-- [ ] Add dependency and container vulnerability scanning in CI
+- [x] Add data deletion endpoint/workflow per lecture/course
+- [x] Add dependency and container vulnerability scanning in CI
 
 **Definition of done:**
 - documented deletion flow and auditability for destructive operations
@@ -106,8 +106,8 @@ Before launch, all must be true:
 - [ ] Critical-path integration tests pass (ingest → transcribe → generate → export)
 - [ ] API and worker deploy from main with reproducible config
 - [ ] At least one mobile build (iOS/Android) validated end-to-end against staging
-- [ ] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
-- [ ] Monitoring + alerting verified by synthetic canary jobs
+- [x] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
+- [x] Monitoring + alerting verified by synthetic canary jobs
 
 ---
 

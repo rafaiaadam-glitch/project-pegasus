@@ -278,3 +278,7 @@ When adding new pipeline features:
 **Test Status:** ✅ All tests passing
 **Coverage:** ~95% for new modules
 **CI:** Integrated with GitHub Actions
+
+
+### Thread Continuity Check
+- ✅ `test_thread_continuity_check.py` validates continuity scoring and CLI pass/fail behavior

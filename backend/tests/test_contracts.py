@@ -118,12 +118,15 @@ class FakeDB:
     def fetch_jobs(
         self,
         lecture_id: Optional[str] = None,
+        status: Optional[str] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
     ):
         rows = list(self.jobs)
         if lecture_id:
             rows = [row for row in rows if row.get("lecture_id") == lecture_id]
+        if status:
+            rows = [row for row in rows if row.get("status") == status]
         rows.sort(key=lambda row: row.get("created_at", ""), reverse=True)
         if offset:
             rows = rows[offset:]
@@ -149,10 +152,13 @@ class FakeDB:
             rows = [row for row in rows if row.get("preset_id") == preset_id]
         return len(rows)
 
-    def count_jobs(self, lecture_id: Optional[str] = None) -> int:
+    def count_jobs(self, lecture_id: Optional[str] = None, status: Optional[str] = None) -> int:
+        rows = list(self.jobs)
         if lecture_id:
-            return sum(1 for row in self.jobs if row.get("lecture_id") == lecture_id)
-        return len(self.jobs)
+            rows = [row for row in rows if row.get("lecture_id") == lecture_id]
+        if status:
+            rows = [row for row in rows if row.get("status") == status]
+        return len(rows)
 
     def count_artifacts(
         self,
@@ -1017,6 +1023,101 @@ def test_get_lecture_details(monkeypatch):
     missing = client.get("/lectures/missing")
     assert missing.status_code == 404
 
+
+def test_list_failed_jobs_contract(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.jobs.extend(
+        [
+            {
+                "id": "job-failed-1",
+                "lecture_id": "lecture-007",
+                "job_type": "generation",
+                "status": "failed",
+                "result": None,
+                "error": "timeout",
+                "created_at": "2024-01-02T00:00:00Z",
+                "updated_at": "2024-01-02T00:01:00Z",
+            },
+            {
+                "id": "job-ok-1",
+                "lecture_id": "lecture-007",
+                "job_type": "transcription",
+                "status": "completed",
+                "result": {},
+                "error": None,
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:01:00Z",
+            },
+            {
+                "id": "job-failed-2",
+                "lecture_id": "lecture-008",
+                "job_type": "export",
+                "status": "failed",
+                "result": None,
+                "error": "storage",
+                "created_at": "2024-01-03T00:00:00Z",
+                "updated_at": "2024-01-03T00:01:00Z",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/jobs/failed", params={"limit": 1, "offset": 0})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["filters"] == {"lectureId": None, "status": "failed"}
+    assert [job["id"] for job in payload["jobs"]] == ["job-failed-2"]
+    assert payload["pagination"]["total"] == 2
+
+    filtered = client.get("/jobs/failed", params={"lecture_id": "lecture-007"})
+    assert filtered.status_code == 200
+    filtered_payload = filtered.json()
+    assert [job["id"] for job in filtered_payload["jobs"]] == ["job-failed-1"]
+
+
+def test_list_lecture_jobs_supports_status_filter(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-filter"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "title": "Filtered Lecture",
+        "status": "processing",
+    }
+    fake_db.jobs.extend(
+        [
+            {
+                "id": "job-f-1",
+                "lecture_id": lecture_id,
+                "job_type": "transcription",
+                "status": "failed",
+                "result": None,
+                "error": "boom",
+                "created_at": "2024-01-02T00:00:00Z",
+                "updated_at": "2024-01-02T00:01:00Z",
+            },
+            {
+                "id": "job-f-2",
+                "lecture_id": lecture_id,
+                "job_type": "generation",
+                "status": "completed",
+                "result": {"ok": True},
+                "error": None,
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:01:00Z",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    failed_only = client.get(f"/lectures/{lecture_id}/jobs", params={"status": "failed"})
+    assert failed_only.status_code == 200
+    failed_payload = failed_only.json()
+    assert [job["id"] for job in failed_payload["jobs"]] == ["job-f-1"]
+    assert failed_payload["pagination"]["total"] == 1
 
 def test_list_lecture_jobs_contract(monkeypatch):
     fake_db = FakeDB()

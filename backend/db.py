@@ -252,6 +252,7 @@ class Database:
     def fetch_jobs(
         self,
         lecture_id: Optional[str] = None,
+        status: Optional[str] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
     ) -> list[Dict[str, Any]]:
@@ -260,6 +261,9 @@ class Database:
         if lecture_id:
             clauses.append("lecture_id = %(lecture_id)s")
             params["lecture_id"] = lecture_id
+        if status:
+            clauses.append("status = %(status)s")
+            params["status"] = status
         where_clause = f" where {' and '.join(clauses)}" if clauses else ""
         limit_clause = ""
         if limit is not None:
@@ -277,12 +281,15 @@ class Database:
                 rows = cur.fetchall()
                 return [dict(row) for row in rows]
 
-    def count_jobs(self, lecture_id: Optional[str] = None) -> int:
+    def count_jobs(self, lecture_id: Optional[str] = None, status: Optional[str] = None) -> int:
         clauses = []
         params: Dict[str, Any] = {}
         if lecture_id:
             clauses.append("lecture_id = %(lecture_id)s")
             params["lecture_id"] = lecture_id
+        if status:
+            clauses.append("status = %(status)s")
+            params["status"] = status
         where_clause = f" where {' and '.join(clauses)}" if clauses else ""
         with self.connect() as conn:
             with conn.cursor() as cur:

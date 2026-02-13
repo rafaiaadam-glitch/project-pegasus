@@ -1167,6 +1167,45 @@ def replay_job(request: Request, job_id: str) -> dict:
     return _enqueue_replay_job(db, job)
 
 
+@app.get("/jobs/failed")
+def list_failed_jobs(
+    lecture_id: Optional[str] = None,
+    limit: Optional[int] = Query(default=100, ge=1, le=500),
+    offset: Optional[int] = Query(default=0, ge=0),
+) -> dict:
+    db = get_database()
+    jobs = db.fetch_jobs(lecture_id=lecture_id, status="failed", limit=limit, offset=offset)
+    total = _count_with_fallback(
+        db,
+        "count_jobs",
+        jobs,
+        lecture_id=lecture_id,
+        status="failed",
+        fallback_counter=lambda: len(db.fetch_jobs(lecture_id=lecture_id, status="failed")),
+    )
+    return {
+        "filters": {"lectureId": lecture_id, "status": "failed"},
+        "jobs": [
+            {
+                "id": job["id"],
+                "lectureId": job.get("lecture_id"),
+                "status": job["status"],
+                "jobType": job.get("job_type"),
+                "error": job.get("error"),
+                "createdAt": job.get("created_at"),
+                "updatedAt": job.get("updated_at"),
+            }
+            for job in jobs
+        ],
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(jobs),
+            total=total,
+        ),
+    }
+
+
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str) -> dict:
     db = get_database()
@@ -1185,6 +1224,7 @@ def get_job(job_id: str) -> dict:
 @app.get("/lectures/{lecture_id}/jobs")
 def list_lecture_jobs(
     lecture_id: str,
+    status: Optional[str] = Query(default=None, pattern="^(queued|running|completed|failed)$"),
     limit: Optional[int] = Query(default=None, ge=0),
     offset: Optional[int] = Query(default=None, ge=0),
 ) -> dict:
@@ -1192,13 +1232,14 @@ def list_lecture_jobs(
     lecture = db.fetch_lecture(lecture_id)
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found.")
-    jobs = db.fetch_jobs(lecture_id=lecture_id, limit=limit, offset=offset)
+    jobs = db.fetch_jobs(lecture_id=lecture_id, status=status, limit=limit, offset=offset)
     total = _count_with_fallback(
         db,
         "count_jobs",
         jobs,
         lecture_id=lecture_id,
-        fallback_counter=lambda: len(db.fetch_jobs(lecture_id=lecture_id)),
+        status=status,
+        fallback_counter=lambda: len(db.fetch_jobs(lecture_id=lecture_id, status=status)),
     )
     return {
         "lectureId": lecture_id,

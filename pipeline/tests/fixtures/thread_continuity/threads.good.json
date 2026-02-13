@@ -1,0 +1,6 @@
+[
+  {"id": "t1", "lectureRefs": ["l1", "l2"]},
+  {"id": "t2", "lectureRefs": ["l2", "l3"]},
+  {"id": "t3", "lectureRefs": ["l3"]},
+  {"id": "t4", "lectureRefs": ["l4"]}
+]
