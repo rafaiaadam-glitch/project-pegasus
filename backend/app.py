@@ -5,6 +5,8 @@ import logging
 import os
 import secrets
 from collections import defaultdict, deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -40,16 +42,17 @@ from backend.storage import (
     storage_path_exists,
 )
 
-app = FastAPI(title="Pegasus Lecture Copilot API")
+
+
+@asynccontextmanager
+async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
+    validate_runtime_environment("api")
+    yield
+
+
+app = FastAPI(title="Pegasus Lecture Copilot API", lifespan=app_lifespan)
 LOGGER = logging.getLogger("pegasus.api")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
-
-
-
-
-@app.on_event("startup")
-def validate_environment_on_startup() -> None:
-    validate_runtime_environment("api")
 
 @app.middleware("http")
 async def request_context_middleware(request: Request, call_next):
