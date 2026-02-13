@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import secrets
 from collections import defaultdict, deque
@@ -537,9 +538,23 @@ def _to_datetime(value: object) -> Optional[datetime]:
 def _percentile(values: list[float], percentile: float) -> float:
     if not values:
         return 0.0
+
     ordered = sorted(values)
-    index = int(round((len(ordered) - 1) * percentile))
-    return ordered[min(max(index, 0), len(ordered) - 1)]
+    if len(ordered) == 1:
+        return ordered[0]
+
+    bounded = min(max(percentile, 0.0), 1.0)
+    position = (len(ordered) - 1) * bounded
+    lower_index = math.floor(position)
+    upper_index = math.ceil(position)
+
+    lower_value = ordered[lower_index]
+    upper_value = ordered[upper_index]
+    if lower_index == upper_index:
+        return lower_value
+
+    weight = position - lower_index
+    return lower_value + (upper_value - lower_value) * weight
 
 
 def _job_latency_ms(job: dict) -> Optional[float]:

@@ -27,3 +27,7 @@ def test_job_latency_ms_handles_reversed_timestamps():
         "updated_at": "2026-02-13T12:00:00+00:00",
     }
     assert app_module._job_latency_ms(job) == 0.0
+
+
+def test_percentile_interpolates_even_median():
+    assert app_module._percentile([1000.0, 2000.0], 0.5) == 1500.0
