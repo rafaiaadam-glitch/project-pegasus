@@ -11,6 +11,19 @@ from google.cloud import speech
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+def _load_whisper():
+    """
+    Lazy-load the whisper module for local transcription.
+    This function is imported by backend/jobs.py for transcription jobs.
+    """
+    try:
+        import whisper
+        return whisper
+    except ImportError as e:
+        raise ImportError(
+            "Whisper is not installed. Install it with: pip install openai-whisper"
+        ) from e
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Transcribe lecture audio using Google Cloud Speech-to-Text."
