@@ -39,6 +39,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
+  const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
 
   useEffect(() => {
     loadPresets();
@@ -70,18 +71,51 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     }
   };
 
-  const requestAudioPermissions = async () => {
+
+
+  const safeStopAndUnload = async (activeRecording: Audio.Recording) => {
     try {
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Required', 'Audio recording permission is required');
+      const status = await activeRecording.getStatusAsync();
+      if (!status.isLoaded) {
+        return;
+      }
+
+      if (status.isRecording || status.canRecord) {
+        await activeRecording.stopAndUnloadAsync();
       }
     } catch (error) {
+      console.warn('Ignoring stop/unload error:', error);
+    }
+  };
+  const requestAudioPermissions = async (): Promise<boolean> => {
+    try {
+      const current = await Audio.getPermissionsAsync();
+      if (current.status === 'granted') {
+        setHasMicPermission(true);
+        return true;
+      }
+
+      const requested = await Audio.requestPermissionsAsync();
+      const granted = requested.status === 'granted';
+      setHasMicPermission(granted);
+
+      if (!granted) {
+        Alert.alert('Permission Required', 'Audio recording permission is required');
+      }
+
+      return granted;
+    } catch (error) {
+      setHasMicPermission(false);
       console.error('Error requesting permissions:', error);
+      return false;
     }
   };
 
   const startRecording = async () => {
+    if (isRecording) {
+      return;
+    }
+
     if (isWeb) {
       Alert.alert(
         'Recording Not Available',
@@ -91,15 +125,25 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     }
 
     try {
+      const permissionGranted = await requestAudioPermissions();
+      if (!permissionGranted) {
+        return;
+      }
+
+      if (recording) {
+        await safeStopAndUnload(recording);
+      }
+
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
+      const newRecording = new Audio.Recording();
+      await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await newRecording.startAsync();
 
+      setSelectedFile(null);
       setRecording(newRecording);
       setIsRecording(true);
       setRecordingDuration(0);
@@ -109,8 +153,10 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         setTitle(`Lecture ${new Date().toLocaleDateString()}`);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to start recording');
+      Alert.alert('Error', 'Failed to start recording. Please try again.');
       console.error(error);
+      setIsRecording(false);
+      setIsPaused(false);
     }
   };
 
@@ -137,29 +183,37 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   };
 
   const stopRecording = async () => {
-    if (recording) {
-      try {
-        await recording.stopAndUnloadAsync();
-        const uri = recording.getURI();
+    if (!recording) return;
 
+    try {
+      const status = await recording.getStatusAsync();
+      if (!status.isLoaded || (!status.isRecording && !status.canRecord)) {
+        setIsRecording(false);
+        setRecording(null);
+        return;
+      }
+
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      if (uri) {
         setSelectedFile({
           uri,
           name: `recording_${Date.now()}.m4a`,
           mimeType: 'audio/m4a',
         });
-
-        setIsRecording(false);
-        setRecording(null);
-      } catch (error) {
-        Alert.alert('Error', 'Failed to stop recording');
-        console.error(error);
       }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to stop recording');
+      console.error(error);
+    } finally {
+      setIsRecording(false);
+      setRecording(null);
     }
   };
 
-  const discardRecording = () => {
+  const discardRecording = async () => {
     if (recording) {
-      recording.stopAndUnloadAsync();
+      await safeStopAndUnload(recording);
       setRecording(null);
     }
     setIsRecording(false);
@@ -294,6 +348,9 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       {!selectedFile && !isRecording && (
         <>
           <Text style={styles.sectionTitle}>Record Audio</Text>
+          {hasMicPermission === false && (
+            <Text style={styles.permissionHint}>Microphone permission is required to record audio.</Text>
+          )}
           <TouchableOpacity style={styles.recordStartButton} onPress={startRecording}>
             <View style={styles.recordIconLarge}>
               <View style={styles.recordIconInner} />

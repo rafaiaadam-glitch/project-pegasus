@@ -50,10 +50,12 @@ Startup validates runtime configuration with clear errors: `DATABASE_URL` is alw
 - `PLC_EXPORT_MIN_SUMMARY_SECTIONS` (optional, default: `1`; export jobs fail when summary quality is below this threshold)
 - `PLC_RETENTION_RAW_AUDIO_DAYS` (optional, default: `30`; raw audio retention period in days for cleanup)
 - `PLC_RETENTION_TRANSCRIPT_DAYS` (optional, default: `14`; transcript retention period in days for cleanup)
-- `STORAGE_MODE` (`local` or `s3`)
+- `STORAGE_MODE` (`local`, `s3`, or `gcs`)
 - `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`, and `S3_PREFIX` must be non-empty)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
 - `S3_REGION` / `AWS_REGION` (optional, for S3-compatible storage)
+- `GCS_BUCKET` / `GCS_PREFIX` (required when `STORAGE_MODE=gcs`, and `GCS_PREFIX` must be non-empty)
+- `GOOGLE_APPLICATION_CREDENTIALS` (required in most non-GCP runtimes for `STORAGE_MODE=gcs`)
 
 ## Endpoints
 
