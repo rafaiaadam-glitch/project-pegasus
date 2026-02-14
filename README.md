@@ -98,6 +98,9 @@ Before recording, users choose a broad **Lecture Mode** (no long subject list):
 
 UI guidance:
 - Keep to these 6 broad options only
+
+UI guidance:
+- Keep to 5 broad options only
 - Show a short helper line: “Different lecture types activate different reasoning dimensions.”
 - Persist the selected mode as `lecture_mode` during ingest so backend metadata and downstream jobs can use it.
 

@@ -176,6 +176,10 @@ Mode weighting profiles must map to Dice faces and be available to rotation logi
 When collapse is detected, priority is weight-aware via:
 priority_i = weight_i × (maxScore - score_i)
 
+2) rotatePerspective({ threadId, segmentIndex, facetScores, safeMode })
+3) run extractors in the returned face order
+4) update facets only through updateFacet(...)
+
 Safety and stability constraints:
 - If safeMode is enabled, force ORANGE then RED first (What → How)
 - If collapse is detected, override schedule and prioritise the weakest face
