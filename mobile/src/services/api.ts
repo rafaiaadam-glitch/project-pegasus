@@ -10,7 +10,7 @@ const API_BASE_URL = __DEV__
   : 'https://your-production-api.com';
 
 // Set to true to use mock data (no backend required)
-const USE_MOCK_DATA = true;
+const USE_MOCK_DATA = false;
 
 class ApiClient {
   private baseUrl: string;
@@ -81,8 +81,13 @@ class ApiClient {
 
   // Lectures
   async getLectures(courseId?: string, limit = 50, offset = 0): Promise<{ lectures: Lecture[] }> {
-    if (this.useMock && courseId) {
-      return Promise.resolve(MockData.getMockLectures(courseId));
+    if (this.useMock) {
+      if (courseId) {
+        return Promise.resolve(MockData.getMockLectures(courseId));
+      }
+      // Return all lectures when no courseId is specified
+      const allLectures = Object.values(MockData.mockLectures).flat();
+      return Promise.resolve({ lectures: allLectures });
     }
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (courseId) params.append('course_id', courseId);

@@ -1,6 +1,8 @@
 import { HYBRID_WEIGHTS } from "../dice/courseModes.js"
 import { computeFacetScores, ThreadFacets, updateFacet } from "./facets.js"
 import { DiceFace, LectureMode, FacetScores, rotatePerspective } from "./rotate.js"
+import { computeFacetScores, ThreadFacets, updateFacet } from "./facets"
+import { DiceFace, rotatePerspective } from "./rotate"
 
 export interface SegmentContext {
   text: string
@@ -58,6 +60,25 @@ export function processThreadSegments(options: ProcessThreadSegmentsOptions): Th
     }
 
     runPass(modeWeights)
+  const { threadId, segments, facets, extractors, safeMode } = options
+
+  for (const [segmentIndex, text] of segments.entries()) {
+    const facetScores = computeFacetScores(facets)
+    const order = rotatePerspective({
+      threadId,
+      segmentIndex,
+      facetScores,
+      safeMode,
+    })
+
+    for (const face of order) {
+      const extractor = extractors[face]
+      const snippets = extractor({ text, index: segmentIndex }, facets)
+
+      for (const snippet of snippets) {
+        updateFacet(facets, face, snippet)
+      }
+    }
   }
 
   return facets
