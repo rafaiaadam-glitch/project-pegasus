@@ -46,9 +46,15 @@ export default function HomeScreen({ navigation }: Props) {
   };
 
   const handleRecord = () => {
-    // For now, navigate to record screen with a default course
-    // In real app, might prompt for course selection or use last selected
-    navigation.navigate('RecordLecture', { courseId: 'course-bio-101' });
+    const params = { courseId: 'course-bio-101' };
+
+    if (navigation?.navigate) {
+      navigation.navigate('LectureMode', params);
+      return;
+    }
+
+    // Defensive fallback for unexpected navigator wiring.
+    navigation?.push?.('LectureMode', params);
   };
 
   const handleLecturePress = (lecture: Lecture) => {
@@ -161,12 +167,31 @@ export default function HomeScreen({ navigation }: Props) {
 
       {/* Main Record Button */}
       <View style={styles.recordSection}>
-        <TouchableOpacity style={styles.recordButton} onPress={handleRecord}>
+        <TouchableOpacity
+          style={styles.recordButton}
+          onPress={handleRecord}
+          accessibilityRole="button"
+          accessibilityLabel="Tap to record"
+          testID="home-record-button"
+          activeOpacity={0.85}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <View style={styles.recordButtonInner}>
             <View style={styles.recordButtonDot} />
           </View>
         </TouchableOpacity>
         <Text style={styles.recordButtonLabel}>Tap to record</Text>
+        <TouchableOpacity
+          style={styles.recordCtaButton}
+          onPress={handleRecord}
+          accessibilityRole="button"
+          accessibilityLabel="Select lecture type"
+          testID="home-record-cta"
+          activeOpacity={0.85}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={styles.recordCtaText}>Select Lecture Type</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Recent Lectures */}
@@ -267,6 +292,20 @@ const createStyles = (theme: any) =>
       fontSize: 16,
       fontWeight: '600',
       color: theme.textSecondary,
+    },
+    recordCtaButton: {
+      marginTop: 12,
+      backgroundColor: theme.surface,
+      borderWidth: 1,
+      borderColor: theme.border,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    recordCtaText: {
+      color: theme.text,
+      fontSize: 14,
+      fontWeight: '600',
     },
     lecturesSection: {
       flex: 1,

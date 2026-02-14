@@ -141,6 +141,45 @@ Indicate whether a concept is foundational or advanced
 
 Thread tracking is not optional and must be built into the data model.
 
+
+DICE PERMUTATION CONTROL FLOW (MANDATORY)
+
+Thread Engine ordering must be driven by the Dice permutation algorithm.
+Do not bypass these source-of-truth files:
+- core/dice/permutations.json
+- core/thread_engine/rotate.ts
+- core/thread_engine/facets.ts
+
+For each lecture segment and thread update, the control flow must be:
+1) computeFacetScores(...)
+2) rotatePerspective({ threadId, segmentIndex, facetScores, safeMode, mode })
+3) run extractors in the returned face order
+4) update facets only through updateFacet(...)
+
+Lecture Mode selection (before recording) must stay constrained to 5 broad options:
+- Mathematics / Formal
+- Natural Science
+- Social Science
+- Humanities / Philosophy
+- Open / Mixed
+
+Mode weighting profiles must map to Dice faces and be available to rotation logic for collapse prioritisation.
+When collapse is detected, priority is weight-aware via:
+priority_i = weight_i × (maxScore - score_i)
+
+Safety and stability constraints:
+- If safeMode is enabled, force ORANGE then RED first (What → How)
+- If collapse is detected, override schedule and prioritise the weakest face
+
+Locked definition mapping:
+- RED=How (1, South)
+- ORANGE=What (2, Forward)
+- YELLOW=When (3, North)
+- GREEN=Where (4, Backward)
+- BLUE=Who (5, West)
+- PURPLE=Why (6, East)
+
+
 5. Exports
 
 Support:

@@ -66,7 +66,7 @@ Startup validates runtime configuration with clear errors: `DATABASE_URL` is alw
 - `GET /courses/{course_id}/lectures` (404 if course does not exist; supports `status`, `preset_id`, `limit`, and `offset`; includes `pagination`)
 - `GET /courses/{course_id}/threads` (404 if course does not exist; supports `limit` and `offset`; includes `pagination`)
 - `GET /courses/{course_id}/progress` (404 if course does not exist; supports `include_lectures=false`; includes `overallStatus`, status-count rollups, `latestActivityAt`, and optional per-lecture stage snapshots with endpoint links)
-- `POST /lectures/ingest` (multipart upload)
+- `POST /lectures/ingest` (multipart upload; accepts optional `lecture_mode` and stores it in lecture metadata as `lectureMode`)
 - `GET /lectures` (supports `course_id`, `status`, `preset_id`, `limit`, and `offset`; includes `pagination`)
 - `GET /lectures/{lecture_id}`
 - `GET /lectures/{lecture_id}/transcript` (returns transcript text + segments; supports `include_text` and `segment_limit`)
@@ -101,3 +101,8 @@ python -m backend.retention
 ```
 
 Use `--dry-run` to preview candidate deletions without removing storage paths.
+
+### Web E2E checks (Playwright)
+
+- Run: `npm run test:e2e`
+- Note: CI/container environments may need system browser libraries (for example `libatk-1.0.so.0`) for Chromium to launch.

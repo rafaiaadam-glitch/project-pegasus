@@ -15,6 +15,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Preset } from '../types';
 import api from '../services/api';
 import { useTheme } from '../theme';
+import { getLectureModeTitle, LectureMode } from '../types/lectureModes';
 
 interface Props {
   navigation: any;
@@ -23,7 +24,8 @@ interface Props {
 
 export default function RecordLectureScreen({ navigation, route }: Props) {
   const { theme } = useTheme();
-  const { courseId } = route.params;
+  const { courseId, lectureMode = 'OPEN' } = route.params as { courseId: string; lectureMode?: LectureMode };
+  const lectureModeTitle = getLectureModeTitle(lectureMode);
   const [title, setTitle] = useState('');
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -200,15 +202,22 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     try {
       setUploading(true);
 
+      const lectureId = `lecture-${Date.now()}`;
       const formData = new FormData();
-      formData.append('file', {
+      const audioPayload = {
         uri: selectedFile.uri,
         type: selectedFile.mimeType || 'audio/m4a',
         name: selectedFile.name,
-      } as any);
+      } as any;
+
+      // Backend expects the multipart key `audio`; keep `file` for compatibility with older clients.
+      formData.append('audio', audioPayload);
+      formData.append('file', audioPayload);
       formData.append('course_id', courseId);
+      formData.append('lecture_id', lectureId);
       formData.append('title', title);
       formData.append('preset_id', selectedPreset);
+      formData.append('lecture_mode', lectureMode);
 
       const result = await api.ingestLecture(formData);
 
@@ -245,6 +254,9 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.sectionTitle}>Lecture Title</Text>
+      <View style={styles.modeBadge}>
+        <Text style={styles.modeBadgeLabel}>Lecture Type: {lectureModeTitle}</Text>
+      </View>
       <TextInput
         style={styles.input}
         placeholder="e.g., Neural Signaling"
@@ -409,6 +421,22 @@ const createStyles = (theme: any) =>
       textTransform: 'uppercase',
       marginBottom: 12,
       marginTop: 24,
+    },
+    modeBadge: {
+      alignSelf: 'flex-start',
+      backgroundColor: theme.surface,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: theme.primary,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      marginBottom: 12,
+    },
+    modeBadgeLabel: {
+      color: theme.primary,
+      fontSize: 12,
+      fontWeight: '600',
+      textTransform: 'capitalize',
     },
     input: {
       backgroundColor: theme.surface,
