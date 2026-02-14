@@ -74,6 +74,7 @@ def _resolve_lecture_upsert_payload(
         "transcript_path": transcript_path,
         "created_at": current.get("created_at") or metadata.get("createdAt") or _iso_now(),
         "updated_at": _iso_now(),
+        "lecture_mode": current.get("lecture_mode") or metadata.get("lectureMode"),
     }
 
 

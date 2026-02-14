@@ -86,6 +86,20 @@ Examples:
 
 Changing presets must result in **visibly different outputs**.
 
+## Lecture Mode selection (before recording)
+
+Before recording, users choose a broad **Lecture Mode** (no long subject list):
+- 🧮 Mathematics / Formal
+- 🔬 Natural Science
+- 📊 Social Science
+- 📚 Humanities / Philosophy
+- 🧠 Open / Mixed
+
+UI guidance:
+- Keep to 5 broad options only
+- Show a short helper line: “Different lecture types activate different reasoning dimensions.”
+- Persist the selected mode as `lecture_mode` during ingest so backend metadata and downstream jobs can use it.
+
 ---
 
 ## Thread Engine (core intelligence)

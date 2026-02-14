@@ -8,6 +8,13 @@ export type DiceFace =
   | "BLUE"
   | "PURPLE"
 
+export type LectureMode =
+  | "MATHEMATICS"
+  | "NATURAL_SCIENCE"
+  | "SOCIAL_SCIENCE"
+  | "HUMANITIES"
+  | "OPEN"
+
 export interface FacetScores {
   RED: number
   ORANGE: number
@@ -22,6 +29,8 @@ export interface RotateOptions {
   segmentIndex: number
   facetScores?: FacetScores
   safeMode?: boolean
+  mode?: LectureMode
+  modeWeights?: Partial<FacetScores>
 }
 
 const GROUNDING_FACES: DiceFace[] = ["ORANGE", "RED"] // What + How
@@ -78,7 +87,7 @@ function stabiliseForSafeMode(order: DiceFace[]): DiceFace[] {
 }
 
 export function rotatePerspective(options: RotateOptions): DiceFace[] {
-  const { threadId, segmentIndex, facetScores, safeMode } = options
+  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights } = options
 
   let permutation = selectPermutation(threadId, segmentIndex)
 
