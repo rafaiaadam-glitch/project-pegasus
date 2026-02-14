@@ -265,9 +265,16 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
                 "title": "Lecture 1",
                 "duration_sec": "120",
                 "source_type": "upload",
+                "lecture_mode": "MATHEMATICS",
             },
         )
     assert response.status_code == 200
+    assert response.json()["lectureMode"] == "MATHEMATICS"
+
+    metadata_path = Path(response.json()["metadataPath"])
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["lectureMode"] == "MATHEMATICS"
+
     assert fake_db.fetch_lecture("lecture-001") is not None
 
     response = client.post("/lectures/lecture-001/transcribe")

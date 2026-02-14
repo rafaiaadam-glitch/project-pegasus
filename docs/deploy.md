@@ -4,7 +4,7 @@ This repo ships with local scripts, a FastAPI backend, and a React Native client
 To deploy the MVP, you will need:
 
 - Postgres (Supabase recommended)
-- S3-compatible storage (or Supabase Storage)
+- S3-compatible storage, Supabase Storage, or GCS
 - OpenAI API key for LLM generation
 - Whisper runtime (self-hosted or API)
 
@@ -27,10 +27,12 @@ Environment variables:
 - `DATABASE_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
-- `STORAGE_MODE` (`local` or `s3`)
+- `STORAGE_MODE` (`local`, `s3`, or `gcs`)
 - `S3_BUCKET`, `S3_PREFIX` (if `STORAGE_MODE=s3`)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
 - `S3_REGION` / `AWS_REGION` (optional, for S3-compatible storage)
+- `GCS_BUCKET`, `GCS_PREFIX` (if `STORAGE_MODE=gcs`)
+- `GOOGLE_APPLICATION_CREDENTIALS` (if running outside GCP with `STORAGE_MODE=gcs`)
 - `PLC_STORAGE_DIR` (optional)
 - `REDIS_URL` (queue/worker)
 
@@ -55,6 +57,21 @@ worker services.
    - `S3_PREFIX=pegasus`
 4. Ensure your service role or storage key is available to the backend
    environment so uploads can write to the bucket.
+
+
+### GCP (Cloud Run + Cloud Storage) quick wiring
+
+1. Run `scripts/setup-gcp.sh` to bootstrap APIs, Cloud SQL, and a storage bucket.
+2. Set runtime env vars for API and worker:
+   - `STORAGE_MODE=gcs`
+   - `GCS_BUCKET=<bucket>`
+   - `GCS_PREFIX=pegasus`
+   - `DATABASE_URL=<cloud-sql-conn-string>`
+   - `REDIS_URL=<managed-redis-url>`
+3. Ensure service account permissions include object read/write on the bucket.
+4. Smoke test:
+   - ingest one lecture and verify `audioPath` starts with `gs://`
+   - run generation/export and verify artifact/export storage paths are `gs://`.
 
 ### Infra configuration
 
