@@ -6,6 +6,9 @@ test('home record button navigates to lecture mode and into record screen', asyn
   await expect(page.getByText('Tap to record')).toBeVisible();
   await page.getByTestId('home-record-button').click();
 
+  await expect(page.getByRole('heading', { name: 'Select Lecture Type' })).toBeVisible();
+  await page.getByLabel('Select Mathematics / Formal').click();
+  await page.getByText('Continue to Record').click();
   await expect(page.getByText('Select Lecture Type')).toBeVisible();
   await page.getByText('Mathematics / Formal').click();
   await page.getByRole('button', { name: 'Continue to Record' }).click();
@@ -18,6 +21,8 @@ test('explicit record CTA navigates to lecture mode', async ({ page }) => {
 
   await page.getByTestId('home-record-cta').click();
 
+  await expect(page.getByRole('heading', { name: 'Select Lecture Type' })).toBeVisible();
+  await expect(page.getByText('Different lecture types activate different reasoning dimensions.')).toHaveCount(1);
   await expect(page.getByText('Select Lecture Type')).toBeVisible();
   await expect(page.getByText('Different lecture types activate different reasoning dimensions.')).toBeVisible();
 });

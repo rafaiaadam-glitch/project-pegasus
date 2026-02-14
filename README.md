@@ -142,6 +142,16 @@ Locked face mapping:
 - `BLUE=Who (5, West)`
 - `PURPLE=Why (6, East)`
 
+Mode-aware weighting profiles:
+- **Mathematics / Formal** → WHAT 0.35, HOW 0.35, WHERE 0.20, WHEN 0.10, WHO 0.00, WHY 0.00
+- **Natural Science** → WHAT 0.20, HOW 0.25, WHEN 0.15, WHERE 0.15, WHO 0.10, WHY 0.15
+- **Social Science** → WHAT 0.15, HOW 0.20, WHEN 0.15, WHERE 0.15, WHO 0.20, WHY 0.15
+- **Humanities / Philosophy** → WHAT 0.15, HOW 0.15, WHEN 0.10, WHERE 0.10, WHO 0.20, WHY 0.30
+- **Open / Mixed** → all six faces weighted equally
+
+When collapse is detected, priority uses weighted gap:
+- `priority_i = weight_i × (maxScore - score_i)`
+
 ---
 
 ## Exports

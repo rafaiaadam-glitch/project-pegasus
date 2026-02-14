@@ -106,5 +106,24 @@ Use `--dry-run` to preview candidate deletions without removing storage paths.
 
 ### Web E2E checks (Playwright)
 
+- Local run: `npm run test:e2e`
+- CI/container run (installs Chromium + required system libraries): `npm run test:e2e:ci`
+- If your environment blocks apt/system package installs, pre-bake Playwright dependencies into the build image before running `test:e2e`.
+
+
+### GCP live-test wiring
+
+Use this when you want to run the backend/worker against GCP Cloud Storage:
+
+1. Set storage env vars for **both** API and worker:
+   - `STORAGE_MODE=gcs`
+   - `GCS_BUCKET=<your-bucket>`
+   - `GCS_PREFIX=pegasus`
+2. Ensure ADC/service-account auth is available:
+   - local: `GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json`
+   - GCP runtime: attach a service account with Storage Object Admin (or narrower write/read perms).
+3. Sanity-check wiring before live testing:
+   - `python -c "from backend.runtime_config import validate_runtime_environment; validate_runtime_environment('api')"`
+   - then run ingest and verify returned `audioPath`/artifact paths use `gs://...`.
 - Run: `npm run test:e2e`
 - Note: CI/container environments may need system browser libraries (for example `libatk-1.0.so.0`) for Chromium to launch.
