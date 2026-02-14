@@ -386,50 +386,46 @@ def test_assert_minimum_artifact_quality_fails_for_empty_summary_overview():
 
 def test_google_speech_transcription_success(monkeypatch, tmp_path):
     """Test successful Google Speech-to-Text transcription"""
+    from unittest.mock import Mock, MagicMock
 
-    class FakeAlternative:
-        def __init__(self, text):
-            self.transcript = text
+    # Create mock response structure
+    mock_alternative = Mock()
+    mock_alternative.transcript = "Hello world"
 
-    class FakeResult:
-        def __init__(self, text):
-            self.alternatives = [FakeAlternative(text)]
+    mock_result1 = Mock()
+    mock_result1.alternatives = [mock_alternative]
 
-    class FakeResponse:
-        def __init__(self, texts):
-            self.results = [FakeResult(text) for text in texts]
+    mock_alternative2 = Mock()
+    mock_alternative2.transcript = "This is a test"
 
-    class FakeSpeechClient:
-        def recognize(self, config, audio):
-            return FakeResponse([
-                "Hello world",
-                "This is a test",
-                "Google Speech API"
-            ])
+    mock_result2 = Mock()
+    mock_result2.alternatives = [mock_alternative2]
 
-    class FakeSpeechModule:
-        class SpeechClient:
-            def __init__(self):
-                pass
-            def recognize(self, config, audio):
-                return FakeResponse([
-                    "Hello world",
-                    "This is a test",
-                    "Google Speech API"
-                ])
+    mock_alternative3 = Mock()
+    mock_alternative3.transcript = "Google Speech API"
 
-        class RecognitionAudio:
-            def __init__(self, content):
-                self.content = content
+    mock_result3 = Mock()
+    mock_result3.alternatives = [mock_alternative3]
 
-        class RecognitionConfig:
-            def __init__(self, language_code, enable_automatic_punctuation, model):
-                self.language_code = language_code
-                self.enable_automatic_punctuation = enable_automatic_punctuation
-                self.model = model
+    mock_response = Mock()
+    mock_response.results = [mock_result1, mock_result2, mock_result3]
 
+    # Create mock client
+    mock_client = Mock()
+    mock_client.recognize.return_value = mock_response
+
+    # Mock the entire google.cloud.speech_v1 module
+    mock_speech = MagicMock()
+    mock_speech.SpeechClient.return_value = mock_client
+    mock_speech.RecognitionAudio = Mock
+    mock_speech.RecognitionConfig = Mock
+
+    # Patch the import
+    monkeypatch.setattr("backend.jobs.speech_v1", mock_speech, raising=False)
+
+    # Also need to mock the import itself
     import sys
-    sys.modules['google.cloud.speech_v1'] = FakeSpeechModule()
+    sys.modules['google.cloud.speech_v1'] = mock_speech
 
     audio_path = tmp_path / "test.mp3"
     audio_path.write_bytes(b"fake audio data")
@@ -453,38 +449,30 @@ def test_google_speech_transcription_success(monkeypatch, tmp_path):
 
 def test_google_speech_uses_env_language_code(monkeypatch, tmp_path):
     """Test that Google STT uses PLC_STT_LANGUAGE env var when language_code is None"""
+    from unittest.mock import Mock, MagicMock
 
-    class FakeAlternative:
-        def __init__(self, text):
-            self.transcript = text
+    # Create mock response
+    mock_alternative = Mock()
+    mock_alternative.transcript = "Test transcript"
 
-    class FakeResult:
-        def __init__(self, text):
-            self.alternatives = [FakeAlternative(text)]
+    mock_result = Mock()
+    mock_result.alternatives = [mock_alternative]
 
-    class FakeResponse:
-        def __init__(self):
-            self.results = [FakeResult("Test transcript")]
+    mock_response = Mock()
+    mock_response.results = [mock_result]
 
-    class FakeSpeechModule:
-        class SpeechClient:
-            def __init__(self):
-                pass
-            def recognize(self, config, audio):
-                return FakeResponse()
+    # Create mock client
+    mock_client = Mock()
+    mock_client.recognize.return_value = mock_response
 
-        class RecognitionAudio:
-            def __init__(self, content):
-                self.content = content
-
-        class RecognitionConfig:
-            def __init__(self, language_code, enable_automatic_punctuation, model):
-                self.language_code = language_code
-                self.enable_automatic_punctuation = enable_automatic_punctuation
-                self.model = model
+    # Mock the module
+    mock_speech = MagicMock()
+    mock_speech.SpeechClient.return_value = mock_client
+    mock_speech.RecognitionAudio = Mock
+    mock_speech.RecognitionConfig = Mock
 
     import sys
-    sys.modules['google.cloud.speech_v1'] = FakeSpeechModule()
+    sys.modules['google.cloud.speech_v1'] = mock_speech
 
     monkeypatch.setenv("PLC_STT_LANGUAGE", "es-ES")
     monkeypatch.setenv("PLC_GCP_STT_MODEL", "latest_short")
@@ -500,41 +488,45 @@ def test_google_speech_uses_env_language_code(monkeypatch, tmp_path):
 
 def test_google_speech_handles_empty_alternatives(monkeypatch, tmp_path):
     """Test that Google STT skips results with no alternatives or empty text"""
+    from unittest.mock import Mock, MagicMock
 
-    class FakeAlternative:
-        def __init__(self, text):
-            self.transcript = text
+    # Create mock results with various edge cases
+    mock_alt1 = Mock()
+    mock_alt1.transcript = "Valid text"
 
-    class FakeResult:
-        def __init__(self, alternatives):
-            self.alternatives = alternatives
+    mock_result1 = Mock()
+    mock_result1.alternatives = [mock_alt1]
 
-    class FakeResponse:
-        def __init__(self):
-            self.results = [
-                FakeResult([FakeAlternative("Valid text")]),
-                FakeResult([]),  # No alternatives
-                FakeResult([FakeAlternative("   ")]),  # Whitespace only
-                FakeResult([FakeAlternative("Another valid text")]),
-            ]
+    mock_result2 = Mock()
+    mock_result2.alternatives = []  # No alternatives
 
-    class FakeSpeechModule:
-        class SpeechClient:
-            def __init__(self):
-                pass
-            def recognize(self, config, audio):
-                return FakeResponse()
+    mock_alt3 = Mock()
+    mock_alt3.transcript = "   "  # Whitespace only
 
-        class RecognitionAudio:
-            def __init__(self, content):
-                self.content = content
+    mock_result3 = Mock()
+    mock_result3.alternatives = [mock_alt3]
 
-        class RecognitionConfig:
-            def __init__(self, language_code, enable_automatic_punctuation, model):
-                pass
+    mock_alt4 = Mock()
+    mock_alt4.transcript = "Another valid text"
+
+    mock_result4 = Mock()
+    mock_result4.alternatives = [mock_alt4]
+
+    mock_response = Mock()
+    mock_response.results = [mock_result1, mock_result2, mock_result3, mock_result4]
+
+    # Create mock client
+    mock_client = Mock()
+    mock_client.recognize.return_value = mock_response
+
+    # Mock the module
+    mock_speech = MagicMock()
+    mock_speech.SpeechClient.return_value = mock_client
+    mock_speech.RecognitionAudio = Mock
+    mock_speech.RecognitionConfig = Mock
 
     import sys
-    sys.modules['google.cloud.speech_v1'] = FakeSpeechModule()
+    sys.modules['google.cloud.speech_v1'] = mock_speech
 
     audio_path = tmp_path / "test.mp3"
     audio_path.write_bytes(b"fake audio data")
@@ -550,22 +542,26 @@ def test_google_speech_handles_empty_alternatives(monkeypatch, tmp_path):
 
 def test_google_speech_raises_on_missing_library(monkeypatch, tmp_path):
     """Test that missing google-cloud-speech raises helpful error"""
+    from unittest.mock import patch
 
     import sys
+    # Remove module if it exists
     if 'google.cloud.speech_v1' in sys.modules:
         del sys.modules['google.cloud.speech_v1']
-
-    # Make the import fail
-    def fake_import(name, *args, **kwargs):
-        if 'google.cloud.speech_v1' in name or name == 'google.cloud.speech_v1':
-            raise ImportError("No module named 'google.cloud.speech_v1'")
-        return original_import(name, *args, **kwargs)
-
-    original_import = __builtins__.__import__
-    monkeypatch.setattr(__builtins__, '__import__', fake_import)
+    if 'google.cloud' in sys.modules:
+        del sys.modules['google.cloud']
+    if 'google' in sys.modules:
+        del sys.modules['google']
 
     audio_path = tmp_path / "test.mp3"
     audio_path.write_bytes(b"fake audio data")
 
-    with pytest.raises(RuntimeError, match="google-cloud-speech is required"):
-        jobs_module._transcribe_with_google_speech(audio_path, "en-US")
+    # Mock the import to raise ImportError
+    def mock_import(name, *args, **kwargs):
+        if 'google.cloud' in name:
+            raise ImportError(f"No module named '{name}'")
+        return __import__(name, *args, **kwargs)
+
+    with patch('builtins.__import__', side_effect=mock_import):
+        with pytest.raises(RuntimeError, match="google-cloud-speech is required"):
+            jobs_module._transcribe_with_google_speech(audio_path, "en-US")
