@@ -1,0 +1,21 @@
+{
+  "artifactType": "summary",
+  "presetId": "research-mode",
+  "overview": "Claim-focused summary with evidence placeholders.",
+  "sections": [
+    {
+      "title": "Claims",
+      "bullets": [
+        "Primary mechanism depends on specific factors. [evidence]",
+        "Key process increases efficiency. [evidence]"
+      ]
+    },
+    {
+      "title": "Open questions",
+      "bullets": [
+        "What experimental data best quantifies the main effect?",
+        "How do secondary factors affect system stability?"
+      ]
+    }
+  ]
+}
