@@ -5,6 +5,7 @@ services:
     dockerfilePath: backend/Dockerfile
     plan: starter
     autoDeploy: true
+    healthCheckPath: /health/ready
     envVars:
       - key: DATABASE_URL
         sync: false

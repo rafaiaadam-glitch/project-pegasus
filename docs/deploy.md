@@ -68,6 +68,11 @@ Worker services:
 - Railway: deploy a second service using `railway.worker.toml` with
   `python -m backend.worker`.
 
+Health/readiness checks:
+- Render: web service probes `GET /health/ready` via `healthCheckPath`.
+- Fly.io: `[[http_service.checks]]` probes `GET /health/ready` every 15s (5s timeout, 20s grace period).
+- Railway: deploy config sets `healthcheckPath = "/health/ready"` with `healthcheckTimeout = 120`.
+
 Ensure the API and worker services share identical values for `DATABASE_URL`,
 `REDIS_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, and storage settings (`STORAGE_MODE`,
 `S3_BUCKET`, `S3_PREFIX`, `PLC_STORAGE_DIR`). This keeps job enqueueing and
