@@ -382,3 +382,190 @@ def test_assert_minimum_artifact_quality_fails_for_empty_summary_overview():
 
     with pytest.raises(ValueError, match="overview is empty"):
         jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")
+
+
+def test_google_speech_transcription_success(monkeypatch, tmp_path):
+    """Test successful Google Speech-to-Text transcription"""
+
+    class FakeAlternative:
+        def __init__(self, text):
+            self.transcript = text
+
+    class FakeResult:
+        def __init__(self, text):
+            self.alternatives = [FakeAlternative(text)]
+
+    class FakeResponse:
+        def __init__(self, texts):
+            self.results = [FakeResult(text) for text in texts]
+
+    class FakeSpeechClient:
+        def recognize(self, config, audio):
+            return FakeResponse([
+                "Hello world",
+                "This is a test",
+                "Google Speech API"
+            ])
+
+    class FakeSpeechModule:
+        class SpeechClient:
+            def __init__(self):
+                pass
+            def recognize(self, config, audio):
+                return FakeResponse([
+                    "Hello world",
+                    "This is a test",
+                    "Google Speech API"
+                ])
+
+        class RecognitionAudio:
+            def __init__(self, content):
+                self.content = content
+
+        class RecognitionConfig:
+            def __init__(self, language_code, enable_automatic_punctuation, model):
+                self.language_code = language_code
+                self.enable_automatic_punctuation = enable_automatic_punctuation
+                self.model = model
+
+    import sys
+    sys.modules['google.cloud.speech_v1'] = FakeSpeechModule()
+
+    audio_path = tmp_path / "test.mp3"
+    audio_path.write_bytes(b"fake audio data")
+
+    result = jobs_module._transcribe_with_google_speech(audio_path, "en-US")
+
+    assert result["language"] == "en-US"
+    assert result["text"] == "Hello world This is a test Google Speech API"
+    assert len(result["segments"]) == 3
+    assert result["segments"][0]["text"] == "Hello world"
+    assert result["segments"][1]["text"] == "This is a test"
+    assert result["segments"][2]["text"] == "Google Speech API"
+    assert result["engine"]["provider"] == "google_speech"
+    assert result["engine"]["model"] == "latest_long"
+
+    # Check that segments have timing
+    assert result["segments"][0]["startSec"] == 0.0
+    assert result["segments"][0]["endSec"] > 0.0
+    assert result["segments"][1]["startSec"] > 0.0
+
+
+def test_google_speech_uses_env_language_code(monkeypatch, tmp_path):
+    """Test that Google STT uses PLC_STT_LANGUAGE env var when language_code is None"""
+
+    class FakeAlternative:
+        def __init__(self, text):
+            self.transcript = text
+
+    class FakeResult:
+        def __init__(self, text):
+            self.alternatives = [FakeAlternative(text)]
+
+    class FakeResponse:
+        def __init__(self):
+            self.results = [FakeResult("Test transcript")]
+
+    class FakeSpeechModule:
+        class SpeechClient:
+            def __init__(self):
+                pass
+            def recognize(self, config, audio):
+                return FakeResponse()
+
+        class RecognitionAudio:
+            def __init__(self, content):
+                self.content = content
+
+        class RecognitionConfig:
+            def __init__(self, language_code, enable_automatic_punctuation, model):
+                self.language_code = language_code
+                self.enable_automatic_punctuation = enable_automatic_punctuation
+                self.model = model
+
+    import sys
+    sys.modules['google.cloud.speech_v1'] = FakeSpeechModule()
+
+    monkeypatch.setenv("PLC_STT_LANGUAGE", "es-ES")
+    monkeypatch.setenv("PLC_GCP_STT_MODEL", "latest_short")
+
+    audio_path = tmp_path / "test.mp3"
+    audio_path.write_bytes(b"fake audio data")
+
+    result = jobs_module._transcribe_with_google_speech(audio_path, None)
+
+    assert result["language"] == "es-ES"
+    assert result["engine"]["model"] == "latest_short"
+
+
+def test_google_speech_handles_empty_alternatives(monkeypatch, tmp_path):
+    """Test that Google STT skips results with no alternatives or empty text"""
+
+    class FakeAlternative:
+        def __init__(self, text):
+            self.transcript = text
+
+    class FakeResult:
+        def __init__(self, alternatives):
+            self.alternatives = alternatives
+
+    class FakeResponse:
+        def __init__(self):
+            self.results = [
+                FakeResult([FakeAlternative("Valid text")]),
+                FakeResult([]),  # No alternatives
+                FakeResult([FakeAlternative("   ")]),  # Whitespace only
+                FakeResult([FakeAlternative("Another valid text")]),
+            ]
+
+    class FakeSpeechModule:
+        class SpeechClient:
+            def __init__(self):
+                pass
+            def recognize(self, config, audio):
+                return FakeResponse()
+
+        class RecognitionAudio:
+            def __init__(self, content):
+                self.content = content
+
+        class RecognitionConfig:
+            def __init__(self, language_code, enable_automatic_punctuation, model):
+                pass
+
+    import sys
+    sys.modules['google.cloud.speech_v1'] = FakeSpeechModule()
+
+    audio_path = tmp_path / "test.mp3"
+    audio_path.write_bytes(b"fake audio data")
+
+    result = jobs_module._transcribe_with_google_speech(audio_path, "en-US")
+
+    # Should only have 2 valid segments
+    assert len(result["segments"]) == 2
+    assert result["segments"][0]["text"] == "Valid text"
+    assert result["segments"][1]["text"] == "Another valid text"
+    assert result["text"] == "Valid text Another valid text"
+
+
+def test_google_speech_raises_on_missing_library(monkeypatch, tmp_path):
+    """Test that missing google-cloud-speech raises helpful error"""
+
+    import sys
+    if 'google.cloud.speech_v1' in sys.modules:
+        del sys.modules['google.cloud.speech_v1']
+
+    # Make the import fail
+    def fake_import(name, *args, **kwargs):
+        if 'google.cloud.speech_v1' in name or name == 'google.cloud.speech_v1':
+            raise ImportError("No module named 'google.cloud.speech_v1'")
+        return original_import(name, *args, **kwargs)
+
+    original_import = __builtins__.__import__
+    monkeypatch.setattr(__builtins__, '__import__', fake_import)
+
+    audio_path = tmp_path / "test.mp3"
+    audio_path.write_bytes(b"fake audio data")
+
+    with pytest.raises(RuntimeError, match="google-cloud-speech is required"):
+        jobs_module._transcribe_with_google_speech(audio_path, "en-US")
