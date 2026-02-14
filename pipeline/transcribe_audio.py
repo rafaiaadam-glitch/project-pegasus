@@ -106,6 +106,7 @@ def main() -> int:
             start_time = 0.0
             end_time = 0.0
 
+
         segments.append({
             "startSec": float(start_time),
             "endSec": float(end_time),
