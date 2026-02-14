@@ -3,7 +3,6 @@ export type LectureMode =
   | 'NATURAL_SCIENCE'
   | 'SOCIAL_SCIENCE'
   | 'HUMANITIES'
-  | 'INTERDISCIPLINARY'
   | 'OPEN';
 
 export interface LectureModeOption {
@@ -37,13 +36,6 @@ export const LECTURE_MODE_OPTIONS: LectureModeOption[] = [
     title: 'Humanities / Philosophy',
     emoji: '📚',
     description: 'Emphasizes interpretation, people, and meaning (why).',
-  },
-
-  {
-    id: 'INTERDISCIPLINARY',
-    title: 'Interdisciplinary / Mixed Methods',
-    emoji: '🧩',
-    description: 'Hybrid weighting: empirical and interpretive perspectives combined.',
   },
   {
     id: 'OPEN',

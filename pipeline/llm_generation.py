@@ -3,60 +3,20 @@ from __future__ import annotations
 import json
 import os
 import uuid
-import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+import vertexai
+from vertexai.generative_models import GenerativeModel, GenerationConfig
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
 
 def _require_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
-
-
-def _request_openai(payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any]:
-    from pipeline.retry_utils import (
-        with_retry,
-        retry_config_from_env,
-        NonRetryableError,
-    )
-
-    def make_request() -> Dict[str, Any]:
-        api_key = _require_env("OPENAI_API_KEY")
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            "https://api.openai.com/v1/responses",
-            data=data,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-    config = retry_config_from_env()
-
-    try:
-        return with_retry(make_request, config=config,
-                         operation_name="OpenAI API request")
-    except NonRetryableError as e:
-        raise RuntimeError(f"OpenAI API request failed: {e}") from e
-
-
-def _extract_text(response: Dict[str, Any]) -> str:
-    for output in response.get("output", []):
-        for content in output.get("content", []):
-            if "text" in content:
-                return content["text"]
-    raise ValueError("OpenAI response missing text output.")
-
 
 def _base_artifact(
     artifact_type: str,
@@ -75,18 +35,22 @@ def _base_artifact(
         "version": "0.2",
     }
 
-
 def generate_artifacts_with_llm(
     transcript: str,
     preset_id: str,
     course_id: str,
     lecture_id: str,
     generated_at: str | None = None,
-    model: str = "gpt-4o-mini",
+    model: str = "gemini-1.5-flash",  # Defaulting to Gemini on GCP
     thread_refs: List[str] | None = None,
 ) -> Dict[str, Dict[str, Any]]:
     if generated_at is None:
         generated_at = _iso_now()
+
+    # Initialize Vertex AI using your project ID from GCP_DEPLOYMENT.md
+    project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
+    location = os.getenv("GCP_REGION", "us-central1")
+    vertexai.init(project=project_id, location=location)
 
     prompt = (
         "You are generating structured study artifacts for Pegasus Lecture Copilot.\n"
@@ -100,21 +64,23 @@ def generate_artifacts_with_llm(
         "Use the transcript below to generate content.\n"
     )
 
-    payload = {
-        "model": model,
-        "input": [
-            {"role": "system", "content": prompt},
-            {
-                "role": "user",
-                "content": f"Preset: {preset_id}\nTranscript:\n{transcript}",
-            },
-        ],
-        "response_format": {"type": "json_object"},
-    }
+    # Setup Gemini model with JSON response format
+    generative_model = GenerativeModel(model)
+    
+    user_content = f"Preset: {preset_id}\nTranscript:\n{transcript}"
+    
+    response = generative_model.generate_content(
+        [prompt, user_content],
+        generation_config=GenerationConfig(
+            response_mime_type="application/json",
+            temperature=0.2
+        )
+    )
 
-    response = _request_openai(payload)
-    raw_text = _extract_text(response)
-    data = json.loads(raw_text)
+    try:
+        data = json.loads(response.text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Gemini failed to return valid JSON: {e}")
 
     mapping = {
         "summary": "summary",
@@ -128,9 +94,11 @@ def generate_artifacts_with_llm(
     for key, artifact_type in mapping.items():
         if key not in data:
             raise ValueError(f"Missing '{key}' in LLM response.")
+        
         artifact = data[key]
         if not isinstance(artifact, dict):
             raise ValueError(f"Artifact '{key}' must be an object.")
+            
         base = _base_artifact(
             artifact_type=artifact_type,
             course_id=course_id,
@@ -138,11 +106,13 @@ def generate_artifacts_with_llm(
             preset_id=preset_id,
             generated_at=generated_at,
         )
+        
         base.update(artifact)
         base["artifactType"] = artifact_type
-        # Add threadRefs if provided
+        
         if thread_refs:
             base["threadRefs"] = thread_refs
+            
         artifacts[artifact_type] = base
 
     return artifacts

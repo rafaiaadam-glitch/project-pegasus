@@ -68,32 +68,13 @@ export default function CourseListScreen({ navigation }: Props) {
   };
 
   const handleBackPress = () => {
-    const parentNavigation = navigation.getParent?.();
-
     if (navigation.canGoBack?.()) {
       navigation.goBack();
       return;
     }
 
-    if (parentNavigation?.canGoBack?.()) {
-      parentNavigation.goBack();
-      return;
-    }
-
-    if (parentNavigation?.navigate) {
-      parentNavigation.navigate('Home');
-      return;
-    }
-
-    if (navigation.navigate) {
-      navigation.navigate('Home');
-      return;
-    }
-
-    navigation.reset?.({
-      index: 0,
-      routes: [{ name: 'Home' }],
-    });
+    navigation.getParent?.()?.goBack?.();
+    navigation.navigate('Home');
   };
 
 
@@ -161,9 +142,7 @@ export default function CourseListScreen({ navigation }: Props) {
             {canGoBack && (
               <TouchableOpacity
                 style={styles.backButton}
-                onPress={handleBackPress}
-                activeOpacity={0.7}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                onPress={() => navigation.goBack()}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
               >
