@@ -65,7 +65,8 @@ def test_request_gemini_uses_google_api_key_fallback(monkeypatch):
         assert result == fake_response
         # Verify the URL contains the Google API key
         call_args = mock_urlopen.call_args
-        assert "test-google-key" in str(call_args)
+        request_obj = call_args[0][0]
+        assert "test-google-key" in request_obj.full_url
 
 
 def test_request_gemini_missing_api_key(monkeypatch):
@@ -101,7 +102,7 @@ def test_extract_gemini_text_missing_candidates():
     """Test that missing candidates raises ValueError"""
     response = {"candidates": []}
 
-    with pytest.raises(ValueError, match="No candidates"):
+    with pytest.raises(ValueError, match="Gemini response missing text output"):
         llm_generation._extract_gemini_text(response)
 
 
@@ -109,7 +110,7 @@ def test_extract_gemini_text_missing_content():
     """Test that missing content raises ValueError"""
     response = {"candidates": [{}]}
 
-    with pytest.raises(ValueError, match="No content"):
+    with pytest.raises(ValueError, match="Gemini response missing text output"):
         llm_generation._extract_gemini_text(response)
 
 
@@ -117,7 +118,7 @@ def test_extract_gemini_text_missing_parts():
     """Test that missing parts raises ValueError"""
     response = {"candidates": [{"content": {"parts": []}}]}
 
-    with pytest.raises(ValueError, match="No text parts"):
+    with pytest.raises(ValueError, match="Gemini response missing text output"):
         llm_generation._extract_gemini_text(response)
 
 

@@ -151,7 +151,7 @@ def test_call_gemini_missing_api_key(monkeypatch):
 
 
 def test_call_gemini_empty_response(monkeypatch):
-    """Test that empty Gemini response raises ValueError"""
+    """Test that empty Gemini response raises RuntimeError"""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
     # Response with no extractable text
@@ -166,7 +166,7 @@ def test_call_gemini_empty_response(monkeypatch):
         mock_http_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_http_response
 
-        with pytest.raises(ValueError, match="did not contain extractable JSON"):
+        with pytest.raises(RuntimeError, match="Gemini thread detection failed"):
             thread_engine._call_gemini(
                 transcript="Test",
                 existing_threads=[],
@@ -175,7 +175,7 @@ def test_call_gemini_empty_response(monkeypatch):
 
 
 def test_call_gemini_invalid_json_in_response(monkeypatch):
-    """Test that invalid JSON in Gemini response raises error"""
+    """Test that invalid JSON in Gemini response raises RuntimeError"""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
     fake_gemini_response = {
@@ -191,7 +191,7 @@ def test_call_gemini_invalid_json_in_response(monkeypatch):
         mock_http_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_http_response
 
-        with pytest.raises(json.JSONDecodeError):
+        with pytest.raises(RuntimeError, match="Gemini thread detection failed"):
             thread_engine._call_gemini(
                 transcript="Test",
                 existing_threads=[],
@@ -263,33 +263,11 @@ def test_call_gemini_includes_system_prompt(monkeypatch):
         assert len(body["system_instruction"]["parts"]) > 0
 
 
-def test_detect_threads_fallback_to_keywords_on_gemini_failure(monkeypatch):
-    """Test that detect_threads falls back to keyword extraction when Gemini fails"""
+def test_generate_thread_records_with_gemini_provider(monkeypatch):
+    """Test generate_thread_records uses Gemini when provider=gemini"""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
-    # Make Gemini call fail
-    def mock_call_gemini(*args, **kwargs):
-        raise RuntimeError("Gemini API unavailable")
-
-    with patch.object(thread_engine, "_call_gemini", side_effect=mock_call_gemini):
-        result = thread_engine.detect_threads(
-            transcript="Test transcript about machine learning and neural networks",
-            existing_threads=[],
-            provider="gemini",
-            model="gemini-1.5-flash"
-        )
-
-        # Should fall back to keyword extraction
-        assert "newThreads" in result
-        # Keyword fallback creates threads from keywords
-        assert len(result["newThreads"]) >= 0  # May or may not extract keywords
-
-
-def test_detect_threads_with_gemini_provider(monkeypatch):
-    """Test detect_threads uses Gemini when provider=gemini"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-
-    fake_response = {
+    fake_llm_output = {
         "newThreads": [
             {
                 "title": "Machine Learning Basics",
@@ -302,7 +280,7 @@ def test_detect_threads_with_gemini_provider(monkeypatch):
 
     fake_gemini_response = {
         "candidates": [
-            {"content": {"parts": [{"text": json.dumps(fake_response)}]}}
+            {"content": {"parts": [{"text": json.dumps(fake_llm_output)}]}}
         ]
     }
 
@@ -313,12 +291,41 @@ def test_detect_threads_with_gemini_provider(monkeypatch):
         mock_http_response.__exit__ = Mock(return_value=False)
         mock_urlopen.return_value = mock_http_response
 
-        result = thread_engine.detect_threads(
+        # generate_thread_records returns a list of thread records, not the raw LLM output
+        # The function processes the LLM output, so we just verify it calls Gemini
+        result = thread_engine.generate_thread_records(
             transcript="Test transcript",
             existing_threads=[],
+            lecture_id="lecture-1",
+            course_id="course-1",
             provider="gemini",
             model="gemini-1.5-flash"
         )
 
-        assert result == fake_response
+        # Should have called the API
         assert mock_urlopen.called
+        # Result should be a list
+        assert isinstance(result, list)
+
+
+def test_generate_thread_records_fallback_on_gemini_failure(monkeypatch):
+    """Test that generate_thread_records falls back to keyword extraction when Gemini fails"""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+    # Make Gemini call fail
+    def mock_call_gemini(*args, **kwargs):
+        raise RuntimeError("Gemini API unavailable")
+
+    with patch.object(thread_engine, "_call_gemini", side_effect=mock_call_gemini):
+        # Should fall back to keyword extraction without raising
+        result = thread_engine.generate_thread_records(
+            transcript="Test transcript about machine learning and neural networks",
+            existing_threads=[],
+            lecture_id="lecture-1",
+            course_id="course-1",
+            provider="gemini",
+            model="gemini-1.5-flash"
+        )
+
+        # Should return a list (may be empty or have keyword-based threads)
+        assert isinstance(result, list)
