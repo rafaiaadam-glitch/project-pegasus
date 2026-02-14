@@ -86,17 +86,25 @@ Audio is private and user-owned
 
 Presets are selected before recording and must meaningfully alter output structure.
 
-Examples:
+Available presets:
 
-Exam Mode
+📝 Exam Mode – assessment optimization (definitions, examinable points, likely questions)
 
-Concept Map Mode
+🗺️ Concept Map Mode – structural overview (hierarchies, relationships, dependencies)
 
-Beginner Mode
+👶 Beginner Mode – simplified explanation (plain language, examples, analogies)
 
-Neurodivergent-Friendly Mode
+🧩 Neurodivergent-Friendly Mode – cognitive clarity (short chunks, low clutter, predictable structure)
 
-Research Mode
+🔬 Research Mode – methodological depth (claims, arguments, evidence, open questions)
+
+🎓 Seminar Mode – debate & argument clarity (speakers, claims, counterclaims, critiques, discussion prep)
+
+Seminar Mode is distinct from Research Mode:
+- Research Mode focuses on methodological rigor and evidence analysis
+- Seminar Mode focuses on argumentative structure and debate preparation
+- Seminar Mode emphasizes WHO (speakers/authors), WHY (stakes), HOW (argument structure)
+- Perfect for humanities seminars: philosophy, law, political theory, sociology, literature
 
 Presets must affect:
 

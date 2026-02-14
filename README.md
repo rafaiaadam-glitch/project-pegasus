@@ -77,12 +77,26 @@ If a step requires manual formatting by the user, the implementation is wrong.
 
 Presets are selected **before recording** and must materially affect output structure.
 
-Examples:
-- **Exam Mode** – definitions, examinable points, likely questions
-- **Concept Map Mode** – hierarchies and relationships
-- **Beginner Mode** – plain language and analogies
-- **Neurodivergent-Friendly Mode** – short chunks, low clutter
-- **Research Mode** – claims, arguments, evidence placeholders
+Available presets:
+- 📝 **Exam Mode** – definitions, examinable points, likely questions
+- 🗺️ **Concept Map Mode** – hierarchies and relationships
+- 👶 **Beginner Mode** – plain language and analogies
+- 🧩 **Neurodivergent-Friendly Mode** – short chunks, low clutter
+- 🔬 **Research Mode** – claims, arguments, evidence placeholders (methodological depth)
+- 🎓 **Seminar Mode** – arguments, counterarguments, debate positions (argumentative structure)
+
+**Seminar Mode** is specifically designed for seminar-heavy courses in:
+- Political Science, Philosophy, Sociology
+- Law, Literature, Anthropology
+- Any discussion-based humanities or social science course
+
+It emphasizes:
+- 🔵 WHO (speakers, authors, schools of thought)
+- 🟣 WHY (normative claims, philosophical stakes)
+- 🔴 HOW (argument structure)
+- 🟠 WHAT (core concepts)
+
+And extracts: claims, evidence, counterclaims, critiques, and discussion questions.
 
 Changing presets must result in **visibly different outputs**.
 
