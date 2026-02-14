@@ -314,8 +314,12 @@ Use EAS Build (Expo) for iOS/Android distribution.
 1. Install the EAS CLI: `npm install -g eas-cli`
 2. Authenticate: `eas login`
 3. Configure builds: `eas build:configure`
-4. Run builds:
+4. Set production API URL:
+   - Create `mobile/.env` from `mobile/.env.example`
+   - Set `EXPO_PUBLIC_API_URL=https://your-deployed-api-url.com`
+   - For Cloud Run: `EXPO_PUBLIC_API_URL=https://pegasus-api-xxxxx-uc.a.run.app`
+5. Run builds:
    - iOS: `eas build --platform ios`
    - Android: `eas build --platform android`
 
-Set `API_BASE_URL` in `mobile/App.tsx` to the deployed backend URL.
+The mobile app will automatically use the production URL when built in release mode.

@@ -122,9 +122,9 @@ def generate_artifacts_with_llm(
     course_id: str,
     lecture_id: str,
     generated_at: str | None = None,
-    model: str = "gemini-1.5-flash",  # Defaulting to Gemini on GCP
+    model: str = "gemini-1.5-flash",  # Default to Gemini on GCP
     thread_refs: List[str] | None = None,
-    provider: str = "openai",
+    provider: str = "gemini",  # Default to Gemini/Vertex AI for GCP alignment
 ) -> Dict[str, Dict[str, Any]]:
     if generated_at is None:
         generated_at = _iso_now()
@@ -166,24 +166,10 @@ def generate_artifacts_with_llm(
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
-    data = json.loads(raw_text)
-    # Setup Gemini model with JSON response format
-    generative_model = GenerativeModel(model)
-    
-    user_content = f"Preset: {preset_id}\nTranscript:\n{transcript}"
-    
-    response = generative_model.generate_content(
-        [prompt, user_content],
-        generation_config=GenerationConfig(
-            response_mime_type="application/json",
-            temperature=0.2
-        )
-    )
-
     try:
-        data = json.loads(response.text)
+        data = json.loads(raw_text)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Gemini failed to return valid JSON: {e}")
+        raise ValueError(f"LLM failed to return valid JSON: {e}")
 
     mapping = {
         "summary": "summary",

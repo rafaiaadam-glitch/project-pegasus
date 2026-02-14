@@ -1056,8 +1056,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         lecture_id,
         course_id,
         preset_id,
-        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "openai"),
-        payload.llm_model or payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "gemini"),
+        payload.llm_model or payload.openai_model or os.getenv("PLC_LLM_MODEL") or os.getenv("OPENAI_MODEL", "gemini-1.5-flash"),
     )
     job = db.fetch_job(job_id)
     response_payload = {

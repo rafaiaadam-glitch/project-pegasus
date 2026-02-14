@@ -5,11 +5,16 @@ import * as MockData from './mockData';
 
 // Configure this to point to your backend
 // For local development: http://localhost:8000
-// For production: your deployed backend URL
+// For production: your deployed backend URL (Cloud Run, Render, Fly.io, etc.)
 
 const getApiBaseUrl = () => {
-  if (!__DEV__) {
-    return 'https://your-production-api.com';
+  // Production: Set EXPO_PUBLIC_API_URL in your environment or .env file
+  // For Cloud Run: EXPO_PUBLIC_API_URL=https://pegasus-api-xxxxx-uc.a.run.app
+  // For Render: EXPO_PUBLIC_API_URL=https://pegasus-api.onrender.com
+  const productionUrl = process.env.EXPO_PUBLIC_API_URL;
+
+  if (!__DEV__ && productionUrl) {
+    return productionUrl;
   }
 
   // Development mode - choose based on platform

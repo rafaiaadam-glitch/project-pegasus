@@ -139,8 +139,8 @@ def run_pipeline(
     context: PipelineContext,
     output_dir: Path,
     use_llm: bool = False,
-    openai_model: str = "gpt-4o-mini",
-    llm_provider: str = "openai",
+    openai_model: str = "gpt-4o-mini",  # Fallback for legacy OpenAI calls
+    llm_provider: str = "gemini",  # Default to Gemini for GCP alignment
     llm_model: str | None = None,
     progress_tracker=None,
     continuity_threshold: float | None = None,
