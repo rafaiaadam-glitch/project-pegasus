@@ -3,13 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:core": "tsx --test core/thread_engine/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:core": "tsx --test core/thread_engine/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2",
-    "@playwright/test": "^1.55.0"
+    "typescript": "^5.9.2"
   }
 }
