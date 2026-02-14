@@ -86,6 +86,21 @@ Examples:
 
 Changing presets must result in **visibly different outputs**.
 
+## Lecture Mode selection (before recording)
+
+Before recording, users choose a broad **Lecture Mode** (no long subject list):
+- 🧮 Mathematics / Formal
+- 🔬 Natural Science
+- 📊 Social Science
+- 📚 Humanities / Philosophy
+- 🧩 Interdisciplinary / Mixed Methods
+- 🧠 Open / Mixed
+
+UI guidance:
+- Keep to these 6 broad options only
+- Show a short helper line: “Different lecture types activate different reasoning dimensions.”
+- Persist the selected mode as `lecture_mode` during ingest so backend metadata and downstream jobs can use it.
+
 ---
 
 ## Thread Engine (core intelligence)
@@ -100,6 +115,51 @@ The Thread Engine:
 
 Thread tracking is **not optional**.
 It is the memory of the system.
+
+### Dice permutation control flow (mandatory)
+
+Thread Engine execution order is controlled by the Dice permutation algorithm.
+
+Source-of-truth files:
+- `core/dice/permutations.json`
+- `core/dice/courseModes.ts`
+- `core/thread_engine/engine.ts`
+- `core/thread_engine/rotate.ts`
+- `core/thread_engine/facets.ts`
+
+For each lecture segment and each thread update, the engine must:
+1. Compute facet scores via `computeFacetScores(...)`
+2. Select ordered faces via `rotatePerspective({ threadId, segmentIndex, facetScores, safeMode })`
+3. Run facet extractors in the returned face order
+4. Apply facet mutations only through `updateFacet(...)`
+
+Safety rules:
+- `safeMode` forces `ORANGE` then `RED` first (What → How)
+- Collapse conditions override normal schedule and prioritise the weakest face first
+
+Locked face mapping:
+- `RED=How (1, South)`
+- `ORANGE=What (2, Forward)`
+- `YELLOW=When (3, North)`
+- `GREEN=Where (4, Backward)`
+- `BLUE=Who (5, West)`
+- `PURPLE=Why (6, East)`
+
+Mode-aware weighting profiles:
+- **Mathematics / Formal** → WHAT 0.35, HOW 0.35, WHERE 0.20, WHEN 0.10, WHO 0.00, WHY 0.00
+- **Natural Science** → WHAT 0.20, HOW 0.25, WHEN 0.15, WHERE 0.15, WHO 0.10, WHY 0.15
+- **Social Science** → WHAT 0.15, HOW 0.20, WHEN 0.15, WHERE 0.15, WHO 0.20, WHY 0.15
+- **Humanities / Philosophy** → WHAT 0.15, HOW 0.15, WHEN 0.10, WHERE 0.10, WHO 0.20, WHY 0.30
+- **Open / Mixed** → all six faces weighted equally
+
+When collapse is detected, priority uses weighted gap:
+- `priority_i = weight_i × (maxScore - score_i)`
+
+Interdisciplinary mode is **hybrid** and must run two extraction passes per segment:
+1. Empirical pass (`HYBRID_WEIGHTS.EMPIRICAL`)
+2. Interpretive pass (`HYBRID_WEIGHTS.INTERPRETIVE`)
+
+Then merge outcomes into the same thread facets and use combined weights for collapse targeting.
 
 ---
 

@@ -596,6 +596,7 @@ def ingest_lecture(
     course_title: Optional[str] = Form(None),
     duration_sec: int = Form(0),
     source_type: str = Form("upload"),
+    lecture_mode: Optional[str] = Form(None),
     audio: UploadFile = File(...),
 ) -> dict:
     _enforce_write_auth(request)
@@ -607,6 +608,7 @@ def ingest_lecture(
         "title": title,
         "duration_sec": duration_sec,
         "source_type": source_type,
+        "lecture_mode": lecture_mode or "",
         "audio_filename": audio.filename or "",
     }
     replay = _replay_or_none(request, "lectures.ingest", idempotency_payload)
@@ -629,6 +631,7 @@ def ingest_lecture(
         "courseId": course_id,
         "presetId": preset_id,
         "title": title,
+        "lectureMode": lecture_mode,
         "recordedAt": _iso_now(),
         "durationSec": duration_sec,
         "audioSource": {
@@ -671,6 +674,7 @@ def ingest_lecture(
         "lectureId": lecture_id,
         "metadataPath": str(metadata_path),
         "audioPath": stored_audio,
+        "lectureMode": lecture_mode,
     }
     _remember_response(request, "lectures.ingest", idempotency_payload, response_payload)
     return response_payload

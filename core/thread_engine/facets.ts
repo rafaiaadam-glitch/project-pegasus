@@ -1,20 +1,18 @@
-// core/thread_engine/facets.ts
-
-import { DiceFace } from "./rotate"
+import { DiceFace } from "./rotate.js"
 
 export interface FacetEvidence {
-  snippets: string[]          // extracted text fragments
-  sourceCount: number         // number of distinct segments supporting it
-  lastUpdated: number         // timestamp
+  snippets: string[]
+  sourceCount: number
+  lastUpdated: number
 }
 
 export interface ThreadFacets {
-  RED: FacetEvidence      // How
-  ORANGE: FacetEvidence   // What
-  YELLOW: FacetEvidence   // When
-  GREEN: FacetEvidence    // Where
-  BLUE: FacetEvidence     // Who
-  PURPLE: FacetEvidence   // Why
+  RED: FacetEvidence
+  ORANGE: FacetEvidence
+  YELLOW: FacetEvidence
+  GREEN: FacetEvidence
+  BLUE: FacetEvidence
+  PURPLE: FacetEvidence
 }
 
 export interface FacetScores {
@@ -30,40 +28,6 @@ const MAX_SNIPPETS = 10
 const CONFIDENCE_CAP = 1.0
 const CONFIDENCE_INCREMENT = 0.08
 const CONFIDENCE_DECAY = 0.02
-
-// core/thread_engine/facets.ts
-
-import { DiceFace } from "./rotate"
-
-export interface FacetEvidence {
-  snippets: string[]          // extracted text fragments
-  sourceCount: number         // number of distinct segments supporting it
-  lastUpdated: number         // timestamp
-}
-
-export interface ThreadFacets {
-  RED: FacetEvidence      // How
-  ORANGE: FacetEvidence   // What
-  YELLOW: FacetEvidence   // When
-  GREEN: FacetEvidence    // Where
-  BLUE: FacetEvidence     // Who
-  PURPLE: FacetEvidence   // Why
-}
-
-export interface FacetScores {
-  RED: number
-  ORANGE: number
-  YELLOW: number
-  GREEN: number
-  BLUE: number
-  PURPLE: number
-}
-
-const MAX_SNIPPETS = 10
-const CONFIDENCE_CAP = 1.0
-const CONFIDENCE_INCREMENT = 0.08
-const CONFIDENCE_DECAY = 0.02
-
 
 export function initialiseFacets(): ThreadFacets {
   const emptyFacet = (): FacetEvidence => ({
@@ -82,11 +46,7 @@ export function initialiseFacets(): ThreadFacets {
   }
 }
 
-export function updateFacet(
-  facets: ThreadFacets,
-  face: DiceFace,
-  snippet: string
-): ThreadFacets {
+export function updateFacet(facets: ThreadFacets, face: DiceFace, snippet: string): ThreadFacets {
   const facet = facets[face]
 
   if (facet.snippets.length < MAX_SNIPPETS) {
@@ -99,49 +59,20 @@ export function updateFacet(
   return facets
 }
 
-export function computeFacetScores(
-  facets: ThreadFacets
-): FacetScores {
-
+export function computeFacetScores(facets: ThreadFacets): FacetScores {
   const scores: Partial<FacetScores> = {}
 
   for (const face of Object.keys(facets) as DiceFace[]) {
-
     const facet = facets[face]
 
     const base = facet.snippets.length > 0 ? 0.2 : 0
     const evidenceBoost = facet.sourceCount * CONFIDENCE_INCREMENT
-
-    const timeSinceUpdate =
-      (Date.now() - facet.lastUpdated) / (1000 * 60 * 60) // hours
-
+    const timeSinceUpdate = (Date.now() - facet.lastUpdated) / (1000 * 60 * 60)
     const decay = timeSinceUpdate * CONFIDENCE_DECAY
-
     const rawScore = base + evidenceBoost - decay
 
-    scores[face] = Math.max(
-      0,
-      Math.min(CONFIDENCE_CAP, rawScore)
-    )
+    scores[face] = Math.max(0, Math.min(CONFIDENCE_CAP, rawScore))
   }
 
   return scores as FacetScores
-}
-
-export function equilibriumGap(scores: FacetScores): number {
-  const values = Object.values(scores)
-  return Math.max(...values) - Math.min(...values)
-}
-
-export function entropy(scores: FacetScores): number {
-  const values = Object.values(scores)
-  const total = values.reduce((a, b) => a + b, 0)
-
-  if (total === 0) return 0
-
-  return -values.reduce((sum, value) => {
-    const p = value / total
-    if (p === 0) return sum
-    return sum + p * Math.log(p)
-  }, 0)
 }
