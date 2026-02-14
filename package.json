@@ -7,13 +7,11 @@
     "test:e2e": "playwright test",
     "e2e:install-deps": "playwright install --with-deps chromium",
     "test:e2e:ci": "npm run e2e:install-deps && npm run test:e2e"
-    "test:core": "tsx --test core/thread_engine/*.test.ts"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "@playwright/test": "^1.55.0"
-    "typescript": "^5.9.2"
   }
 }
