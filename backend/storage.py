@@ -21,14 +21,20 @@ class StorageConfig:
 
 
 def _validate_config(config: StorageConfig) -> None:
-    if config.mode not in {"local", "s3"}:
-        raise RuntimeError("STORAGE_MODE must be either 'local' or 's3'.")
+    if config.mode not in {"local", "s3", "gcs"}:
+        raise RuntimeError("STORAGE_MODE must be either 'local', 's3', or 'gcs'.")
 
     if config.mode == "s3":
         if not config.s3_bucket:
             raise RuntimeError("S3_BUCKET must be set for S3 storage.")
         if not config.s3_prefix:
             raise RuntimeError("S3_PREFIX must be a non-empty path segment for S3 storage.")
+
+    if config.mode == "gcs":
+        if not config.gcs_bucket:
+            raise RuntimeError("GCS_BUCKET must be set for GCS storage.")
+        if not config.gcs_prefix:
+            raise RuntimeError("GCS_PREFIX must be a non-empty path segment for GCS storage.")
 
 
 def _config(env: Mapping[str, str] | None = None) -> StorageConfig:
@@ -215,7 +221,7 @@ def download_url(storage_path: str, expires_in: int = 900) -> Optional[str]:
 
 
 def delete_storage_path(storage_path: str) -> bool:
-    """Delete an artifact/export/audio path from local or S3-backed storage."""
+    """Delete an artifact/export/audio path from local, S3, or GCS storage."""
     if not storage_path:
         return False
 
@@ -225,6 +231,16 @@ def delete_storage_path(storage_path: str) -> bool:
         if not bucket or not key:
             return False
         _s3_client().delete_object(Bucket=bucket, Key=key)
+        return True
+
+    if storage_path.startswith("gs://"):
+        _, _, rest = storage_path.partition("gs://")
+        bucket_name, _, blob_name = rest.partition("/")
+        if not bucket_name or not blob_name:
+            return False
+        bucket = _gcs_client().bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        blob.delete()
         return True
 
     path = Path(storage_path)
@@ -241,7 +257,7 @@ def delete_storage_path(storage_path: str) -> bool:
 
 
 def storage_path_exists(storage_path: str) -> bool:
-    """Check whether a storage path exists in local or S3-backed storage."""
+    """Check whether a storage path exists in local, S3, or GCS storage."""
     if not storage_path:
         return False
 
@@ -253,6 +269,18 @@ def storage_path_exists(storage_path: str) -> bool:
         try:
             _s3_client().head_object(Bucket=bucket, Key=key)
             return True
+        except Exception:
+            return False
+
+    if storage_path.startswith("gs://"):
+        _, _, rest = storage_path.partition("gs://")
+        bucket_name, _, blob_name = rest.partition("/")
+        if not bucket_name or not blob_name:
+            return False
+        try:
+            bucket = _gcs_client().bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            return bool(blob.exists())
         except Exception:
             return False
 

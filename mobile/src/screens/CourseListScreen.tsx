@@ -24,6 +24,7 @@ export default function CourseListScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const canGoBack = navigation.canGoBack?.() ?? false;
 
   useEffect(() => {
     loadCourses();
@@ -65,6 +66,36 @@ export default function CourseListScreen({ navigation }: Props) {
   const handleCoursePress = (course: Course) => {
     navigation.navigate('LectureList', { courseId: course.id, courseTitle: course.title });
   };
+
+  const handleBackPress = () => {
+    const parentNavigation = navigation.getParent?.();
+
+    if (navigation.canGoBack?.()) {
+      navigation.goBack();
+      return;
+    }
+
+    if (parentNavigation?.canGoBack?.()) {
+      parentNavigation.goBack();
+      return;
+    }
+
+    if (parentNavigation?.navigate) {
+      parentNavigation.navigate('Home');
+      return;
+    }
+
+    if (navigation.navigate) {
+      navigation.navigate('Home');
+      return;
+    }
+
+    navigation.reset?.({
+      index: 0,
+      routes: [{ name: 'Home' }],
+    });
+  };
+
 
   const renderCourse = ({ item }: { item: Course }) => (
     <TouchableOpacity
@@ -126,9 +157,23 @@ export default function CourseListScreen({ navigation }: Props) {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.headerTitle}>Courses</Text>
-            <Text style={styles.headerSubtitle}>Pegasus Lecture Copilot</Text>
+          <View style={styles.headerLeftSection}>
+            {canGoBack && (
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={handleBackPress}
+                activeOpacity={0.7}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel="Go back"
+              >
+                <Text style={styles.backButtonText}>←</Text>
+              </TouchableOpacity>
+            )}
+            <View>
+              <Text style={styles.headerTitle}>Courses</Text>
+              <Text style={styles.headerSubtitle}>Pegasus Lecture Copilot</Text>
+            </View>
           </View>
           <TouchableOpacity style={styles.themeToggle} onPress={toggleTheme}>
             <Text style={styles.themeToggleIcon}>{isDark ? '☀️' : '🌙'}</Text>
@@ -191,6 +236,11 @@ const createStyles = (theme: any) =>
       justifyContent: 'space-between',
       alignItems: 'center',
     },
+    headerLeftSection: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flex: 1,
+    },
     headerTitle: {
       fontSize: 28,
       fontWeight: '700',
@@ -200,6 +250,20 @@ const createStyles = (theme: any) =>
       fontSize: 13,
       color: theme.textTertiary,
       marginTop: 2,
+    },
+    backButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: theme.inputBackground,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginRight: 12,
+    },
+    backButtonText: {
+      fontSize: 22,
+      color: theme.primary,
+      marginTop: -2,
     },
     themeToggle: {
       padding: 8,
