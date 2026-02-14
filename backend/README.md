@@ -48,6 +48,8 @@ Startup validates runtime configuration with clear errors: `DATABASE_URL` is alw
 - `PLC_WRITE_RATE_LIMIT_WINDOW_SEC` (optional, default: `60`; sliding-window duration for write rate limiting)
 - `PLC_IDEMPOTENCY_TTL_SEC` (optional, default: `3600`; retention window for `Idempotency-Key` response replay)
 - `PLC_EXPORT_MIN_SUMMARY_SECTIONS` (optional, default: `1`; export jobs fail when summary quality is below this threshold)
+- `PLC_RETENTION_RAW_AUDIO_DAYS` (optional, default: `30`; raw audio retention period in days for cleanup)
+- `PLC_RETENTION_TRANSCRIPT_DAYS` (optional, default: `14`; transcript retention period in days for cleanup)
 - `STORAGE_MODE` (`local` or `s3`)
 - `S3_BUCKET` / `S3_PREFIX` (required when `STORAGE_MODE=s3`, and `S3_PREFIX` must be non-empty)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
@@ -84,4 +86,18 @@ Write endpoints also support optional `Idempotency-Key` headers: repeated reques
 - `GET /lectures/{lecture_id}/summary` (compact lecture dashboard: artifact/export counts + stage progress snapshot + lecture/export links)
 - `GET /lectures/{lecture_id}/integrity` (verifies DB-referenced storage paths for audio/transcript/artifacts/exports and reports missing files)
 - `GET /jobs/{job_id}`
+- `GET /jobs/dead-letter` (lists failed jobs; supports `lecture_id`, `job_type`, `limit`, `offset`)
 - `POST /jobs/{job_id}/replay` (requeues only `failed` jobs for transcription/generation/export; returns 409 for non-failed jobs)
+- `POST /jobs/dead-letter/replay` (batch replay failed jobs; supports `lecture_id`, `job_type`, `limit`)
+
+
+Operational runbook: `docs/runbooks/dead-letter-queue.md`.
+
+
+Retention cleanup job:
+
+```bash
+python -m backend.retention
+```
+
+Use `--dry-run` to preview candidate deletions without removing storage paths.

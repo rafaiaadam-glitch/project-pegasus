@@ -13,7 +13,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 - [x] Add auth for write endpoints (`/lectures/*` POST routes)
 - [x] Add API rate limiting and request size limits for ingest/transcript paths
 - [x] Add structured logging (request IDs, lecture IDs, job IDs) across API and worker
-- [ ] Add dead-letter / failed-job replay workflow for queue processing *(failed-job replay is implemented; dead-letter queue/runbook still pending)*
+- [x] Add dead-letter / failed-job replay workflow for queue processing
 - [x] Add idempotency keys for ingest/generate/export operations
 - [x] Validate all required env vars at startup with clear failure messages
 
@@ -28,7 +28,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 - [ ] Add backup/restore procedure for Postgres and object storage
 - [ ] Add migration rollback guidance for production incidents
-- [ ] Enforce retention lifecycle for raw uploads and intermediate artifacts
+- [x] Enforce retention lifecycle for raw uploads and intermediate artifacts
 - [x] Add integrity checks for artifact files referenced in DB records
 
 **Definition of done:**
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **10**
-- Items remaining: **26**
-- Completion: **28%**
+- Items marked complete: **12**
+- Items remaining: **24**
+- Completion: **33%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -146,7 +146,11 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Write rate limiting + upload size limits → `backend/tests/test_rate_limit.py`, `backend/tests/test_upload_limits.py`
 - Idempotency keys/replay semantics → `backend/tests/test_idempotency.py`
 - Failed-job replay endpoint (`POST /jobs/{job_id}/replay`) → `backend/tests/test_job_replay.py`
+- Dead-letter listing + batch replay endpoints (`GET /jobs/dead-letter`, `POST /jobs/dead-letter/replay`) → `backend/tests/test_dead_letter_workflow.py`, `docs/runbooks/dead-letter-queue.md`
 - Artifact path integrity checks (`GET /lectures/{lecture_id}/integrity`) → `backend/tests/test_integrity_endpoint.py`
+- Backup/restore procedure runbook → `docs/runbooks/backup-restore.md`
+- Migration rollback guidance runbook → `docs/runbooks/migration-rollback.md`
+- Retention cleanup automation (`python -m backend.retention`) → `backend/retention.py`, `backend/tests/test_retention.py`, `docs/deploy.md`
 - Golden-output preset snapshots → `pipeline/tests/test_preset_summary_snapshots.py` + `pipeline/tests/snapshots/`
 - Schema drift checks → `pipeline/tests/test_schema_drift_check.py`
 - Thread continuity scoring checks → `pipeline/thread_continuity.py`, `pipeline/tests/test_thread_continuity_scoring.py`
@@ -161,11 +165,11 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Export quality threshold support is wired via `PLC_EXPORT_MIN_SUMMARY_SECTIONS`.
 
 ### Clarifications from review
-- The queue recovery path currently supports **failed job replay** (`POST /jobs/{job_id}/replay`), but a dedicated dead-letter queue workflow and operational runbook are not complete yet.
+- The queue recovery path supports single-job replay (`POST /jobs/{job_id}/replay`) and dead-letter batch workflows (`GET /jobs/dead-letter`, `POST /jobs/dead-letter/replay`) with an operations runbook under `docs/runbooks/dead-letter-queue.md`.
 - This checklist treats launch-readiness as requiring both implementation **and** operational readiness (runbooks/drills), so any item missing operational artifacts remains unchecked.
 
 ### Still open before launch
-- Operational reliability runbooks (backup/restore, rollback, retention automation).
+- Operational reliability runbooks and retention automation are documented; production scheduling/drill validation is still recommended before launch.
 - Mobile UX completion for a no-terminal first-time flow.
 - SLO definitions, metrics, dashboards, and alerting.
 - Security/compliance baseline work and final launch gate rehearsal.

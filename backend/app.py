@@ -1121,6 +1121,29 @@ def _enqueue_replay_job(db, job: dict) -> dict:
     }
 
 
+def _is_failed_job(job: dict, lecture_id: Optional[str], job_type: Optional[str]) -> bool:
+    if job.get("status") != "failed":
+        return False
+    if lecture_id and job.get("lecture_id") != lecture_id:
+        return False
+    if job_type and job.get("job_type") != job_type:
+        return False
+    return True
+
+
+def _job_api_payload(job: dict) -> dict:
+    return {
+        "id": job["id"],
+        "status": job["status"],
+        "jobType": job.get("job_type"),
+        "lectureId": job.get("lecture_id"),
+        "result": job.get("result"),
+        "error": job.get("error"),
+        "createdAt": job.get("created_at"),
+        "updatedAt": job.get("updated_at"),
+    }
+
+
 
 
 @app.delete("/lectures/{lecture_id}")
@@ -1170,19 +1193,93 @@ def replay_job(request: Request, job_id: str) -> dict:
     return _enqueue_replay_job(db, job)
 
 
+@app.get("/jobs/dead-letter")
+def list_dead_letter_jobs(
+    lecture_id: Optional[str] = Query(default=None),
+    job_type: Optional[str] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
+) -> dict:
+    db = get_database()
+    all_jobs = db.fetch_jobs()
+    failed_jobs = [job for job in all_jobs if _is_failed_job(job, lecture_id, job_type)]
+
+    start = offset or 0
+    end = start + limit if limit is not None else None
+    page = failed_jobs[start:end]
+
+    return {
+        "jobs": [_job_api_payload(job) for job in page],
+        "filters": {
+            "status": "failed",
+            "lectureId": lecture_id,
+            "jobType": job_type,
+        },
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(page),
+            total=len(failed_jobs),
+        ),
+    }
+
+
+@app.post("/jobs/dead-letter/replay")
+def replay_dead_letter_jobs(
+    request: Request,
+    lecture_id: Optional[str] = Query(default=None),
+    job_type: Optional[str] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=1),
+) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+
+    db = get_database()
+    failed_jobs = [job for job in db.fetch_jobs() if _is_failed_job(job, lecture_id, job_type)]
+    selected_jobs = failed_jobs[:limit] if limit is not None else failed_jobs
+
+    replayed: list[dict] = []
+    skipped: list[dict] = []
+    for job in selected_jobs:
+        try:
+            replayed.append(_enqueue_replay_job(db, job))
+        except HTTPException as exc:
+            skipped.append(
+                {
+                    "jobId": job.get("id"),
+                    "jobType": job.get("job_type"),
+                    "lectureId": job.get("lecture_id"),
+                    "reason": exc.detail,
+                }
+            )
+
+    return {
+        "status": "accepted",
+        "requested": len(selected_jobs),
+        "replayedCount": len(replayed),
+        "skippedCount": len(skipped),
+        "replayedJobs": replayed,
+        "skippedJobs": skipped,
+        "filters": {
+            "status": "failed",
+            "lectureId": lecture_id,
+            "jobType": job_type,
+            "limit": limit,
+        },
+    }
+
+
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str) -> dict:
     db = get_database()
     job = db.fetch_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
-    return {
-        "id": job["id"],
-        "status": job["status"],
-        "jobType": job.get("job_type"),
-        "result": job.get("result"),
-        "error": job.get("error"),
-    }
+    payload = _job_api_payload(job)
+    del payload["lectureId"]
+    del payload["createdAt"]
+    del payload["updatedAt"]
+    return payload
 
 
 @app.get("/lectures/{lecture_id}/jobs")
@@ -1205,18 +1302,7 @@ def list_lecture_jobs(
     )
     return {
         "lectureId": lecture_id,
-        "jobs": [
-            {
-                "id": job["id"],
-                "status": job["status"],
-                "jobType": job.get("job_type"),
-                "result": job.get("result"),
-                "error": job.get("error"),
-                "createdAt": job.get("created_at"),
-                "updatedAt": job.get("updated_at"),
-            }
-            for job in jobs
-        ],
+        "jobs": [_job_api_payload(job) for job in jobs],
         "pagination": _pagination_payload(
             limit=limit,
             offset=offset,
