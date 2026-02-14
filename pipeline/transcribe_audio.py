@@ -2,51 +2,49 @@
 from __future__ import annotations
 
 import argparse
-import importlib
-import importlib.util
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
-
+from google.cloud import speech
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+def _load_whisper():
+    """
+    Lazy-load the whisper module for local transcription.
+    This function is imported by backend/jobs.py for transcription jobs.
+    """
+    try:
+        import whisper
+        return whisper
+    except ImportError as e:
+        raise ImportError(
+            "Whisper is not installed. Install it with: pip install openai-whisper"
+        ) from e
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Transcribe lecture audio into timestamped segments."
+        description="Transcribe lecture audio using Google Cloud Speech-to-Text."
     )
     parser.add_argument("--input", required=True, help="Path to audio file.")
     parser.add_argument("--lecture-id", required=True, help="Lecture identifier.")
+    parser.add_argument("--storage-dir", default="storage", help="Base storage directory.")
+    parser.add_argument("--language", default="en-US", help="Language code (e.g., 'en-US').")
     parser.add_argument(
-        "--model",
-        default="base",
-        help="Whisper model name (if whisper is installed).",
+        "--sample-rate",
+        type=int,
+        default=16000,
+        help="Audio sample rate in Hz (default: 16000)."
     )
     parser.add_argument(
-        "--storage-dir",
-        default="storage",
-        help="Base storage directory for transcript output.",
-    )
-    parser.add_argument(
-        "--language",
-        default=None,
-        help="Optional language hint (e.g., 'en').",
+        "--encoding",
+        default="LINEAR16",
+        choices=["LINEAR16", "FLAC", "MP3", "OGG_OPUS", "WEBM_OPUS"],
+        help="Audio encoding format (default: LINEAR16)."
     )
     return parser
-
-
-def _load_whisper():
-    spec = importlib.util.find_spec("whisper")
-    if spec is None:
-        raise RuntimeError(
-            "Whisper is not installed. Install openai-whisper to run transcription:\n"
-            "  pip install -U openai-whisper\n"
-            "Ensure ffmpeg is available on PATH."
-        )
-    return importlib.import_module("whisper")
-
 
 def main() -> int:
     parser = build_parser()
@@ -56,28 +54,87 @@ def main() -> int:
     if not input_path.exists():
         raise FileNotFoundError(f"Audio file not found: {input_path}")
 
-    whisper = _load_whisper()
-    model = whisper.load_model(args.model)
-    result = model.transcribe(str(input_path), language=args.language)
+    # Initialize Google Cloud Speech Client
+    try:
+        client = speech.SpeechClient()
+    except Exception as e:
+        print(f"Error initializing Google Cloud Speech client: {e}")
+        print("Please ensure GOOGLE_APPLICATION_CREDENTIALS is set correctly.")
+        return 1
 
-    segments = [
-        {
-            "startSec": float(segment["start"]),
-            "endSec": float(segment["end"]),
-            "text": segment["text"].strip(),
-        }
-        for segment in result.get("segments", [])
-    ]
+    with open(input_path, "rb") as audio_file:
+        content = audio_file.read()
+
+    audio = speech.RecognitionAudio(content=content)
+
+    # Map encoding string to Google Cloud Speech enum
+    encoding_map = {
+        "LINEAR16": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        "FLAC": speech.RecognitionConfig.AudioEncoding.FLAC,
+        "MP3": speech.RecognitionConfig.AudioEncoding.MP3,
+        "OGG_OPUS": speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
+        "WEBM_OPUS": speech.RecognitionConfig.AudioEncoding.WEBM_OPUS,
+    }
+
+    config = speech.RecognitionConfig(
+        encoding=encoding_map[args.encoding],
+        sample_rate_hertz=args.sample_rate,
+        language_code=args.language,
+        enable_word_time_offsets=True,
+        enable_automatic_punctuation=True,
+    )
+
+    print(f"Transcribing {input_path} via Google Cloud STT...")
+
+    try:
+        response = client.recognize(config=config, audio=audio)
+    except Exception as e:
+        print(f"Error during transcription: {e}")
+        print("If you encounter encoding errors, the audio file may need to be converted.")
+        print("Try: ffmpeg -i input.mp3 -ar 16000 -ac 1 -c:a pcm_s16le output.wav")
+        return 1
+
+    if not response.results:
+        print("Warning: No transcription results returned. The audio may be empty or incompatible.")
+        response_results = []
+    else:
+        response_results = response.results
+
+    segments = []
+    full_text_parts = []
+
+    for result in response_results:
+        if not result.alternatives:
+            continue
+
+        alternative = result.alternatives[0]
+        full_text_parts.append(alternative.transcript)
+
+        # Mapping Google results to your existing segment schema
+        # Fix: Properly handle empty words list
+        if alternative.words:
+            start_time = alternative.words[0].start_time.total_seconds()
+            end_time = alternative.words[-1].end_time.total_seconds()
+        else:
+            start_time = 0.0
+            end_time = 0.0
+
+
+        segments.append({
+            "startSec": float(start_time),
+            "endSec": float(end_time),
+            "text": alternative.transcript.strip(),
+        })
 
     transcript_payload = {
         "lectureId": args.lecture_id,
         "createdAt": _iso_now(),
-        "language": result.get("language"),
-        "text": result.get("text", "").strip(),
+        "language": args.language,
+        "text": " ".join(full_text_parts).strip(),
         "segments": segments,
         "engine": {
-            "provider": "whisper",
-            "model": args.model,
+            "provider": "google-cloud-stt",
+            "model": "latest_long",
         },
     }
 
@@ -90,6 +147,6 @@ def main() -> int:
     print(f"Wrote transcript: {output_path}")
     return 0
 
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import sys
+    sys.exit(main())

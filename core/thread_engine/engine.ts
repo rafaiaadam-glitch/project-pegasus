@@ -1,5 +1,5 @@
-import { computeFacetScores, ThreadFacets, updateFacet } from "./facets.js"
-import { DiceFace, LectureMode, FacetScores, rotatePerspective } from "./rotate.js"
+import { computeFacetScores, ThreadFacets, updateFacet } from "./facets"
+import { DiceFace, rotatePerspective } from "./rotate"
 
 export interface SegmentContext {
   text: string
@@ -16,15 +16,13 @@ export interface ProcessThreadSegmentsOptions {
   facets: ThreadFacets
   extractors: FacetExtractors
   safeMode?: boolean
-  mode?: LectureMode
-  modeWeights?: Partial<FacetScores>
 }
 
 /**
  * Mandatory Dice control-flow execution for Thread Engine segment processing.
  */
 export function processThreadSegments(options: ProcessThreadSegmentsOptions): ThreadFacets {
-  const { threadId, segments, facets, extractors, safeMode, mode, modeWeights } = options
+  const { threadId, segments, facets, extractors, safeMode } = options
 
   for (const [segmentIndex, text] of segments.entries()) {
     const facetScores = computeFacetScores(facets)
@@ -33,8 +31,6 @@ export function processThreadSegments(options: ProcessThreadSegmentsOptions): Th
       segmentIndex,
       facetScores,
       safeMode,
-      mode,
-      modeWeights,
     })
 
     for (const face of order) {
