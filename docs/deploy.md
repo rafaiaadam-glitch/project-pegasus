@@ -253,6 +253,37 @@ curl -sS "$API_BASE_URL/lectures/smoke-lecture/artifacts"
 
 and export download endpoints under `/exports/{lecture_id}/{export_type}`.
 
+
+
+### Retention automation
+
+Schedule retention cleanup as a recurring job (daily recommended):
+
+```bash
+python -m backend.retention
+```
+
+Preview mode (no deletion):
+
+```bash
+python -m backend.retention --dry-run
+```
+
+Retention knobs:
+- `PLC_RETENTION_RAW_AUDIO_DAYS` (default `30`)
+- `PLC_RETENTION_TRANSCRIPT_DAYS` (default `14`)
+
+Apply the same env values in any scheduled runner/container that executes the cleanup command.
+
+## Incident runbooks
+
+Operational runbooks are kept under `docs/runbooks/`:
+- Backup/restore: `docs/runbooks/backup-restore.md`
+- Migration rollback: `docs/runbooks/migration-rollback.md`
+- Dead-letter replay: `docs/runbooks/dead-letter-queue.md`
+
+Use these procedures during production incidents before attempting ad-hoc fixes.
+
 ## Mobile
 
 Use EAS Build (Expo) for iOS/Android distribution.

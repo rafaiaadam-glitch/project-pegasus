@@ -488,6 +488,27 @@ class Database:
             with conn.cursor() as cur:
                 cur.execute("delete from threads where id = %s;", (thread_id,))
 
+    def update_lecture_storage_paths(
+        self,
+        lecture_id: str,
+        *,
+        audio_path: Optional[str],
+        transcript_path: Optional[str],
+        updated_at: str,
+    ) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    update lectures
+                    set audio_path = %s,
+                        transcript_path = %s,
+                        updated_at = %s
+                    where id = %s;
+                    """,
+                    (audio_path, transcript_path, updated_at, lecture_id),
+                )
+
     def delete_lecture_records(self, lecture_id: str) -> dict[str, int]:
         with self.connect() as conn:
             with conn.cursor() as cur:
