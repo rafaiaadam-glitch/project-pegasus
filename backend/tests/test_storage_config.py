@@ -12,9 +12,9 @@ from backend import storage
 
 
 def test_storage_mode_must_be_supported(monkeypatch):
-    monkeypatch.setenv("STORAGE_MODE", "gcs")
+    monkeypatch.setenv("STORAGE_MODE", "unsupported")
 
-    with pytest.raises(RuntimeError, match="STORAGE_MODE must be either 'local' or 's3'"):
+    with pytest.raises(RuntimeError, match="STORAGE_MODE must be either 'local', 's3', or 'gcs'"):
         storage._config()
 
 
@@ -34,6 +34,24 @@ def test_s3_storage_requires_non_empty_prefix(monkeypatch):
     with pytest.raises(RuntimeError, match="S3_PREFIX must be a non-empty path segment"):
         storage._config()
 
+
+
+
+def test_gcs_storage_requires_bucket(monkeypatch):
+    monkeypatch.setenv("STORAGE_MODE", "gcs")
+    monkeypatch.delenv("GCS_BUCKET", raising=False)
+
+    with pytest.raises(RuntimeError, match="GCS_BUCKET must be set for GCS storage"):
+        storage._config()
+
+
+def test_gcs_storage_requires_non_empty_prefix(monkeypatch):
+    monkeypatch.setenv("STORAGE_MODE", "gcs")
+    monkeypatch.setenv("GCS_BUCKET", "pegasus-test")
+    monkeypatch.setenv("GCS_PREFIX", "")
+
+    with pytest.raises(RuntimeError, match="GCS_PREFIX must be a non-empty path segment"):
+        storage._config()
 
 def test_local_storage_default_config(monkeypatch, tmp_path):
     monkeypatch.delenv("STORAGE_MODE", raising=False)

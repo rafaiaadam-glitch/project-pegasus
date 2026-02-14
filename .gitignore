@@ -57,3 +57,8 @@ htmlcov/
 
 # JavaScript dependencies
 mobile/node_modules/
+node_modules/
+
+# E2E artifacts
+test-results/
+playwright-report/
