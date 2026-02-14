@@ -10,7 +10,7 @@ const API_BASE_URL = __DEV__
   : 'https://your-production-api.com';
 
 // Set to true to use mock data (no backend required)
-const USE_MOCK_DATA = true;
+const USE_MOCK_DATA = false;
 
 class ApiClient {
   private baseUrl: string;
