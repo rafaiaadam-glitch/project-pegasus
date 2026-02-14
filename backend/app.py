@@ -16,6 +16,7 @@ from typing import Callable, Optional
 import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from redis import Redis
@@ -51,6 +52,16 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Pegasus Lecture Copilot API", lifespan=app_lifespan)
+
+# Configure CORS for mobile app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins in development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 LOGGER = logging.getLogger("pegasus.api")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
 
