@@ -55,3 +55,47 @@ jobs:
         run: pytest backend/tests
       - name: Run pipeline tests
         run: pytest pipeline/tests -v
+
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner (filesystem)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs-results.sarif
+          vuln-type: os,library
+
+      - name: Build backend image for vulnerability scanning
+        run: docker build -t pegasus-backend:ci ./backend
+
+      - name: Run Trivy vulnerability scanner (backend image)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: pegasus-backend:ci
+          format: sarif
+          output: trivy-image-results.sarif
+          vuln-type: os,library
+
+      - name: Upload Trivy filesystem scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-fs
+
+      - name: Upload Trivy image scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork)
+        with:
+          sarif_file: trivy-image-results.sarif
+          category: trivy-image

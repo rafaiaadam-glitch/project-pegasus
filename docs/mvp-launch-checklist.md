@@ -80,7 +80,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 - [ ] Add secrets management guidance for each deploy target
 - [ ] Add PII handling policy for transcripts and generated artifacts
 - [ ] Add data deletion endpoint/workflow per lecture/course
-- [ ] Add dependency and container vulnerability scanning in CI
+- [x] Add dependency and container vulnerability scanning in CI
 
 **Definition of done:**
 - documented deletion flow and auditability for destructive operations
@@ -90,7 +90,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 ## 7) Deployment readiness
 
 - [ ] Publish one canonical deployment guide for API + worker + storage
-- [ ] Add health/readiness checks to platform configs with sane thresholds
+- [x] Add health/readiness checks to platform configs with sane thresholds
 - [ ] Add staging environment parity checklist
 - [ ] Add release checklist with rollback procedure
 
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **13**
-- Items remaining: **23**
-- Completion: **36%**
+- Items marked complete: **15**
+- Items remaining: **21**
+- Completion: **42%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -156,6 +156,8 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Thread continuity scoring checks → `pipeline/thread_continuity.py`, `pipeline/tests/test_thread_continuity_scoring.py`
 - Export quality threshold (`PLC_EXPORT_MIN_SUMMARY_SECTIONS`) → `backend/jobs.py`, `backend/tests/test_jobs.py`
 - Incident response runbook (queue/OpenAI/storage) → `docs/runbooks/incident-response.md`
+- Dependency + container vulnerability scanning in CI (`security-scan` with Trivy filesystem + backend image scans and SARIF upload) → `.github/workflows/ci.yml`
+- Platform health/readiness checks (Render/Fly/Railway using `/health/ready` and sane probe thresholds) → `render.yaml`, `fly.toml`, `railway.toml`
 
 ## Progress notes
 

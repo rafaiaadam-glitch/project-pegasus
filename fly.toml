@@ -20,3 +20,10 @@ primary_region = "iad"
   auto_stop_machines = true
   min_machines_running = 0
   processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    method = "get"
+    timeout = "5s"
+    path = "/health/ready"
