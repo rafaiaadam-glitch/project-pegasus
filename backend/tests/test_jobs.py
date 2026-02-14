@@ -386,7 +386,7 @@ def test_assert_minimum_artifact_quality_fails_for_empty_summary_overview():
 
 def test_google_speech_transcription_success(monkeypatch, tmp_path):
     """Test successful Google Speech-to-Text transcription"""
-    from unittest.mock import Mock, MagicMock
+    from unittest.mock import Mock, MagicMock, patch
 
     # Create mock response structure
     mock_alternative = Mock()
@@ -417,20 +417,15 @@ def test_google_speech_transcription_success(monkeypatch, tmp_path):
     # Mock the entire google.cloud.speech_v1 module
     mock_speech = MagicMock()
     mock_speech.SpeechClient.return_value = mock_client
-    mock_speech.RecognitionAudio = Mock
-    mock_speech.RecognitionConfig = Mock
-
-    # Patch the import
-    monkeypatch.setattr("backend.jobs.speech_v1", mock_speech, raising=False)
-
-    # Also need to mock the import itself
-    import sys
-    sys.modules['google.cloud.speech_v1'] = mock_speech
+    mock_speech.RecognitionAudio = lambda content: Mock(content=content)
+    mock_speech.RecognitionConfig = lambda **kwargs: Mock(**kwargs)
 
     audio_path = tmp_path / "test.mp3"
     audio_path.write_bytes(b"fake audio data")
 
-    result = jobs_module._transcribe_with_google_speech(audio_path, "en-US")
+    # Patch the import using context manager
+    with patch.dict('sys.modules', {'google.cloud.speech_v1': mock_speech, 'google.cloud': MagicMock(), 'google': MagicMock()}):
+        result = jobs_module._transcribe_with_google_speech(audio_path, "en-US")
 
     assert result["language"] == "en-US"
     assert result["text"] == "Hello world This is a test Google Speech API"
@@ -449,7 +444,7 @@ def test_google_speech_transcription_success(monkeypatch, tmp_path):
 
 def test_google_speech_uses_env_language_code(monkeypatch, tmp_path):
     """Test that Google STT uses PLC_STT_LANGUAGE env var when language_code is None"""
-    from unittest.mock import Mock, MagicMock
+    from unittest.mock import Mock, MagicMock, patch
 
     # Create mock response
     mock_alternative = Mock()
@@ -468,11 +463,8 @@ def test_google_speech_uses_env_language_code(monkeypatch, tmp_path):
     # Mock the module
     mock_speech = MagicMock()
     mock_speech.SpeechClient.return_value = mock_client
-    mock_speech.RecognitionAudio = Mock
-    mock_speech.RecognitionConfig = Mock
-
-    import sys
-    sys.modules['google.cloud.speech_v1'] = mock_speech
+    mock_speech.RecognitionAudio = lambda content: Mock(content=content)
+    mock_speech.RecognitionConfig = lambda **kwargs: Mock(**kwargs)
 
     monkeypatch.setenv("PLC_STT_LANGUAGE", "es-ES")
     monkeypatch.setenv("PLC_GCP_STT_MODEL", "latest_short")
@@ -480,7 +472,8 @@ def test_google_speech_uses_env_language_code(monkeypatch, tmp_path):
     audio_path = tmp_path / "test.mp3"
     audio_path.write_bytes(b"fake audio data")
 
-    result = jobs_module._transcribe_with_google_speech(audio_path, None)
+    with patch.dict('sys.modules', {'google.cloud.speech_v1': mock_speech, 'google.cloud': MagicMock(), 'google': MagicMock()}):
+        result = jobs_module._transcribe_with_google_speech(audio_path, None)
 
     assert result["language"] == "es-ES"
     assert result["engine"]["model"] == "latest_short"
@@ -488,7 +481,7 @@ def test_google_speech_uses_env_language_code(monkeypatch, tmp_path):
 
 def test_google_speech_handles_empty_alternatives(monkeypatch, tmp_path):
     """Test that Google STT skips results with no alternatives or empty text"""
-    from unittest.mock import Mock, MagicMock
+    from unittest.mock import Mock, MagicMock, patch
 
     # Create mock results with various edge cases
     mock_alt1 = Mock()
@@ -522,16 +515,14 @@ def test_google_speech_handles_empty_alternatives(monkeypatch, tmp_path):
     # Mock the module
     mock_speech = MagicMock()
     mock_speech.SpeechClient.return_value = mock_client
-    mock_speech.RecognitionAudio = Mock
-    mock_speech.RecognitionConfig = Mock
-
-    import sys
-    sys.modules['google.cloud.speech_v1'] = mock_speech
+    mock_speech.RecognitionAudio = lambda content: Mock(content=content)
+    mock_speech.RecognitionConfig = lambda **kwargs: Mock(**kwargs)
 
     audio_path = tmp_path / "test.mp3"
     audio_path.write_bytes(b"fake audio data")
 
-    result = jobs_module._transcribe_with_google_speech(audio_path, "en-US")
+    with patch.dict('sys.modules', {'google.cloud.speech_v1': mock_speech, 'google.cloud': MagicMock(), 'google': MagicMock()}):
+        result = jobs_module._transcribe_with_google_speech(audio_path, "en-US")
 
     # Should only have 2 valid segments
     assert len(result["segments"]) == 2
