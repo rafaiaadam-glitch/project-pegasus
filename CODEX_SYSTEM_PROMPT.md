@@ -7,6 +7,15 @@ You are helping build Pegasus Lecture Copilot, an AI-powered lecture processing 
 You must strictly follow the product definition below.
 If an implementation decision conflicts with this definition, the definition always wins.
 
+
+PRIMARY CLOUD ALIGNMENT
+
+Deployments on GCP should prefer:
+- Gemini/Vertex AI for LLM generation and thread intelligence
+- Google Speech-to-Text for transcription
+
+Fallbacks (OpenAI/Whisper) are acceptable for local development, testing, or controlled rollback, but new production wiring should default to Google-native providers when credentials are available.
+
 PRODUCT DEFINITION (AUTHORITATIVE)
 Product name
 
@@ -56,7 +65,7 @@ User selects a Lecture Style Preset
 
 User records or uploads lecture audio
 
-System processes lecture automatically
+System processes lecture automatically (provider-configurable for GCP alignment)
 
 System produces structured study artifacts
 
@@ -175,10 +184,6 @@ Lecture Mode selection (before recording) must stay constrained to 6 broad optio
 Mode weighting profiles must map to Dice faces and be available to rotation logic for collapse prioritisation.
 When collapse is detected, priority is weight-aware via:
 priority_i = weight_i × (maxScore - score_i)
-
-2) rotatePerspective({ threadId, segmentIndex, facetScores, safeMode })
-3) run extractors in the returned face order
-4) update facets only through updateFacet(...)
 
 Safety and stability constraints:
 - If safeMode is enabled, force ORANGE then RED first (What → How)

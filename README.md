@@ -98,11 +98,9 @@ Before recording, users choose a broad **Lecture Mode** (no long subject list):
 
 UI guidance:
 - Keep to these 6 broad options only
-
-UI guidance:
-- Keep to 5 broad options only
 - Show a short helper line: “Different lecture types activate different reasoning dimensions.”
 - Persist the selected mode as `lecture_mode` during ingest so backend metadata and downstream jobs can use it.
+- AI provider settings are runtime-configurable (`llm_provider`, `llm_model`, transcription `provider`) to align with GCP deployments while preserving local fallbacks.
 
 ---
 
@@ -254,10 +252,10 @@ Early milestones:
 - Simple worker (BullMQ/Redis) **or** serverless background jobs
 
 **Transcription**
-- Whisper (hosted API or self-hosted)
+- Google Speech-to-Text (Vertex AI Speech) as primary; Whisper fallback for local/dev
 
 **LLM**
-- OpenAI responses for structured generation
+- Gemini (Vertex AI / Google Generative Language API) as primary; OpenAI fallback
 
 ---
 

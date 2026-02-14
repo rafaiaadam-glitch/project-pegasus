@@ -5,6 +5,8 @@ To deploy the MVP, you will need:
 
 - Postgres (Supabase recommended)
 - S3-compatible storage, Supabase Storage, or GCS
+- LLM provider credentials (Gemini/Vertex recommended on GCP; OpenAI supported)
+- Transcription runtime credentials (Google Speech-to-Text recommended on GCP; Whisper supported)
 - OpenAI API key for LLM generation
 - Whisper runtime (self-hosted or API)
 
@@ -25,6 +27,10 @@ storage at `/data`.
 
 Environment variables:
 - `DATABASE_URL`
+- `PLC_LLM_PROVIDER`
+- `OPENAI_API_KEY` / `OPENAI_MODEL` (OpenAI path)
+- `GEMINI_API_KEY` or `GOOGLE_API_KEY` (Gemini/Vertex path)
+- `PLC_GCP_STT_MODEL` / `PLC_STT_LANGUAGE` (Google STT tuning)
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `STORAGE_MODE` (`local`, `s3`, or `gcs`)
@@ -86,7 +92,7 @@ Worker services:
   `python -m backend.worker`.
 
 Ensure the API and worker services share identical values for `DATABASE_URL`,
-`REDIS_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, and storage settings (`STORAGE_MODE`,
+`REDIS_URL`, LLM provider credentials/settings, and storage settings (`STORAGE_MODE`,
 `S3_BUCKET`, `S3_PREFIX`, `PLC_STORAGE_DIR`). This keeps job enqueueing and
 processing aligned across services.
 
@@ -114,7 +120,7 @@ Use your provider’s secrets tooling to store sensitive values:
   provider (or Supabase Storage keys)
 
 Ensure the API and worker services both receive the same `DATABASE_URL`,
-`REDIS_URL`, storage, and OpenAI settings so jobs can enqueue and execute
+`REDIS_URL`, storage, LLM provider settings, and transcription provider settings so jobs can enqueue and execute
 consistently.
 
 ## Migration startup check
@@ -127,7 +133,7 @@ so migrations should run in each service on boot.
 ## Release checklist
 
 - Confirm the API and worker services have identical `DATABASE_URL`, `REDIS_URL`,
-  `OPENAI_API_KEY`, `OPENAI_MODEL`, and storage settings (`STORAGE_MODE`,
+  LLM credentials/settings and storage settings (`STORAGE_MODE`,
   `S3_BUCKET`, `S3_PREFIX`, `PLC_STORAGE_DIR`).
 - Verify Postgres and Redis services are reachable from the API and worker
   runtimes.
@@ -223,7 +229,7 @@ Expected: JSON containing `lectureId` and `audioPath`.
 ### 3) Enqueue a transcription job
 
 ```bash
-curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/transcribe?model=base"
+curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/transcribe?provider=google&language_code=en-US"
 ```
 
 Capture `jobId` from the response.
@@ -252,7 +258,7 @@ You should see the job picked up and completed/failed with a concrete reason.
 
 ### 6) (Optional) Full artifact path smoke
 
-If transcription succeeds in your environment (Whisper/runtime configured):
+If transcription succeeds in your environment (Google STT or Whisper configured):
 
 ```bash
 curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/generate" \

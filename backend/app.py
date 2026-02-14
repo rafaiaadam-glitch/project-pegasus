@@ -103,6 +103,8 @@ class GenerateRequest(BaseModel):
     course_id: Optional[str] = None
     preset_id: Optional[str] = None
     openai_model: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
 
 
 def _iso_now() -> str:
@@ -950,10 +952,21 @@ def list_lectures(
 
 
 @app.post("/lectures/{lecture_id}/transcribe")
-def transcribe_lecture(request: Request, lecture_id: str, model: str = "base") -> dict:
+def transcribe_lecture(
+    request: Request,
+    lecture_id: str,
+    model: str = "base",
+    provider: str = "whisper",
+    language_code: Optional[str] = None,
+) -> dict:
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)
-    idempotency_payload = {"lecture_id": lecture_id, "model": model}
+    idempotency_payload = {
+        "lecture_id": lecture_id,
+        "model": model,
+        "provider": provider,
+        "language_code": language_code,
+    }
     replay = _replay_or_none(request, "lectures.transcribe", idempotency_payload)
     if replay is not None:
         return replay
@@ -979,6 +992,8 @@ def transcribe_lecture(request: Request, lecture_id: str, model: str = "base") -
         run_transcription_job,
         lecture_id,
         model,
+        provider,
+        language_code,
     )
     job = db.fetch_job(job_id)
     response_payload = {
@@ -999,6 +1014,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         "course_id": payload.course_id,
         "preset_id": payload.preset_id,
         "openai_model": payload.openai_model,
+        "llm_provider": payload.llm_provider,
+        "llm_model": payload.llm_model,
     }
     replay = _replay_or_none(request, "lectures.generate", idempotency_payload)
     if replay is not None:
@@ -1028,7 +1045,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         lecture_id,
         course_id,
         preset_id,
-        payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "openai"),
+        payload.llm_model or payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     )
     job = db.fetch_job(job_id)
     response_payload = {

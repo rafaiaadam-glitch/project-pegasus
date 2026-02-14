@@ -147,7 +147,7 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
 
     monkeypatch.setattr(jobs_module, "_load_whisper", lambda: StubWhisper())
 
-    def fake_run_pipeline(transcript, context, output_dir, use_llm=False, openai_model="gpt-4o-mini"):
+    def fake_run_pipeline(transcript, context, output_dir, use_llm=False, openai_model="gpt-4o-mini", llm_provider="openai", llm_model=None):
         base = output_dir / context.lecture_id
         now = context.generated_at
         summary = {
