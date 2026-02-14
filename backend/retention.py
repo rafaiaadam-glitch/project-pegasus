@@ -75,7 +75,10 @@ def run_retention_cleanup(db, config: RetentionConfig, now: Optional[datetime] =
         "lecturesScanned": 0,
         "audioDeleted": 0,
         "transcriptsDeleted": 0,
+        "audioDeleteFailures": 0,
+        "transcriptDeleteFailures": 0,
         "lecturesUpdated": 0,
+        "lecturesWouldUpdate": 0,
     }
 
     for lecture in lectures:
@@ -104,22 +107,36 @@ def run_retention_cleanup(db, config: RetentionConfig, now: Optional[datetime] =
         updated = False
 
         if audio_path and age_days >= config.raw_audio_days:
-            if not config.dry_run:
+            if config.dry_run:
+                summary["audioDeleted"] += 1
+                updated = True
+            else:
                 deleted = delete_storage_path(audio_path)
                 if deleted:
                     next_audio_path = None
-            summary["audioDeleted"] += 1
-            updated = True
+                    summary["audioDeleted"] += 1
+                    updated = True
+                else:
+                    summary["audioDeleteFailures"] += 1
 
         if transcript_path and age_days >= config.transcript_days:
-            if not config.dry_run:
+            if config.dry_run:
+                summary["transcriptsDeleted"] += 1
+                updated = True
+            else:
                 deleted = delete_storage_path(transcript_path)
                 if deleted:
                     next_transcript_path = None
-            summary["transcriptsDeleted"] += 1
-            updated = True
+                    summary["transcriptsDeleted"] += 1
+                    updated = True
+                else:
+                    summary["transcriptDeleteFailures"] += 1
 
         if updated:
+            if config.dry_run:
+                summary["lecturesWouldUpdate"] += 1
+                continue
+
             summary["lecturesUpdated"] += 1
             update_paths = getattr(db, "update_lecture_storage_paths", None)
             if callable(update_paths):
