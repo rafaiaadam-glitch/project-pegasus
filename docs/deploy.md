@@ -4,9 +4,9 @@ This repo ships with local scripts, a FastAPI backend, and a React Native client
 To deploy the MVP, you will need:
 
 - Postgres (Supabase recommended)
-- S3-compatible storage (or Supabase Storage)
-- OpenAI API key for LLM generation
-- Whisper runtime (self-hosted or API)
+- S3-compatible storage, Supabase Storage, or GCS
+- LLM provider credentials (Gemini/Vertex recommended on GCP; OpenAI supported)
+- Transcription runtime credentials (Google Speech-to-Text recommended on GCP; Whisper supported)
 
 ## Backend
 
@@ -25,12 +25,16 @@ storage at `/data`.
 
 Environment variables:
 - `DATABASE_URL`
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `STORAGE_MODE` (`local` or `s3`)
+- `PLC_LLM_PROVIDER`
+- `OPENAI_API_KEY` / `OPENAI_MODEL` (OpenAI path)
+- `GEMINI_API_KEY` or `GOOGLE_API_KEY` (Gemini/Vertex path)
+- `PLC_GCP_STT_MODEL` / `PLC_STT_LANGUAGE` (Google STT tuning)
+- `STORAGE_MODE` (`local`, `s3`, or `gcs`)
 - `S3_BUCKET`, `S3_PREFIX` (if `STORAGE_MODE=s3`)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
 - `S3_REGION` / `AWS_REGION` (optional, for S3-compatible storage)
+- `GCS_BUCKET`, `GCS_PREFIX` (if `STORAGE_MODE=gcs`)
+- `GOOGLE_APPLICATION_CREDENTIALS` (if running outside GCP with `STORAGE_MODE=gcs`)
 - `PLC_STORAGE_DIR` (optional)
 - `REDIS_URL` (queue/worker)
 
@@ -56,6 +60,21 @@ worker services.
 4. Ensure your service role or storage key is available to the backend
    environment so uploads can write to the bucket.
 
+
+### GCP (Cloud Run + Cloud Storage) quick wiring
+
+1. Run `scripts/setup-gcp.sh` to bootstrap APIs, Cloud SQL, and a storage bucket.
+2. Set runtime env vars for API and worker:
+   - `STORAGE_MODE=gcs`
+   - `GCS_BUCKET=<bucket>`
+   - `GCS_PREFIX=pegasus`
+   - `DATABASE_URL=<cloud-sql-conn-string>`
+   - `REDIS_URL=<managed-redis-url>`
+3. Ensure service account permissions include object read/write on the bucket.
+4. Smoke test:
+   - ingest one lecture and verify `audioPath` starts with `gs://`
+   - run generation/export and verify artifact/export storage paths are `gs://`.
+
 ### Infra configuration
 
 Sample configs are included for Render (`render.yaml`), Fly.io (`fly.toml`), and
@@ -69,7 +88,7 @@ Worker services:
   `python -m backend.worker`.
 
 Ensure the API and worker services share identical values for `DATABASE_URL`,
-`REDIS_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL`, and storage settings (`STORAGE_MODE`,
+`REDIS_URL`, LLM provider credentials/settings, and storage settings (`STORAGE_MODE`,
 `S3_BUCKET`, `S3_PREFIX`, `PLC_STORAGE_DIR`). This keeps job enqueueing and
 processing aligned across services.
 
@@ -97,7 +116,7 @@ Use your provider’s secrets tooling to store sensitive values:
   provider (or Supabase Storage keys)
 
 Ensure the API and worker services both receive the same `DATABASE_URL`,
-`REDIS_URL`, storage, and OpenAI settings so jobs can enqueue and execute
+`REDIS_URL`, storage, LLM provider settings, and transcription provider settings so jobs can enqueue and execute
 consistently.
 
 ## Migration startup check
@@ -110,7 +129,7 @@ so migrations should run in each service on boot.
 ## Release checklist
 
 - Confirm the API and worker services have identical `DATABASE_URL`, `REDIS_URL`,
-  `OPENAI_API_KEY`, `OPENAI_MODEL`, and storage settings (`STORAGE_MODE`,
+  LLM credentials/settings and storage settings (`STORAGE_MODE`,
   `S3_BUCKET`, `S3_PREFIX`, `PLC_STORAGE_DIR`).
 - Verify Postgres and Redis services are reachable from the API and worker
   runtimes.
@@ -206,7 +225,7 @@ Expected: JSON containing `lectureId` and `audioPath`.
 ### 3) Enqueue a transcription job
 
 ```bash
-curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/transcribe?model=base"
+curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/transcribe?provider=google&language_code=en-US"
 ```
 
 Capture `jobId` from the response.
@@ -235,7 +254,7 @@ You should see the job picked up and completed/failed with a concrete reason.
 
 ### 6) (Optional) Full artifact path smoke
 
-If transcription succeeds in your environment (Whisper/runtime configured):
+If transcription succeeds in your environment (Google STT or Whisper configured):
 
 ```bash
 curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/generate" \

@@ -212,7 +212,7 @@ def test_generation_job_passes_existing_thread_refs_to_pipeline(monkeypatch, tmp
     fake_db = FakeGenerationDB()
     observed = {}
 
-    def fake_run_pipeline(transcript_text, context, output_dir, use_llm=False, openai_model=""):
+    def fake_run_pipeline(transcript_text, context, output_dir, use_llm=False, openai_model="", llm_provider="openai", llm_model=None):
         observed["transcript_text"] = transcript_text
         observed["thread_refs"] = context.thread_refs
         observed["lecture_id"] = context.lecture_id
@@ -226,7 +226,8 @@ def test_generation_job_passes_existing_thread_refs_to_pipeline(monkeypatch, tmp
         lecture_id="lecture-xyz",
         course_id="course-123",
         preset_id="exam-mode",
-        openai_model="gpt-4o-mini",
+        llm_provider="openai",
+        llm_model="gpt-4o-mini",
     )
 
     assert observed["transcript_text"] == "Transcript text."
