@@ -106,7 +106,7 @@ Before launch, all must be true:
 - [ ] Critical-path integration tests pass (ingest → transcribe → generate → export)
 - [ ] API and worker deploy from main with reproducible config
 - [ ] At least one mobile build (iOS/Android) validated end-to-end against staging
-- [ ] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
+- [x] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
 - [ ] Monitoring + alerting verified by synthetic canary jobs
 
 ---
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **12**
-- Items remaining: **24**
-- Completion: **33%**
+- Items marked complete: **13**
+- Items remaining: **23**
+- Completion: **36%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -155,6 +155,7 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Schema drift checks → `pipeline/tests/test_schema_drift_check.py`
 - Thread continuity scoring checks → `pipeline/thread_continuity.py`, `pipeline/tests/test_thread_continuity_scoring.py`
 - Export quality threshold (`PLC_EXPORT_MIN_SUMMARY_SECTIONS`) → `backend/jobs.py`, `backend/tests/test_jobs.py`
+- Incident response runbook (queue/OpenAI/storage) → `docs/runbooks/incident-response.md`
 
 ## Progress notes
 
@@ -169,7 +170,7 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - This checklist treats launch-readiness as requiring both implementation **and** operational readiness (runbooks/drills), so any item missing operational artifacts remains unchecked.
 
 ### Still open before launch
-- Operational reliability runbooks and retention automation are documented; production scheduling/drill validation is still recommended before launch.
+- Complete backup/restore and rollback drills in staging (runbooks are documented; drill evidence still needed).
 - Mobile UX completion for a no-terminal first-time flow.
 - SLO definitions, metrics, dashboards, and alerting.
 - Security/compliance baseline work and final launch gate rehearsal.
