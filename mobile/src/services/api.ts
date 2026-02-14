@@ -81,8 +81,13 @@ class ApiClient {
 
   // Lectures
   async getLectures(courseId?: string, limit = 50, offset = 0): Promise<{ lectures: Lecture[] }> {
-    if (this.useMock && courseId) {
-      return Promise.resolve(MockData.getMockLectures(courseId));
+    if (this.useMock) {
+      if (courseId) {
+        return Promise.resolve(MockData.getMockLectures(courseId));
+      }
+      // Return all lectures when no courseId is specified
+      const allLectures = Object.values(MockData.mockLectures).flat();
+      return Promise.resolve({ lectures: allLectures });
     }
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (courseId) params.append('course_id', courseId);
