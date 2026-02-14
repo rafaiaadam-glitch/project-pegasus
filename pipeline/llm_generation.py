@@ -8,10 +8,11 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+import vertexai
+from vertexai.generative_models import GenerativeModel, GenerationConfig
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
 
 def _require_env(name: str) -> str:
     value = os.getenv(name)
@@ -115,19 +116,23 @@ def _base_artifact(
         "version": "0.2",
     }
 
-
 def generate_artifacts_with_llm(
     transcript: str,
     preset_id: str,
     course_id: str,
     lecture_id: str,
     generated_at: str | None = None,
-    model: str = "gpt-4o-mini",
+    model: str = "gemini-1.5-flash",  # Defaulting to Gemini on GCP
     thread_refs: List[str] | None = None,
     provider: str = "openai",
 ) -> Dict[str, Dict[str, Any]]:
     if generated_at is None:
         generated_at = _iso_now()
+
+    # Initialize Vertex AI using your project ID from GCP_DEPLOYMENT.md
+    project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
+    location = os.getenv("GCP_REGION", "us-central1")
+    vertexai.init(project=project_id, location=location)
 
     prompt = (
         "You are generating structured study artifacts for Pegasus Lecture Copilot.\n"
@@ -162,6 +167,23 @@ def generate_artifacts_with_llm(
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
     data = json.loads(raw_text)
+    # Setup Gemini model with JSON response format
+    generative_model = GenerativeModel(model)
+    
+    user_content = f"Preset: {preset_id}\nTranscript:\n{transcript}"
+    
+    response = generative_model.generate_content(
+        [prompt, user_content],
+        generation_config=GenerationConfig(
+            response_mime_type="application/json",
+            temperature=0.2
+        )
+    )
+
+    try:
+        data = json.loads(response.text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Gemini failed to return valid JSON: {e}")
 
     mapping = {
         "summary": "summary",
@@ -175,9 +197,11 @@ def generate_artifacts_with_llm(
     for key, artifact_type in mapping.items():
         if key not in data:
             raise ValueError(f"Missing '{key}' in LLM response.")
+        
         artifact = data[key]
         if not isinstance(artifact, dict):
             raise ValueError(f"Artifact '{key}' must be an object.")
+            
         base = _base_artifact(
             artifact_type=artifact_type,
             course_id=course_id,
@@ -185,10 +209,13 @@ def generate_artifacts_with_llm(
             preset_id=preset_id,
             generated_at=generated_at,
         )
+        
         base.update(artifact)
         base["artifactType"] = artifact_type
+        
         if thread_refs:
             base["threadRefs"] = thread_refs
+            
         artifacts[artifact_type] = base
 
     return artifacts

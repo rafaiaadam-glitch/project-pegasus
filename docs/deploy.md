@@ -7,6 +7,8 @@ To deploy the MVP, you will need:
 - S3-compatible storage, Supabase Storage, or GCS
 - LLM provider credentials (Gemini/Vertex recommended on GCP; OpenAI supported)
 - Transcription runtime credentials (Google Speech-to-Text recommended on GCP; Whisper supported)
+- OpenAI API key for LLM generation
+- Whisper runtime (self-hosted or API)
 
 ## Backend
 
@@ -29,6 +31,8 @@ Environment variables:
 - `OPENAI_API_KEY` / `OPENAI_MODEL` (OpenAI path)
 - `GEMINI_API_KEY` or `GOOGLE_API_KEY` (Gemini/Vertex path)
 - `PLC_GCP_STT_MODEL` / `PLC_STT_LANGUAGE` (Google STT tuning)
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
 - `STORAGE_MODE` (`local`, `s3`, or `gcs`)
 - `S3_BUCKET`, `S3_PREFIX` (if `STORAGE_MODE=s3`)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)

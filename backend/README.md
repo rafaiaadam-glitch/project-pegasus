@@ -129,3 +129,5 @@ Use this when you want to run the backend/worker against GCP Cloud Storage:
 3. Sanity-check wiring before live testing:
    - `python -c "from backend.runtime_config import validate_runtime_environment; validate_runtime_environment('api')"`
    - then run ingest and verify returned `audioPath`/artifact paths use `gs://...`.
+- Run: `npm run test:e2e`
+- Note: CI/container environments may need system browser libraries (for example `libatk-1.0.so.0`) for Chromium to launch.
