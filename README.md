@@ -93,7 +93,11 @@ Before recording, users choose a broad **Lecture Mode** (no long subject list):
 - 🔬 Natural Science
 - 📊 Social Science
 - 📚 Humanities / Philosophy
+- 🧩 Interdisciplinary / Mixed Methods
 - 🧠 Open / Mixed
+
+UI guidance:
+- Keep to these 6 broad options only
 
 UI guidance:
 - Keep to 5 broad options only
@@ -121,6 +125,8 @@ Thread Engine execution order is controlled by the Dice permutation algorithm.
 
 Source-of-truth files:
 - `core/dice/permutations.json`
+- `core/dice/courseModes.ts`
+- `core/thread_engine/engine.ts`
 - `core/thread_engine/rotate.ts`
 - `core/thread_engine/facets.ts`
 
@@ -151,6 +157,12 @@ Mode-aware weighting profiles:
 
 When collapse is detected, priority uses weighted gap:
 - `priority_i = weight_i × (maxScore - score_i)`
+
+Interdisciplinary mode is **hybrid** and must run two extraction passes per segment:
+1. Empirical pass (`HYBRID_WEIGHTS.EMPIRICAL`)
+2. Interpretive pass (`HYBRID_WEIGHTS.INTERPRETIVE`)
+
+Then merge outcomes into the same thread facets and use combined weights for collapse targeting.
 
 ---
 

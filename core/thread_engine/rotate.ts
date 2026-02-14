@@ -169,6 +169,8 @@ function collapsePriorityFace(scores: FacetScores, weights: FacetScores): DiceFa
 export function rotatePerspective(options: RotateOptions): DiceFace[] {
   const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
 export function rotatePerspective(options: RotateOptions): DiceFace[] {
+  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
+export function rotatePerspective(options: RotateOptions): DiceFace[] {
   const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights } = options
 
   let permutation = selectPermutation(threadId, segmentIndex)
