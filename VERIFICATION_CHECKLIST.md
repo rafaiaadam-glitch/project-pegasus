@@ -4,7 +4,7 @@
 
 ### 1. Install Dependencies
 ```bash
-cd /Users/rafaiaadam/project-pegasus
+cd "$(git rev-parse --show-toplevel)"
 
 # Option A: With virtual environment (recommended)
 python3 -m venv venv
