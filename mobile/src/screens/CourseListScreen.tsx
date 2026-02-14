@@ -142,7 +142,7 @@ export default function CourseListScreen({ navigation }: Props) {
             {canGoBack && (
               <TouchableOpacity
                 style={styles.backButton}
-                onPress={handleBackPress}
+                onPress={() => navigation.goBack()}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
               >
