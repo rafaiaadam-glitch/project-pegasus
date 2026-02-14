@@ -214,4 +214,4 @@ Audio → Upload → Transcribe → Analyze → Generate artifacts → Store →
 
 ## License
 
-TBD
+MIT (see [`LICENSE`](LICENSE)).

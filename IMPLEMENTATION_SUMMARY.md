@@ -106,7 +106,7 @@ Generic templates easy to extend with new presets without touching core logic
 
 ### Install Dependencies
 ```bash
-cd /Users/rafaiaadam/project-pegasus
+cd "$(git rev-parse --show-toplevel)"
 pip install -r pipeline/requirements.txt
 ```
 
@@ -119,7 +119,7 @@ pip install -r pipeline/requirements.txt
 
 ### Run Basic Test
 ```bash
-cd /Users/rafaiaadam/project-pegasus
+cd "$(git rev-parse --show-toplevel)"
 
 # Test with default settings (no LLM)
 python3 pipeline/run_pipeline.py \
