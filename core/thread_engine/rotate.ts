@@ -1,15 +1,4 @@
-// core/thread_engine/rotate.ts
-
-import { generatePermutations } from "../dice/permutations"
-
-const ALL_PERMUTATIONS = generatePermutations()
-
-function selectPermutation(threadId: string, segmentIndex: number) {
-  const key = `${threadId}-${segmentIndex}`
-  const hash = simpleHash(key)
-  const index = hash % ALL_PERMUTATIONS.length
-  return [...ALL_PERMUTATIONS[index]]
-}
+import permutations from "../dice/permutations.json"
 
 export type DiceFace =
   | "RED"
@@ -36,13 +25,20 @@ export interface RotateOptions {
 }
 
 const GROUNDING_FACES: DiceFace[] = ["ORANGE", "RED"] // What + How
-
-const EPSILON = 0.2   // equilibrium band
 const COLLAPSE_GAP = 0.3
 
-/**
- * Deterministic hash function (stable across sessions)
- */
+const FACE_TO_DIRECTION: Record<DiceFace, { label: string; number: number; direction: string }> = {
+  RED: { label: "How", number: 1, direction: "South" },
+  ORANGE: { label: "What", number: 2, direction: "Forward" },
+  YELLOW: { label: "When", number: 3, direction: "North" },
+  GREEN: { label: "Where", number: 4, direction: "Backward" },
+  BLUE: { label: "Who", number: 5, direction: "West" },
+  PURPLE: { label: "Why", number: 6, direction: "East" },
+}
+
+export const DICE_FACE_DEFINITIONS = FACE_TO_DIRECTION
+
+/** Deterministic hash function (stable across sessions). */
 function simpleHash(str: string): number {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
@@ -53,73 +49,45 @@ function simpleHash(str: string): number {
 }
 
 /**
- * Select permutation deterministically
+ * The only ordering decision point for the Thread Engine.
  */
 function selectPermutation(threadId: string, segmentIndex: number): DiceFace[] {
-  const schedule: DiceFace[][] = permutations.schedule
+  const schedule = permutations.schedule as DiceFace[][]
   const key = `${threadId}-${segmentIndex}`
   const index = simpleHash(key) % schedule.length
   return [...schedule[index]]
 }
 
-/**
- * Detect collapse in facet scores
- */
-function detectCollapse(scores: FacetScores): DiceFace | null {
-  const values = Object.entries(scores)
-  const sorted = [...values].sort((a, b) => b[1] - a[1])
-
-  const max = sorted[0][1]
-  const median = sorted[Math.floor(sorted.length / 2)][1]
-
-  if (max - median >= COLLAPSE_GAP) {
-    return sorted[0][0] as DiceFace
-  }
-
-  return null
+function detectCollapse(scores: FacetScores): boolean {
+  const values = Object.values(scores)
+  const sorted = [...values].sort((a, b) => b - a)
+  const max = sorted[0]
+  const median = sorted[Math.floor(sorted.length / 2)]
+  return max - median >= COLLAPSE_GAP
 }
 
-/**
- * Detect weakest facet
- */
 function weakestFacet(scores: FacetScores): DiceFace {
-  const values = Object.entries(scores)
+  const values = Object.entries(scores) as [DiceFace, number][]
   values.sort((a, b) => a[1] - b[1])
-  return values[0][0] as DiceFace
+  return values[0][0]
 }
 
-/**
- * Stabilise permutation for safe mode
- */
 function stabiliseForSafeMode(order: DiceFace[]): DiceFace[] {
-  const remaining = order.filter(face => !GROUNDING_FACES.includes(face))
+  const remaining = order.filter((face) => !GROUNDING_FACES.includes(face))
   return [...GROUNDING_FACES, ...remaining]
 }
 
-/**
- * Main rotate function
- */
 export function rotatePerspective(options: RotateOptions): DiceFace[] {
   const { threadId, segmentIndex, facetScores, safeMode } = options
 
   let permutation = selectPermutation(threadId, segmentIndex)
 
-  // Collapse override
-  if (facetScores) {
-    const collapsed = detectCollapse(facetScores)
-
-    if (collapsed) {
-      const weakest = weakestFacet(facetScores)
-      // Force weakest facet to front
-      permutation = [
-        weakest,
-        ...permutation.filter(face => face !== weakest),
-      ]
-      return permutation
-    }
+  if (facetScores && detectCollapse(facetScores)) {
+    const weakest = weakestFacet(facetScores)
+    permutation = [weakest, ...permutation.filter((face) => face !== weakest)]
+    return permutation
   }
 
-  // Safe mode override
   if (safeMode) {
     permutation = stabiliseForSafeMode(permutation)
   }
