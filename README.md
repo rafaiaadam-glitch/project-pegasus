@@ -246,6 +246,19 @@ Early milestones:
 - Deployment notes under `docs/deploy.md`.
 - MVP→v1 launch execution checklist under `docs/mvp-launch-checklist.md`.
 
+## Production Deployment (LIVE)
+
+**Backend API:** https://pegasus-api-988514135894.us-west1.run.app
+
+- **Platform:** Google Cloud Run (us-west1)
+- **LLM Provider:** Gemini/Vertex AI (primary), OpenAI (fallback)
+- **Transcription:** Google Cloud Speech-to-Text (primary), Whisper (fallback)
+- **Database:** PostgreSQL on Cloud SQL
+- **Storage:** Google Cloud Storage
+- **Container Registry:** Artifact Registry
+
+All 6 lecture style presets are live and operational.
+
 ---
 
 ## MVP stack (recommended)

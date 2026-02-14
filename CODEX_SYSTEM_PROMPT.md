@@ -10,11 +10,16 @@ If an implementation decision conflicts with this definition, the definition alw
 
 PRIMARY CLOUD ALIGNMENT
 
+**Production Deployment (LIVE):**
+- **API URL:** https://pegasus-api-988514135894.us-west1.run.app
+- **Region:** us-west1
+- **Platform:** Google Cloud Run
+
 Deployments on GCP should prefer:
 - Gemini/Vertex AI for LLM generation and thread intelligence
 - Google Speech-to-Text for transcription
 
-Fallbacks (OpenAI/Whisper) are acceptable for local development, testing, or controlled rollback, but new production wiring should default to Google-native providers when credentials are available.
+Production uses Google-native providers. Fallbacks (OpenAI/Whisper) are acceptable for local development, testing, or controlled rollback.
 
 PRODUCT DEFINITION (AUTHORITATIVE)
 Product name
