@@ -7,6 +7,7 @@ import CourseListScreen from './src/screens/CourseListScreen';
 import LectureListScreen from './src/screens/LectureListScreen';
 import LectureDetailScreen from './src/screens/LectureDetailScreen';
 import RecordLectureScreen from './src/screens/RecordLectureScreen';
+import LectureModeScreen from './src/screens/LectureModeScreen';
 import FlashcardViewerScreen from './src/screens/FlashcardViewerScreen';
 import ExamViewerScreen from './src/screens/ExamViewerScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
@@ -67,6 +68,14 @@ function AppNavigator() {
             component={LectureDetailScreen}
             options={{
               title: 'Lecture Details',
+            }}
+          />
+          <Stack.Screen
+            name="LectureMode"
+            component={LectureModeScreen}
+            options={{
+              title: 'Select Lecture Type',
+              presentation: 'modal',
             }}
           />
           <Stack.Screen
