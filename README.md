@@ -101,6 +101,33 @@ The Thread Engine:
 Thread tracking is **not optional**.
 It is the memory of the system.
 
+### Dice permutation control flow (mandatory)
+
+Thread Engine execution order is controlled by the Dice permutation algorithm.
+
+Source-of-truth files:
+- `core/dice/permutations.json`
+- `core/thread_engine/rotate.ts`
+- `core/thread_engine/facets.ts`
+
+For each lecture segment and each thread update, the engine must:
+1. Compute facet scores via `computeFacetScores(...)`
+2. Select ordered faces via `rotatePerspective({ threadId, segmentIndex, facetScores, safeMode })`
+3. Run facet extractors in the returned face order
+4. Apply facet mutations only through `updateFacet(...)`
+
+Safety rules:
+- `safeMode` forces `ORANGE` then `RED` first (What → How)
+- Collapse conditions override normal schedule and prioritise the weakest face first
+
+Locked face mapping:
+- `RED=How (1, South)`
+- `ORANGE=What (2, Forward)`
+- `YELLOW=When (3, North)`
+- `GREEN=Where (4, Backward)`
+- `BLUE=Who (5, West)`
+- `PURPLE=Why (6, East)`
+
 ---
 
 ## Exports
