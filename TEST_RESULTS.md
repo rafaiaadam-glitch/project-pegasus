@@ -298,10 +298,10 @@ Steps: 3 succeeded, 0 failed
 
 ### Basic Usage
 ```bash
-cd /Users/rafaiaadam/project-pegasus
+cd /path/to/project-pegasus
 
 # Set PYTHONPATH (required for imports)
-export PYTHONPATH=/Users/rafaiaadam/project-pegasus:$PYTHONPATH
+export PYTHONPATH=$(pwd):$PYTHONPATH
 
 # Run pipeline
 python3 pipeline/run_pipeline.py \
@@ -309,6 +309,9 @@ python3 pipeline/run_pipeline.py \
   --lecture-id my-lecture \
   --preset-id exam-mode
 ```
+
+If you are already in the repository root, you can skip `cd` and run the same
+commands directly.
 
 ### With Different Presets
 ```bash

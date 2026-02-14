@@ -87,3 +87,17 @@ def test_count_with_fallback_uses_row_count_as_last_resort() -> None:
     )
 
     assert total == 3
+
+
+def test_pagination_payload_handles_empty_page_with_offset() -> None:
+    payload = app_module._pagination_payload(limit=None, offset=6, count=0, total=6)
+
+    assert payload == {
+        "limit": None,
+        "offset": 6,
+        "count": 0,
+        "total": 6,
+        "hasMore": False,
+        "nextOffset": None,
+        "prevOffset": 5,
+    }

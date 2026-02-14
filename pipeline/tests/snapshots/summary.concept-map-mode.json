@@ -1,0 +1,21 @@
+{
+  "artifactType": "summary",
+  "presetId": "concept-map-mode",
+  "overview": "Relationship-first summary emphasizing connections.",
+  "sections": [
+    {
+      "title": "Core relationships",
+      "bullets": [
+        "Component A → process B → outcome C.",
+        "Factor X → enhanced process Y → improved result Z."
+      ]
+    },
+    {
+      "title": "Cross-lecture hooks",
+      "bullets": [
+        "Current topic links to memory and learning.",
+        "Balance of competing factors ties to system behavior."
+      ]
+    }
+  ]
+}

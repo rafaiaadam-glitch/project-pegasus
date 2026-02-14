@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import secrets
+from collections import defaultdict, deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
+from uuid import uuid4
 
 from typing import Callable, Optional
+import threading
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from redis import Redis
 
 from backend.db import get_database
+from backend.idempotency import (
+    InMemoryIdempotencyStore,
+    maybe_replay_response,
+    store_idempotent_response,
+)
 from backend.jobs import (
     enqueue_job,
     run_export_job,
@@ -20,11 +33,71 @@ from backend.jobs import (
     run_transcription_job,
 )
 from backend.presets import PRESETS, PRESETS_BY_ID
-from backend.storage import download_url, load_json_payload, save_audio
+from backend.runtime_config import validate_runtime_environment
+from backend.storage import (
+    delete_storage_path,
+    download_url,
+    load_json_payload,
+    save_audio,
+    storage_path_exists,
+)
 
-app = FastAPI(title="Pegasus Lecture Copilot API")
+
+
+@asynccontextmanager
+async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
+    validate_runtime_environment("api")
+    yield
+
+
+app = FastAPI(title="Pegasus Lecture Copilot API", lifespan=app_lifespan)
+LOGGER = logging.getLogger("pegasus.api")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
 
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    request_id = request.headers.get("x-request-id") or str(uuid4())
+    request.state.request_id = request_id
+
+    started_at = perf_counter()
+    response = await call_next(request)
+    duration_ms = (perf_counter() - started_at) * 1000
+
+    response.headers["x-request-id"] = request_id
+    LOGGER.info(
+        "request.complete",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status_code": response.status_code,
+            "duration_ms": round(duration_ms, 2),
+        },
+    )
+    return response
+
+
+
+
+class _InMemoryRateLimiter:
+    def __init__(self) -> None:
+        self._events_by_key: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def allow(self, key: str, *, limit: int, window_seconds: int, now: float) -> bool:
+        cutoff = now - window_seconds
+        with self._lock:
+            events = self._events_by_key[key]
+            while events and events[0] <= cutoff:
+                events.popleft()
+            if len(events) >= limit:
+                return False
+            events.append(now)
+            return True
+
+
+_WRITE_RATE_LIMITER = _InMemoryRateLimiter()
+_IDEMPOTENCY_STORE = InMemoryIdempotencyStore()
 
 class GenerateRequest(BaseModel):
     course_id: Optional[str] = None
@@ -36,12 +109,106 @@ def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _enforce_write_auth(request: Request) -> None:
+    expected_token = os.getenv("PLC_WRITE_API_TOKEN", "").strip()
+    if not expected_token:
+        return
+
+    authorization = request.headers.get("authorization", "")
+    scheme, _, provided_token = authorization.partition(" ")
+
+    if scheme.lower() != "bearer" or not provided_token.strip():
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header.")
+
+    if not secrets.compare_digest(provided_token.strip(), expected_token):
+        raise HTTPException(status_code=403, detail="Invalid API token.")
+
+
+
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name, str(default)).strip()
+    try:
+        parsed = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer.") from exc
+    if parsed <= 0:
+        raise RuntimeError(f"{name} must be a positive integer.")
+    return parsed
+
+
+def _write_rate_limit_config() -> tuple[int, int]:
+    max_requests = _parse_positive_int_env("PLC_WRITE_RATE_LIMIT_MAX_REQUESTS", 60)
+    window_seconds = _parse_positive_int_env("PLC_WRITE_RATE_LIMIT_WINDOW_SEC", 60)
+    return max_requests, window_seconds
+
+
+def _client_identifier(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    if forwarded_for.strip():
+        return forwarded_for.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _enforce_write_rate_limit(request: Request, *, now: Optional[float] = None) -> None:
+    max_requests, window_seconds = _write_rate_limit_config()
+    timestamp = now if now is not None else perf_counter()
+    if not _WRITE_RATE_LIMITER.allow(
+        _client_identifier(request),
+        limit=max_requests,
+        window_seconds=window_seconds,
+        now=timestamp,
+    ):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many write requests. Please retry shortly.",
+        )
+
+
+
+def _idempotency_fingerprint(operation: str, payload: dict) -> str:
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return operation + ":" + serialized
+
+
+def _replay_or_none(request: Request, operation: str, payload: dict) -> Optional[dict]:
+    return maybe_replay_response(
+        request,
+        _IDEMPOTENCY_STORE,
+        scope=operation,
+        fingerprint=_idempotency_fingerprint(operation, payload),
+    )
+
+
+def _remember_response(request: Request, operation: str, payload: dict, response_payload: dict) -> None:
+    store_idempotent_response(
+        request,
+        _IDEMPOTENCY_STORE,
+        scope=operation,
+        fingerprint=_idempotency_fingerprint(operation, payload),
+        response_payload=response_payload,
+    )
+
 def _ensure_dirs() -> None:
     (STORAGE_DIR / "audio").mkdir(parents=True, exist_ok=True)
     (STORAGE_DIR / "metadata").mkdir(parents=True, exist_ok=True)
     (STORAGE_DIR / "transcripts").mkdir(parents=True, exist_ok=True)
     (STORAGE_DIR / "exports").mkdir(parents=True, exist_ok=True)
 
+
+
+
+def _max_audio_upload_bytes() -> int:
+    raw_value = os.getenv("PLC_MAX_AUDIO_UPLOAD_MB", "200").strip()
+    try:
+        limit_mb = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError("PLC_MAX_AUDIO_UPLOAD_MB must be an integer.") from exc
+    if limit_mb <= 0:
+        raise RuntimeError("PLC_MAX_AUDIO_UPLOAD_MB must be a positive integer.")
+    return limit_mb * 1024 * 1024
 
 def _sha256(path: Path) -> str:
     import hashlib
@@ -58,10 +225,13 @@ def _ensure_valid_preset_id(preset_id: str) -> None:
         raise HTTPException(status_code=400, detail="Invalid preset_id.")
 
 
-def _validate_generation_context(db, lecture_id: str, course_id: str, preset_id: str) -> None:
-    lecture = db.fetch_lecture(lecture_id)
-    if not lecture:
-        raise HTTPException(status_code=404, detail="Lecture not found.")
+def _ensure_course_exists(db, course_id: str) -> None:
+    fetch_course = getattr(db, "fetch_course", None)
+    if callable(fetch_course) and not fetch_course(course_id):
+        raise HTTPException(status_code=404, detail="Course not found.")
+
+
+def _validate_generation_context(lecture: dict, course_id: str, preset_id: str) -> None:
     lecture_course_id = lecture.get("course_id")
     if lecture_course_id and lecture_course_id != course_id:
         raise HTTPException(status_code=400, detail="course_id does not match lecture.")
@@ -84,9 +254,34 @@ def _resolve_generation_identifiers(db, lecture_id: str, payload: GenerateReques
         raise HTTPException(status_code=400, detail="preset_id is required.")
 
     _ensure_valid_preset_id(preset_id)
-    _validate_generation_context(db, lecture_id, course_id, preset_id)
+    _validate_generation_context(lecture, course_id, preset_id)
+    _ensure_course_exists(db, course_id)
     return course_id, preset_id
 
+
+
+
+def _find_active_job_for_lecture(db, lecture_id: str, job_type: str) -> Optional[dict]:
+    fetch_jobs = getattr(db, "fetch_jobs", None)
+    if not callable(fetch_jobs):
+        return None
+
+    try:
+        jobs = fetch_jobs(lecture_id=lecture_id)
+    except Exception:
+        return None
+
+    if not isinstance(jobs, list):
+        return None
+
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        if job.get("job_type") != job_type:
+            continue
+        if job.get("status") in {"queued", "running"}:
+            return job
+    return None
 
 def _latest_jobs_by_type(jobs: list[dict]) -> dict[str, dict]:
     latest_by_type: dict[str, dict] = {}
@@ -140,8 +335,16 @@ def _derive_overall_status(stage_progress: dict) -> str:
         return "failed"
     if stage_progress["completedStageCount"] == stage_progress["stageCount"]:
         return "completed"
-    if stage_progress["completedStageCount"] > 0 or stage_progress["currentStage"] != "transcription":
+
+    # A lecture is considered in progress as soon as any stage has started,
+    # including queued/running work before the first completion.
+    any_started = any(
+        stage.get("status") not in {None, "not_started"}
+        for stage in stage_progress.get("stages", {}).values()
+    )
+    if any_started:
         return "in_progress"
+
     return "not_started"
 
 
@@ -173,6 +376,111 @@ def _lecture_links(lecture_id: str) -> dict[str, str]:
     }
 
 
+
+
+def _delete_lecture_data(lecture_id: str, *, purge_storage: bool) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+
+    artifacts = db.fetch_artifacts(lecture_id)
+    exports = db.fetch_exports(lecture_id)
+    threads = db.fetch_threads(lecture_id)
+
+    storage_paths: list[str] = []
+    for path in (
+        lecture.get("audio_path"),
+        lecture.get("transcript_path"),
+        *[row.get("storage_path") for row in artifacts],
+        *[row.get("storage_path") for row in exports],
+    ):
+        if path:
+            storage_paths.append(path)
+
+    for thread in threads:
+        thread_id = thread.get("id")
+        if not thread_id:
+            continue
+        refs = [ref for ref in (thread.get("lecture_refs") or []) if ref != lecture_id]
+        if refs:
+            update_refs = getattr(db, "update_thread_lecture_refs", None)
+            if callable(update_refs):
+                update_refs(thread_id, refs)
+        else:
+            delete_thread = getattr(db, "delete_thread", None)
+            if callable(delete_thread):
+                delete_thread(thread_id)
+
+    delete_records = getattr(db, "delete_lecture_records", None)
+    if not callable(delete_records):
+        raise HTTPException(status_code=500, detail="Database does not support lecture deletion.")
+    deleted_counts = delete_records(lecture_id)
+
+    metadata_path = STORAGE_DIR / "metadata" / f"{lecture_id}.json"
+    storage_deleted = 0
+    if purge_storage:
+        for storage_path in storage_paths:
+            if delete_storage_path(storage_path):
+                storage_deleted += 1
+        if metadata_path.exists():
+            metadata_path.unlink()
+            storage_deleted += 1
+
+    return {
+        "lectureId": lecture_id,
+        "deleted": {
+            **deleted_counts,
+            "threadsUpdated": len(threads),
+            "storagePaths": storage_deleted,
+            "metadataRemoved": purge_storage and not metadata_path.exists(),
+        },
+    }
+
+
+
+def _build_lecture_integrity_payload(lecture_id: str) -> dict:
+    db = get_database()
+    lecture = db.fetch_lecture(lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found.")
+
+    checks: list[dict[str, object]] = []
+
+    def add_check(label: str, path: Optional[str]) -> None:
+        if not path:
+            checks.append({"kind": label, "path": None, "exists": False, "state": "missing_reference"})
+            return
+        exists = storage_path_exists(path)
+        checks.append(
+            {
+                "kind": label,
+                "path": path,
+                "exists": exists,
+                "state": "ok" if exists else "missing_file",
+            }
+        )
+
+    add_check("audio", lecture.get("audio_path"))
+    add_check("transcript", lecture.get("transcript_path"))
+
+    artifacts = db.fetch_artifacts(lecture_id)
+    for artifact in artifacts:
+        add_check(f"artifact:{artifact.get('artifact_type')}", artifact.get("storage_path"))
+
+    exports = db.fetch_exports(lecture_id)
+    for export in exports:
+        add_check(f"export:{export.get('export_type')}", export.get("storage_path"))
+
+    missing_count = sum(1 for check in checks if not check["exists"])
+    return {
+        "lectureId": lecture_id,
+        "status": "ok" if missing_count == 0 else "degraded",
+        "missingCount": missing_count,
+        "checkCount": len(checks),
+        "checks": checks,
+    }
+
 def _pagination_payload(
     *,
     limit: Optional[int],
@@ -182,9 +490,10 @@ def _pagination_payload(
 ) -> dict:
     normalized_offset = offset or 0
     normalized_limit = limit if limit is not None else count
+    page_size_for_prev = normalized_limit if normalized_limit > 0 else 1
     has_more = normalized_offset + count < total
     next_offset = normalized_offset + count if has_more else None
-    prev_offset = max(0, normalized_offset - normalized_limit) if normalized_offset > 0 else None
+    prev_offset = max(0, normalized_offset - page_size_for_prev) if normalized_offset > 0 else None
     return {
         "limit": limit,
         "offset": normalized_offset,
@@ -279,6 +588,7 @@ def get_preset(preset_id: str) -> dict:
 
 @app.post("/lectures/ingest")
 def ingest_lecture(
+    request: Request,
     course_id: str = Form(...),
     lecture_id: str = Form(...),
     preset_id: str = Form(...),
@@ -288,10 +598,31 @@ def ingest_lecture(
     source_type: str = Form("upload"),
     audio: UploadFile = File(...),
 ) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    idempotency_payload = {
+        "course_id": course_id,
+        "lecture_id": lecture_id,
+        "preset_id": preset_id,
+        "title": title,
+        "duration_sec": duration_sec,
+        "source_type": source_type,
+        "audio_filename": audio.filename or "",
+    }
+    replay = _replay_or_none(request, "lectures.ingest", idempotency_payload)
+    if replay is not None:
+        return replay
     _ensure_valid_preset_id(preset_id)
     _ensure_dirs()
     ext = Path(audio.filename or "").suffix or ".bin"
-    stored_audio = save_audio(audio.file, f"{lecture_id}{ext}")
+    try:
+        stored_audio = save_audio(
+            audio.file,
+            f"{lecture_id}{ext}",
+            max_bytes=_max_audio_upload_bytes(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     metadata = {
         "id": lecture_id,
@@ -336,11 +667,13 @@ def ingest_lecture(
             "updated_at": _iso_now(),
         }
     )
-    return {
+    response_payload = {
         "lectureId": lecture_id,
         "metadataPath": str(metadata_path),
         "audioPath": stored_audio,
     }
+    _remember_response(request, "lectures.ingest", idempotency_payload, response_payload)
+    return response_payload
 
 
 @app.get("/courses")
@@ -613,11 +946,29 @@ def list_lectures(
 
 
 @app.post("/lectures/{lecture_id}/transcribe")
-def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
+def transcribe_lecture(request: Request, lecture_id: str, model: str = "base") -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    idempotency_payload = {"lecture_id": lecture_id, "model": model}
+    replay = _replay_or_none(request, "lectures.transcribe", idempotency_payload)
+    if replay is not None:
+        return replay
     _ensure_dirs()
     audio_files = list((STORAGE_DIR / "audio").glob(f"{lecture_id}.*"))
     if not audio_files:
         raise HTTPException(status_code=404, detail="Audio not found for lecture.")
+    db = get_database()
+    active_job = _find_active_job_for_lecture(db, lecture_id, "transcription")
+    if active_job:
+        response_payload = {
+            "jobId": active_job.get("id"),
+            "status": active_job.get("status", "queued"),
+            "jobType": "transcription",
+            "deduplicated": True,
+        }
+        _remember_response(request, "lectures.transcribe", idempotency_payload, response_payload)
+        return response_payload
+
     job_id = enqueue_job(
         "transcription",
         lecture_id,
@@ -625,22 +976,47 @@ def transcribe_lecture(lecture_id: str, model: str = "base") -> dict:
         lecture_id,
         model,
     )
-    db = get_database()
     job = db.fetch_job(job_id)
-    return {
+    response_payload = {
         "jobId": job_id,
         "status": job["status"] if job else "queued",
         "jobType": job.get("job_type") if job else "transcription",
     }
+    _remember_response(request, "lectures.transcribe", idempotency_payload, response_payload)
+    return response_payload
 
 
 @app.post("/lectures/{lecture_id}/generate")
-def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
+def generate_artifacts(request: Request, lecture_id: str, payload: GenerateRequest) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    idempotency_payload = {
+        "lecture_id": lecture_id,
+        "course_id": payload.course_id,
+        "preset_id": payload.preset_id,
+        "openai_model": payload.openai_model,
+    }
+    replay = _replay_or_none(request, "lectures.generate", idempotency_payload)
+    if replay is not None:
+        return replay
     if payload.preset_id:
         _ensure_valid_preset_id(payload.preset_id)
 
     db = get_database()
     course_id, preset_id = _resolve_generation_identifiers(db, lecture_id, payload)
+    active_job = _find_active_job_for_lecture(db, lecture_id, "generation")
+    if active_job:
+        response_payload = {
+            "jobId": active_job.get("id"),
+            "status": active_job.get("status", "queued"),
+            "jobType": "generation",
+            "courseId": course_id,
+            "presetId": preset_id,
+            "deduplicated": True,
+        }
+        _remember_response(request, "lectures.generate", idempotency_payload, response_payload)
+        return response_payload
+
     job_id = enqueue_job(
         "generation",
         lecture_id,
@@ -651,24 +1027,245 @@ def generate_artifacts(lecture_id: str, payload: GenerateRequest) -> dict:
         payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     )
     job = db.fetch_job(job_id)
-    return {
+    response_payload = {
         "jobId": job_id,
         "status": job["status"] if job else "queued",
         "jobType": job.get("job_type") if job else "generation",
         "courseId": course_id,
         "presetId": preset_id,
     }
+    _remember_response(request, "lectures.generate", idempotency_payload, response_payload)
+    return response_payload
 
 
 @app.post("/lectures/{lecture_id}/export")
-def export_lecture(lecture_id: str) -> dict:
-    job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
+def export_lecture(request: Request, lecture_id: str) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    idempotency_payload = {"lecture_id": lecture_id}
+    replay = _replay_or_none(request, "lectures.export", idempotency_payload)
+    if replay is not None:
+        return replay
     db = get_database()
+    active_job = _find_active_job_for_lecture(db, lecture_id, "export")
+    if active_job:
+        response_payload = {
+            "jobId": active_job.get("id"),
+            "status": active_job.get("status", "queued"),
+            "jobType": "export",
+            "deduplicated": True,
+        }
+        _remember_response(request, "lectures.export", idempotency_payload, response_payload)
+        return response_payload
+
+    job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
     job = db.fetch_job(job_id)
-    return {
+    response_payload = {
         "jobId": job_id,
         "status": job["status"] if job else "queued",
         "jobType": job.get("job_type") if job else "export",
+    }
+    _remember_response(request, "lectures.export", idempotency_payload, response_payload)
+    return response_payload
+
+
+def _enqueue_replay_job(db, job: dict) -> dict:
+    if job.get("status") != "failed":
+        raise HTTPException(status_code=409, detail="Only failed jobs can be replayed.")
+
+    job_type = job.get("job_type")
+    lecture_id = job.get("lecture_id")
+    if not lecture_id:
+        raise HTTPException(status_code=400, detail="Job is missing lecture context.")
+
+    if job_type == "transcription":
+        new_job_id = enqueue_job(
+            "transcription",
+            lecture_id,
+            run_transcription_job,
+            lecture_id,
+            "base",
+        )
+    elif job_type == "generation":
+        lecture = db.fetch_lecture(lecture_id)
+        if not lecture:
+            raise HTTPException(status_code=404, detail="Lecture not found.")
+        course_id = lecture.get("course_id")
+        preset_id = lecture.get("preset_id")
+        if not course_id or not preset_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Lecture is missing course_id or preset_id for generation replay.",
+            )
+        new_job_id = enqueue_job(
+            "generation",
+            lecture_id,
+            run_generation_job,
+            lecture_id,
+            course_id,
+            preset_id,
+            os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        )
+    elif job_type == "export":
+        new_job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
+    else:
+        raise HTTPException(status_code=400, detail="Replay is unsupported for this job type.")
+
+    replayed_job = db.fetch_job(new_job_id)
+    return {
+        "jobId": new_job_id,
+        "status": replayed_job["status"] if replayed_job else "queued",
+        "jobType": replayed_job.get("job_type") if replayed_job else job_type,
+        "lectureId": lecture_id,
+        "replayedFromJobId": job.get("id"),
+    }
+
+
+def _is_failed_job(job: dict, lecture_id: Optional[str], job_type: Optional[str]) -> bool:
+    if job.get("status") != "failed":
+        return False
+    if lecture_id and job.get("lecture_id") != lecture_id:
+        return False
+    if job_type and job.get("job_type") != job_type:
+        return False
+    return True
+
+
+def _job_api_payload(job: dict) -> dict:
+    return {
+        "id": job["id"],
+        "status": job["status"],
+        "jobType": job.get("job_type"),
+        "lectureId": job.get("lecture_id"),
+        "result": job.get("result"),
+        "error": job.get("error"),
+        "createdAt": job.get("created_at"),
+        "updatedAt": job.get("updated_at"),
+    }
+
+
+
+
+@app.delete("/lectures/{lecture_id}")
+def delete_lecture(lecture_id: str, request: Request, purge_storage: bool = Query(default=True)) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    return _delete_lecture_data(lecture_id, purge_storage=purge_storage)
+
+
+@app.delete("/courses/{course_id}")
+def delete_course(course_id: str, request: Request, purge_storage: bool = Query(default=True)) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+
+    db = get_database()
+    course = db.fetch_course(course_id) if hasattr(db, "fetch_course") else None
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found.")
+
+    lectures = db.fetch_lectures(course_id=course_id) if hasattr(db, "fetch_lectures") else []
+    deleted_lectures: list[dict] = []
+    for lecture in lectures:
+        deleted_lectures.append(
+            _delete_lecture_data(lecture["id"], purge_storage=purge_storage)
+        )
+
+    delete_course_method = getattr(db, "delete_course", None)
+    if not callable(delete_course_method):
+        raise HTTPException(status_code=500, detail="Database does not support course deletion.")
+    removed = delete_course_method(course_id)
+
+    return {
+        "courseId": course_id,
+        "courseDeleted": removed > 0,
+        "lecturesDeleted": len(deleted_lectures),
+        "lectureDeletions": deleted_lectures,
+    }
+
+@app.post("/jobs/{job_id}/replay")
+def replay_job(request: Request, job_id: str) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    db = get_database()
+    job = db.fetch_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return _enqueue_replay_job(db, job)
+
+
+@app.get("/jobs/dead-letter")
+def list_dead_letter_jobs(
+    lecture_id: Optional[str] = Query(default=None),
+    job_type: Optional[str] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
+) -> dict:
+    db = get_database()
+    all_jobs = db.fetch_jobs()
+    failed_jobs = [job for job in all_jobs if _is_failed_job(job, lecture_id, job_type)]
+
+    start = offset or 0
+    end = start + limit if limit is not None else None
+    page = failed_jobs[start:end]
+
+    return {
+        "jobs": [_job_api_payload(job) for job in page],
+        "filters": {
+            "status": "failed",
+            "lectureId": lecture_id,
+            "jobType": job_type,
+        },
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(page),
+            total=len(failed_jobs),
+        ),
+    }
+
+
+@app.post("/jobs/dead-letter/replay")
+def replay_dead_letter_jobs(
+    request: Request,
+    lecture_id: Optional[str] = Query(default=None),
+    job_type: Optional[str] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=1),
+) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+
+    db = get_database()
+    failed_jobs = [job for job in db.fetch_jobs() if _is_failed_job(job, lecture_id, job_type)]
+    selected_jobs = failed_jobs[:limit] if limit is not None else failed_jobs
+
+    replayed: list[dict] = []
+    skipped: list[dict] = []
+    for job in selected_jobs:
+        try:
+            replayed.append(_enqueue_replay_job(db, job))
+        except HTTPException as exc:
+            skipped.append(
+                {
+                    "jobId": job.get("id"),
+                    "jobType": job.get("job_type"),
+                    "lectureId": job.get("lecture_id"),
+                    "reason": exc.detail,
+                }
+            )
+
+    return {
+        "status": "accepted",
+        "requested": len(selected_jobs),
+        "replayedCount": len(replayed),
+        "skippedCount": len(skipped),
+        "replayedJobs": replayed,
+        "skippedJobs": skipped,
+        "filters": {
+            "status": "failed",
+            "lectureId": lecture_id,
+            "jobType": job_type,
+            "limit": limit,
+        },
     }
 
 
@@ -678,13 +1275,11 @@ def get_job(job_id: str) -> dict:
     job = db.fetch_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
-    return {
-        "id": job["id"],
-        "status": job["status"],
-        "jobType": job.get("job_type"),
-        "result": job.get("result"),
-        "error": job.get("error"),
-    }
+    payload = _job_api_payload(job)
+    del payload["lectureId"]
+    del payload["createdAt"]
+    del payload["updatedAt"]
+    return payload
 
 
 @app.get("/lectures/{lecture_id}/jobs")
@@ -707,18 +1302,7 @@ def list_lecture_jobs(
     )
     return {
         "lectureId": lecture_id,
-        "jobs": [
-            {
-                "id": job["id"],
-                "status": job["status"],
-                "jobType": job.get("job_type"),
-                "result": job.get("result"),
-                "error": job.get("error"),
-                "createdAt": job.get("created_at"),
-                "updatedAt": job.get("updated_at"),
-            }
-            for job in jobs
-        ],
+        "jobs": [_job_api_payload(job) for job in jobs],
         "pagination": _pagination_payload(
             limit=limit,
             offset=offset,
@@ -830,6 +1414,12 @@ def review_artifacts(
         "lecture": db.fetch_lecture(lecture_id),
     }
 
+
+
+
+@app.get("/lectures/{lecture_id}/integrity")
+def lecture_integrity(lecture_id: str) -> dict:
+    return _build_lecture_integrity_payload(lecture_id)
 
 @app.get("/lectures/{lecture_id}/summary")
 def lecture_summary(lecture_id: str) -> dict:

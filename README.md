@@ -169,6 +169,7 @@ Early milestones:
 - FastAPI backend scaffold under `backend/`.
 - React Native (Expo) scaffold under `mobile/`.
 - Deployment notes under `docs/deploy.md`.
+- MVP→v1 launch execution checklist under `docs/mvp-launch-checklist.md`.
 
 ---
 
@@ -213,4 +214,4 @@ Audio → Upload → Transcribe → Analyze → Generate artifacts → Store →
 
 ## License
 
-TBD
+MIT (see [`LICENSE`](LICENSE)).

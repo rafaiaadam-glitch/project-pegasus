@@ -938,6 +938,25 @@ def test_generate_rejects_missing_lecture(monkeypatch):
     assert response.json()["detail"] == "Lecture not found."
 
 
+def test_generate_rejects_missing_course(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.lectures["lecture-001"] = {
+        "id": "lecture-001",
+        "course_id": "course-missing",
+        "preset_id": "exam-mode",
+        "title": "Lecture",
+    }
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/lectures/lecture-001/generate",
+        json={"preset_id": "exam-mode"},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Course not found."
+
+
 def test_generate_rejects_course_mismatch(monkeypatch):
     fake_db = FakeDB()
     fake_db.lectures["lecture-001"] = {
@@ -1118,6 +1137,41 @@ def test_lecture_progress_contract(monkeypatch):
     assert missing.status_code == 404
 
 
+def test_lecture_progress_contract_transcription_queued_is_in_progress(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-011b"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "title": "Lecture Eleven B",
+        "status": "processing",
+    }
+    fake_db.jobs.append(
+        {
+            "id": "job-transcription-queued",
+            "lecture_id": lecture_id,
+            "job_type": "transcription",
+            "status": "queued",
+            "result": None,
+            "error": None,
+            "created_at": "2024-01-02T00:00:00Z",
+            "updated_at": "2024-01-02T00:00:00Z",
+        }
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get(f"/lectures/{lecture_id}/progress")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["overallStatus"] == "in_progress"
+    assert payload["completedStageCount"] == 0
+    assert payload["progressPercent"] == 0
+    assert payload["currentStage"] == "transcription"
+    assert payload["stages"]["transcription"]["status"] == "queued"
+
+
 def test_lecture_progress_contract_failed_stage(monkeypatch):
     fake_db = FakeDB()
     lecture_id = "lecture-012"
@@ -1164,3 +1218,113 @@ def test_lecture_progress_contract_failed_stage(monkeypatch):
     assert payload["hasFailedStage"] is True
     assert payload["links"]["summary"] == f"/lectures/{lecture_id}/summary"
     assert payload["links"]["progress"] == f"/lectures/{lecture_id}/progress"
+
+
+def test_transcribe_deduplicates_when_active_job_exists(monkeypatch, tmp_path):
+    fake_db = FakeDB()
+    lecture_id = "lecture-transcribe"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "course_id": "course-1",
+        "preset_id": "exam-mode",
+        "status": "uploaded",
+    }
+    fake_db.jobs.append(
+        {
+            "id": "job-transcribe-active",
+            "lecture_id": lecture_id,
+            "job_type": "transcription",
+            "status": "running",
+            "created_at": "2024-01-01T00:00:00Z",
+        }
+    )
+
+    storage_dir = tmp_path / "storage"
+    (storage_dir / "audio").mkdir(parents=True, exist_ok=True)
+    (storage_dir / "audio" / f"{lecture_id}.mp3").write_bytes(b"audio")
+
+    monkeypatch.setattr(app_module, "STORAGE_DIR", storage_dir)
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    monkeypatch.setattr(app_module, "enqueue_job", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("enqueue should not be called")))
+
+    client = TestClient(app_module.app)
+    response = client.post(f"/lectures/{lecture_id}/transcribe")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["jobId"] == "job-transcribe-active"
+    assert payload["status"] == "running"
+    assert payload["jobType"] == "transcription"
+    assert payload["deduplicated"] is True
+
+
+def test_generate_deduplicates_when_active_job_exists(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-generate"
+    fake_db.courses["course-1"] = {"id": "course-1", "title": "Course 1"}
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "course_id": "course-1",
+        "preset_id": "exam-mode",
+        "status": "transcribed",
+    }
+    fake_db.jobs.append(
+        {
+            "id": "job-generate-active",
+            "lecture_id": lecture_id,
+            "job_type": "generation",
+            "status": "queued",
+            "created_at": "2024-01-01T00:00:00Z",
+        }
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    monkeypatch.setattr(app_module, "enqueue_job", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("enqueue should not be called")))
+
+    client = TestClient(app_module.app)
+    response = client.post(
+        f"/lectures/{lecture_id}/generate",
+        json={"course_id": "course-1", "preset_id": "exam-mode"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["jobId"] == "job-generate-active"
+    assert payload["status"] == "queued"
+    assert payload["jobType"] == "generation"
+    assert payload["courseId"] == "course-1"
+    assert payload["presetId"] == "exam-mode"
+    assert payload["deduplicated"] is True
+
+
+def test_export_deduplicates_when_active_job_exists(monkeypatch):
+    fake_db = FakeDB()
+    lecture_id = "lecture-export"
+    fake_db.lectures[lecture_id] = {
+        "id": lecture_id,
+        "course_id": "course-1",
+        "preset_id": "exam-mode",
+        "status": "generated",
+    }
+    fake_db.jobs.append(
+        {
+            "id": "job-export-active",
+            "lecture_id": lecture_id,
+            "job_type": "export",
+            "status": "running",
+            "created_at": "2024-01-01T00:00:00Z",
+        }
+    )
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    monkeypatch.setattr(app_module, "enqueue_job", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("enqueue should not be called")))
+
+    client = TestClient(app_module.app)
+    response = client.post(f"/lectures/{lecture_id}/export")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["jobId"] == "job-export-active"
+    assert payload["status"] == "running"
+    assert payload["jobType"] == "export"
+    assert payload["deduplicated"] is True

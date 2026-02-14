@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 import sys
 
 from pathlib import Path
@@ -268,3 +269,115 @@ def test_resolve_thread_refs_returns_empty_when_not_list():
     refs = jobs_module._resolve_thread_refs(NonListThreadDB(), "course-1")
 
     assert refs == []
+
+
+def test_log_job_event_emits_structured_fields(monkeypatch):
+    class FakeLogger:
+        def __init__(self):
+            self.calls = []
+
+        def info(self, event, extra=None):
+            self.calls.append((event, extra))
+
+    fake_logger = FakeLogger()
+    monkeypatch.setattr(jobs_module, "LOGGER", fake_logger)
+
+    jobs_module._log_job_event(
+        "job.updated",
+        job_id="job-1",
+        lecture_id="lecture-1",
+        status="running",
+        error=None,
+    )
+
+    assert fake_logger.calls == [
+        (
+            "job.updated",
+            {"job_id": "job-1", "lecture_id": "lecture-1", "status": "running"},
+        )
+    ]
+
+
+def test_create_and_update_job_record_logs(monkeypatch):
+    class FakeLogger:
+        def __init__(self):
+            self.calls = []
+
+        def info(self, event, extra=None):
+            self.calls.append((event, extra))
+
+    fake_db = FakeDB()
+    fake_logger = FakeLogger()
+    monkeypatch.setattr(jobs_module, "LOGGER", fake_logger)
+    monkeypatch.setattr(jobs_module, "get_database", lambda: fake_db)
+
+    jobs_module._create_job_record("job-logger", "export", "lecture-logger")
+    jobs_module._update_job("job-logger", "running")
+
+    created_event, created_fields = fake_logger.calls[0]
+    updated_event, updated_fields = fake_logger.calls[1]
+
+    assert created_event == "job.created"
+    assert created_fields["job_id"] == "job-logger"
+    assert created_fields["lecture_id"] == "lecture-logger"
+    assert created_fields["job_type"] == "export"
+    assert created_fields["status"] == "queued"
+
+    assert updated_event == "job.updated"
+    assert updated_fields["job_id"] == "job-logger"
+    assert updated_fields["status"] == "running"
+
+
+
+def test_assert_minimum_artifact_quality_passes_with_required_artifacts():
+    class FakeExportDB:
+        def fetch_artifacts(self, _lecture_id: str):
+            return [
+                {"artifact_type": "summary", "summary_section_count": 3, "summary_overview": "Overview"},
+                {"artifact_type": "outline"},
+                {"artifact_type": "key-terms"},
+                {"artifact_type": "flashcards"},
+                {"artifact_type": "exam-questions"},
+            ]
+
+    jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")
+
+
+def test_assert_minimum_artifact_quality_fails_when_artifacts_missing():
+    class FakeExportDB:
+        def fetch_artifacts(self, _lecture_id: str):
+            return [{"artifact_type": "summary", "summary_section_count": 3, "summary_overview": "Overview"}]
+
+    with pytest.raises(ValueError, match="required artifacts"):
+        jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")
+
+
+def test_assert_minimum_artifact_quality_fails_for_low_summary_sections(monkeypatch):
+    class FakeExportDB:
+        def fetch_artifacts(self, _lecture_id: str):
+            return [
+                {"artifact_type": "summary", "summary_section_count": 1, "summary_overview": "Overview"},
+                {"artifact_type": "outline"},
+                {"artifact_type": "key-terms"},
+                {"artifact_type": "flashcards"},
+                {"artifact_type": "exam-questions"},
+            ]
+
+    monkeypatch.setenv("PLC_EXPORT_MIN_SUMMARY_SECTIONS", "2")
+    with pytest.raises(ValueError, match="requires >= 2 sections"):
+        jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")
+
+
+def test_assert_minimum_artifact_quality_fails_for_empty_summary_overview():
+    class FakeExportDB:
+        def fetch_artifacts(self, _lecture_id: str):
+            return [
+                {"artifact_type": "summary", "summary_section_count": 3, "summary_overview": "   "},
+                {"artifact_type": "outline"},
+                {"artifact_type": "key-terms"},
+                {"artifact_type": "flashcards"},
+                {"artifact_type": "exam-questions"},
+            ]
+
+    with pytest.raises(ValueError, match="overview is empty"):
+        jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")

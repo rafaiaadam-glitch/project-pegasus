@@ -33,3 +33,16 @@ def test_parse_args_progress_log_defaults(monkeypatch):
 
     assert args.quiet is False
     assert args.progress_log_file is None
+    assert args.continuity_threshold is None
+
+
+def test_parse_args_continuity_threshold(monkeypatch):
+    """CLI should parse an optional continuity threshold."""
+    monkeypatch.setattr(
+        "sys.argv",
+        ["run_pipeline.py", "--continuity-threshold", "0.72"],
+    )
+
+    args = _parse_args()
+
+    assert args.continuity_threshold == 0.72
