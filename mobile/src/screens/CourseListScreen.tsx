@@ -67,6 +67,17 @@ export default function CourseListScreen({ navigation }: Props) {
     navigation.navigate('LectureList', { courseId: course.id, courseTitle: course.title });
   };
 
+  const handleBackPress = () => {
+    if (navigation.canGoBack?.()) {
+      navigation.goBack();
+      return;
+    }
+
+    navigation.getParent?.()?.goBack?.();
+    navigation.navigate('Home');
+  };
+
+
   const renderCourse = ({ item }: { item: Course }) => (
     <TouchableOpacity
       style={styles.courseCard}
