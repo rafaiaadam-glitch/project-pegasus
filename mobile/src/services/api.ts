@@ -1,13 +1,32 @@
 // API Client for Pegasus Backend
+import { Platform } from 'react-native';
 import { Course, Lecture, Preset, Artifact, Job, LectureProgress } from '../types';
 import * as MockData from './mockData';
 
 // Configure this to point to your backend
 // For local development: http://localhost:8000
 // For production: your deployed backend URL
-const API_BASE_URL = __DEV__
-  ? 'http://localhost:8000'
-  : 'https://your-production-api.com';
+
+const getApiBaseUrl = () => {
+  if (!__DEV__) {
+    return 'https://your-production-api.com';
+  }
+
+  // Development mode - choose based on platform
+  if (Platform.OS === 'android') {
+    // Android emulator uses 10.0.2.2 to access host machine
+    return 'http://10.0.2.2:8000';
+  } else if (Platform.OS === 'ios') {
+    // iOS simulator can use localhost
+    return 'http://localhost:8000';
+  } else {
+    // For physical devices, use your computer's IP address
+    // Replace with your actual IP if testing on a physical device
+    return 'http://192.168.1.78:8000';
+  }
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Set to true to use mock data (no backend required)
 const USE_MOCK_DATA = false;
