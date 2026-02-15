@@ -140,7 +140,14 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   };
 
   const startRecording = async () => {
-    console.log('[Recording] Start recording button pressed');
+    console.log('[Recording] ===== START RECORDING BUTTON PRESSED =====');
+    console.log('[Recording] Current state:', {
+      isRecording,
+      recording: !!recording,
+      selectedFile: !!selectedFile,
+      hasMicPermission,
+      platform: Platform.OS,
+    });
 
     if (isRecording) {
       console.log('[Recording] Already recording, ignoring');
@@ -163,6 +170,11 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
 
       if (!permissionGranted) {
         console.log('[Recording] Permission denied, aborting');
+        Alert.alert(
+          'Microphone Permission Required',
+          'Please enable microphone access in your device settings to record lectures.',
+          [{ text: 'OK' }]
+        );
         return;
       }
 
@@ -180,14 +192,19 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         staysActiveInBackground: false,
       });
 
-      console.log('[Recording] Creating and starting recording...');
-      const { recording: newRecording } = await Audio.Recording.createAsync(
+      console.log('[Recording] Creating Recording object...');
+      console.log('[Recording] Using HIGH_QUALITY preset');
+
+      const { recording: newRecording, status } = await Audio.Recording.createAsync(
         Audio.RecordingOptionsPresets.HIGH_QUALITY,
         handleRecordingStatus,
         500
       );
 
+      console.log('[Recording] Recording object created');
+      console.log('[Recording] Initial status:', status);
       console.log('[Recording] Recording started successfully!');
+
       setSelectedFile(null);
       setRecording(newRecording);
       setIsRecording(true);
@@ -197,9 +214,20 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       if (!title) {
         setTitle(`Lecture ${new Date().toLocaleDateString()}`);
       }
-    } catch (error) {
-      console.error('[Recording] Error starting recording:', error);
-      Alert.alert('Error', 'Failed to start recording. Please try again.');
+
+      console.log('[Recording] State updated, recording is now active');
+    } catch (error: any) {
+      console.error('[Recording] ===== ERROR STARTING RECORDING =====');
+      console.error('[Recording] Error type:', error?.constructor?.name);
+      console.error('[Recording] Error message:', error?.message);
+      console.error('[Recording] Full error:', error);
+
+      Alert.alert(
+        'Recording Error',
+        `Failed to start recording: ${error?.message || 'Unknown error'}. Please ensure microphone permissions are granted and try again.`,
+        [{ text: 'OK' }]
+      );
+
       setIsRecording(false);
       setIsPaused(false);
     }
