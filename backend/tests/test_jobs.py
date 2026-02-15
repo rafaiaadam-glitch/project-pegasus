@@ -95,7 +95,7 @@ def test_transcription_uses_metadata_when_lecture_missing(monkeypatch, tmp_path)
     monkeypatch.setattr(jobs_module, "_load_whisper", lambda: StubWhisper())
     monkeypatch.setattr(jobs_module, "save_transcript", fake_save_transcript)
 
-    jobs_module.run_transcription_job("job-1", "lecture-abc", "base")
+    jobs_module.run_transcription_job("job-1", "lecture-abc", "base", provider="whisper")
 
     lecture = fake_db.fetch_lecture("lecture-abc")
     assert lecture is not None
