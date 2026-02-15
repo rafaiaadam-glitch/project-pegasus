@@ -90,8 +90,9 @@ def main() -> int:
         raise FileNotFoundError(f"Audio file not found: {raw_input_path}")
 
     # --- ADD THIS: Convert audio before processing ---
-    input_path = _convert_to_wav(raw_input_path)
-    print(f"Processing audio file: {input_path}")
+input_path = _convert_to_wav(input_path)
+
+print(f"Processing audio file: {input_path}")
     # -----------------------------------------------
 
     # Initialize Google Cloud Speech Client
