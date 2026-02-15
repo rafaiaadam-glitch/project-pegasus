@@ -15,7 +15,7 @@ from backend.db import get_database
 from backend.storage import save_artifact_file, save_export, save_export_file, save_transcript
 from pipeline.export_artifacts import export_artifacts
 from pipeline.run_pipeline import PipelineContext, run_pipeline
-from pipeline.transcribe_audio import _load_whisper
+from pipeline.transcribe_audio import _convert_to_wav, _load_whisper
 
 
 LOGGER = logging.getLogger("pegasus.jobs")
@@ -74,6 +74,7 @@ def _resolve_lecture_upsert_payload(
         "transcript_path": transcript_path,
         "created_at": current.get("created_at") or metadata.get("createdAt") or _iso_now(),
         "updated_at": _iso_now(),
+        "lecture_mode": current.get("lecture_mode") or metadata.get("lectureMode"),
     }
 
 
@@ -234,7 +235,74 @@ def enqueue_job(job_type: str, lecture_id: Optional[str], task, *args, **kwargs)
     return job_id
 
 
-def run_transcription_job(job_id: str, lecture_id: str, model: str) -> Dict[str, Any]:
+def _transcribe_with_whisper(audio_path: Path, model: str) -> Dict[str, Any]:
+    whisper = _load_whisper()
+    model_instance = whisper.load_model(model)
+    result = model_instance.transcribe(str(audio_path))
+
+    return {
+        "language": result.get("language"),
+        "text": result.get("text", "").strip(),
+        "segments": [
+            {
+                "startSec": float(segment["start"]),
+                "endSec": float(segment["end"]),
+                "text": segment["text"].strip(),
+            }
+            for segment in result.get("segments", [])
+        ],
+        "engine": {"provider": "whisper", "model": model},
+    }
+
+
+def _transcribe_with_google_speech(audio_path: Path, language_code: str | None) -> Dict[str, Any]:
+    try:
+        from google.cloud import speech_v1 as speech
+    except Exception as exc:
+        raise RuntimeError(
+            "google-cloud-speech is required for provider=google. "
+            "Install with `pip install google-cloud-speech`."
+        ) from exc
+
+    client = speech.SpeechClient()
+    stt_input_path = _convert_to_wav(audio_path)
+    audio = speech.RecognitionAudio(content=stt_input_path.read_bytes())
+    config = speech.RecognitionConfig(
+        language_code=language_code or os.getenv("PLC_STT_LANGUAGE", "en-US"),
+        enable_automatic_punctuation=True,
+        model=os.getenv("PLC_GCP_STT_MODEL", "latest_long"),
+    )
+    response = client.recognize(config=config, audio=audio)
+
+    lines: list[str] = []
+    segments: list[dict[str, Any]] = []
+    cursor = 0.0
+    for result in response.results:
+        if not result.alternatives:
+            continue
+        transcript = result.alternatives[0].transcript.strip()
+        if not transcript:
+            continue
+        lines.append(transcript)
+        start_sec = cursor
+        cursor += max(2.0, len(transcript.split()) * 0.45)
+        segments.append({"startSec": start_sec, "endSec": cursor, "text": transcript})
+
+    return {
+        "language": language_code or os.getenv("PLC_STT_LANGUAGE", "en-US"),
+        "text": " ".join(lines).strip(),
+        "segments": segments,
+        "engine": {"provider": "google_speech", "model": os.getenv("PLC_GCP_STT_MODEL", "latest_long")},
+    }
+
+
+def run_transcription_job(
+    job_id: str,
+    lecture_id: str,
+    model: str,
+    provider: str = "whisper",
+    language_code: str | None = None,
+) -> Dict[str, Any]:
     _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="transcription")
     _update_job(job_id, "running")
     try:
@@ -244,24 +312,22 @@ def run_transcription_job(job_id: str, lecture_id: str, model: str) -> Dict[str,
         if not audio_files:
             raise FileNotFoundError("Audio not found for lecture.")
         audio_path = audio_files[0]
-        whisper = _load_whisper()
-        model_instance = whisper.load_model(model)
-        result = model_instance.transcribe(str(audio_path))
+
+        provider_key = (provider or "whisper").strip().lower()
+        if provider_key == "google":
+            transcription = _transcribe_with_google_speech(audio_path, language_code)
+        elif provider_key == "whisper":
+            transcription = _transcribe_with_whisper(audio_path, model)
+        else:
+            raise ValueError(f"Unsupported transcription provider: {provider}")
 
         transcript = {
             "lectureId": lecture_id,
             "createdAt": _iso_now(),
-            "language": result.get("language"),
-            "text": result.get("text", "").strip(),
-            "segments": [
-                {
-                    "startSec": float(segment["start"]),
-                    "endSec": float(segment["end"]),
-                    "text": segment["text"].strip(),
-                }
-                for segment in result.get("segments", [])
-            ],
-            "engine": {"provider": "whisper", "model": model},
+            "language": transcription.get("language"),
+            "text": transcription.get("text", "").strip(),
+            "segments": transcription.get("segments", []),
+            "engine": transcription.get("engine", {"provider": provider_key, "model": model}),
         }
         transcript_payload = json.dumps(transcript, indent=2)
         transcript_path = save_transcript(transcript_payload, f"{lecture_id}.json")
@@ -290,7 +356,8 @@ def run_generation_job(
     lecture_id: str,
     course_id: str,
     preset_id: str,
-    openai_model: str,
+    llm_provider: str,
+    llm_model: str,
 ) -> Dict[str, Any]:
     _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="generation")
     _update_job(job_id, "running")
@@ -320,7 +387,9 @@ def run_generation_job(
             context,
             output_dir,
             use_llm=True,
-            openai_model=openai_model,
+            openai_model=llm_model,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
         )
         artifacts_dir = output_dir / lecture_id
         now = _iso_now()
