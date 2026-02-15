@@ -305,7 +305,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   const handlePickFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'audio/*',
+        type: ['audio/*', 'application/pdf'],
         copyToCacheDirectory: true,
       });
 
@@ -447,7 +447,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
           <TouchableOpacity style={styles.filePickerButton} onPress={handlePickFile}>
             <Text style={styles.filePickerIcon}>📁</Text>
             <View style={styles.filePickerContent}>
-              <Text style={styles.filePickerTitle}>Upload Audio File</Text>
+              <Text style={styles.filePickerTitle}>Upload Audio or PDF Notes</Text>
               <Text style={styles.filePickerSubtitle}>Browse your files</Text>
             </View>
           </TouchableOpacity>
@@ -520,13 +520,17 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       {selectedFile && !isRecording && (
         <View style={styles.selectedFilePanel}>
           <View style={styles.fileHeader}>
-            <Text style={styles.fileIcon}>🎵</Text>
+            <Text style={styles.fileIcon}>
+              {selectedFile.mimeType === 'application/pdf' || selectedFile.name?.toLowerCase().endsWith('.pdf') ? '📄' : '🎵'}
+            </Text>
             <View style={styles.fileInfo}>
               <Text style={styles.fileName}>{selectedFile.name}</Text>
               {selectedFile.size && (
                 <Text style={styles.fileSize}>
-                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB •{' '}
-                  {formatDuration(recordingDuration || 0)}
+                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                  {selectedFile.mimeType !== 'application/pdf' && !selectedFile.name?.toLowerCase().endsWith('.pdf') && (
+                    <> • {formatDuration(recordingDuration || 0)}</>
+                  )}
                 </Text>
               )}
             </View>

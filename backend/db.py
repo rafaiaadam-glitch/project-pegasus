@@ -57,10 +57,10 @@ class Database:
                     """
                     insert into lectures (
                         id, course_id, preset_id, title, status, audio_path,
-                        transcript_path, created_at, updated_at
+                        transcript_path, source_type, created_at, updated_at
                     ) values (
                         %(id)s, %(course_id)s, %(preset_id)s, %(title)s, %(status)s,
-                        %(audio_path)s, %(transcript_path)s, %(created_at)s, %(updated_at)s
+                        %(audio_path)s, %(transcript_path)s, %(source_type)s, %(created_at)s, %(updated_at)s
                     )
                     on conflict (id) do update set
                         course_id = excluded.course_id,
@@ -69,6 +69,7 @@ class Database:
                         status = excluded.status,
                         audio_path = excluded.audio_path,
                         transcript_path = excluded.transcript_path,
+                        source_type = excluded.source_type,
                         updated_at = excluded.updated_at;
                     """,
                     payload,

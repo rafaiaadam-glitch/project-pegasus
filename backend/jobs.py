@@ -40,6 +40,7 @@ def _storage_dir() -> Path:
 def _ensure_dirs() -> None:
     storage_dir = _storage_dir()
     (storage_dir / "audio").mkdir(parents=True, exist_ok=True)
+    (storage_dir / "documents").mkdir(parents=True, exist_ok=True)
     (storage_dir / "metadata").mkdir(parents=True, exist_ok=True)
     (storage_dir / "transcripts").mkdir(parents=True, exist_ok=True)
     (storage_dir / "exports").mkdir(parents=True, exist_ok=True)
@@ -60,9 +61,10 @@ def _load_lecture_metadata(lecture_id: str) -> Dict[str, Any]:
 
 def _resolve_lecture_upsert_payload(
     lecture_id: str,
-    audio_path: Path,
+    source_path: Path,
     transcript_path: str,
     existing_lecture: Optional[Dict[str, Any]],
+    source_type: str = "audio",
 ) -> Dict[str, Any]:
     metadata = _load_lecture_metadata(lecture_id)
     current = existing_lecture or {}
@@ -74,11 +76,14 @@ def _resolve_lecture_upsert_payload(
         "status": "transcribed",
         "audio_path": current.get("audio_path")
         or metadata.get("audioSource", {}).get("storagePath")
-        or str(audio_path),
+        or str(source_path),
         "transcript_path": transcript_path,
         "created_at": current.get("created_at") or metadata.get("createdAt") or _iso_now(),
         "updated_at": _iso_now(),
         "lecture_mode": current.get("lecture_mode") or metadata.get("lectureMode"),
+        "source_type": current.get("source_type")
+        or metadata.get("audioSource", {}).get("fileType")
+        or source_type,
     }
 
 
@@ -328,6 +333,28 @@ def _transcribe_with_google_speech(audio_path: Path, language_code: str | None) 
     }
 
 
+def _extract_pdf_text(pdf_path: Path) -> Dict[str, Any]:
+    """
+    Extract text from a PDF file and return in transcript-compatible format.
+
+    Args:
+        pdf_path: Path to the PDF file
+
+    Returns:
+        Dictionary containing language, text, segments, and engine metadata
+    """
+    from backend.pdf_extractor import extract_text_from_pdf
+
+    extracted = extract_text_from_pdf(pdf_path)
+    return {
+        "language": "en",
+        "text": extracted["text"],
+        "segments": extracted["segments"],
+        "engine": extracted["engine"],
+        "metadata": extracted.get("metadata", {}),
+    }
+
+
 def run_transcription_job(
     job_id: str,
     lecture_id: str,
@@ -340,18 +367,30 @@ def run_transcription_job(
     try:
         _ensure_dirs()
         storage_dir = _storage_dir()
-        audio_files = list((storage_dir / "audio").glob(f"{lecture_id}.*"))
-        if not audio_files:
-            raise FileNotFoundError("Audio not found for lecture.")
-        audio_path = audio_files[0]
 
-        provider_key = (provider or "google").strip().lower()
-        if provider_key == "google":
-            transcription = _transcribe_with_google_speech(audio_path, language_code)
-        elif provider_key == "whisper":
-            transcription = _transcribe_with_whisper(audio_path, model)
+        # Check for PDF files first
+        pdf_files = list((storage_dir / "documents").glob(f"{lecture_id}.*"))
+        if pdf_files:
+            # PDF file found - extract text instead of transcribing audio
+            pdf_path = pdf_files[0]
+            transcription = _extract_pdf_text(pdf_path)
+            source_path = pdf_path
+            source_type = "pdf"
         else:
-            raise ValueError(f"Unsupported transcription provider: {provider}")
+            # No PDF, fall back to audio transcription
+            audio_files = list((storage_dir / "audio").glob(f"{lecture_id}.*"))
+            if not audio_files:
+                raise FileNotFoundError("Neither PDF nor audio file found for lecture.")
+            source_path = audio_files[0]
+            source_type = "audio"
+
+            provider_key = (provider or "google").strip().lower()
+            if provider_key == "google":
+                transcription = _transcribe_with_google_speech(source_path, language_code)
+            elif provider_key == "whisper":
+                transcription = _transcribe_with_whisper(source_path, model)
+            else:
+                raise ValueError(f"Unsupported transcription provider: {provider}")
 
         transcript = {
             "lectureId": lecture_id,
@@ -359,7 +398,7 @@ def run_transcription_job(
             "language": transcription.get("language"),
             "text": transcription.get("text", "").strip(),
             "segments": transcription.get("segments", []),
-            "engine": transcription.get("engine", {"provider": provider_key, "model": model}),
+            "engine": transcription.get("engine", {"provider": provider or "google", "model": model}),
         }
         transcript_payload = json.dumps(transcript, indent=2)
         transcript_path = save_transcript(transcript_payload, f"{lecture_id}.json")
@@ -368,9 +407,10 @@ def run_transcription_job(
         db.upsert_lecture(
             _resolve_lecture_upsert_payload(
                 lecture_id=lecture_id,
-                audio_path=audio_path,
+                source_path=source_path,
                 transcript_path=transcript_path,
                 existing_lecture=existing_lecture,
+                source_type=source_type,
             )
         )
         payload = {"lectureId": lecture_id, "transcriptPath": transcript_path}

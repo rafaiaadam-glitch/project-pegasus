@@ -119,6 +119,44 @@ def save_audio(fileobj: BinaryIO, filename: str, max_bytes: Optional[int] = None
     return str(target)
 
 
+def save_document(fileobj: BinaryIO, filename: str, max_bytes: Optional[int] = None) -> str:
+    """
+    Save a document file (e.g., PDF) to storage.
+
+    Args:
+        fileobj: File object to save
+        filename: Name to save the file as
+        max_bytes: Optional maximum file size in bytes
+
+    Returns:
+        Storage path (local path, s3://, or gs:// URL)
+    """
+    cfg = _config()
+    if cfg.mode == "s3":
+        if max_bytes is not None:
+            import io
+
+            buffer = io.BytesIO()
+            _copy_with_limit(fileobj, buffer, max_bytes=max_bytes)
+            buffer.seek(0)
+            fileobj = buffer
+        key = f"{cfg.s3_prefix}/documents/{filename}"
+        _s3_client().upload_fileobj(fileobj, cfg.s3_bucket, key)
+        return f"s3://{cfg.s3_bucket}/{key}"
+    elif cfg.mode == "gcs":
+        if not cfg.gcs_bucket:
+            raise RuntimeError("GCS_BUCKET must be set for GCS storage.")
+        blob_name = f"{cfg.gcs_prefix}/documents/{filename}"
+        bucket = _gcs_client().bucket(cfg.gcs_bucket)
+        blob = bucket.blob(blob_name)
+        blob.upload_from_file(fileobj)
+        return f"gs://{cfg.gcs_bucket}/{blob_name}"
+    target = _local_path("documents", filename)
+    with target.open("wb") as handle:
+        _copy_with_limit(fileobj, handle, max_bytes=max_bytes)
+    return str(target)
+
+
 def save_transcript(payload: str, filename: str) -> str:
     cfg = _config()
     if cfg.mode == "s3":

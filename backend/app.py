@@ -41,6 +41,7 @@ from backend.storage import (
     download_url,
     load_json_payload,
     save_audio,
+    save_document,
     storage_path_exists,
 )
 
@@ -207,6 +208,7 @@ def _remember_response(request: Request, operation: str, payload: dict, response
 
 def _ensure_dirs() -> None:
     (STORAGE_DIR / "audio").mkdir(parents=True, exist_ok=True)
+    (STORAGE_DIR / "documents").mkdir(parents=True, exist_ok=True)
     (STORAGE_DIR / "metadata").mkdir(parents=True, exist_ok=True)
     (STORAGE_DIR / "transcripts").mkdir(parents=True, exist_ok=True)
     (STORAGE_DIR / "exports").mkdir(parents=True, exist_ok=True)
@@ -223,6 +225,18 @@ def _max_audio_upload_bytes() -> int:
     if limit_mb <= 0:
         raise RuntimeError("PLC_MAX_AUDIO_UPLOAD_MB must be a positive integer.")
     return limit_mb * 1024 * 1024
+
+
+def _max_pdf_upload_bytes() -> int:
+    raw_value = os.getenv("PLC_MAX_PDF_UPLOAD_MB", "50").strip()
+    try:
+        limit_mb = int(raw_value)
+    except ValueError as exc:
+        raise RuntimeError("PLC_MAX_PDF_UPLOAD_MB must be an integer.") from exc
+    if limit_mb <= 0:
+        raise RuntimeError("PLC_MAX_PDF_UPLOAD_MB must be a positive integer.")
+    return limit_mb * 1024 * 1024
+
 
 def _sha256(path: Path) -> str:
     import hashlib
@@ -643,10 +657,23 @@ def ingest_lecture(
     duration_sec: int = Form(0),
     source_type: str = Form("upload"),
     lecture_mode: Optional[str] = Form(None),
-    audio: UploadFile = File(...),
+    audio: Optional[UploadFile] = File(None),
+    file: Optional[UploadFile] = File(None),
 ) -> dict:
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)
+
+    # Accept either 'audio' or 'file' parameter for backward compatibility
+    uploaded_file = audio or file
+    if not uploaded_file:
+        raise HTTPException(status_code=400, detail="Either 'audio' or 'file' parameter is required")
+
+    # Detect file type from content-type or extension
+    content_type = uploaded_file.content_type or ""
+    ext = Path(uploaded_file.filename or "").suffix.lower() or ".bin"
+    is_pdf = content_type == "application/pdf" or ext == ".pdf"
+    file_type = "pdf" if is_pdf else "audio"
+
     idempotency_payload = {
         "course_id": course_id,
         "lecture_id": lecture_id,
@@ -655,20 +682,29 @@ def ingest_lecture(
         "duration_sec": duration_sec,
         "source_type": source_type,
         "lecture_mode": lecture_mode or "",
-        "audio_filename": audio.filename or "",
+        "audio_filename": uploaded_file.filename or "",
+        "file_type": file_type,
     }
     replay = _replay_or_none(request, "lectures.ingest", idempotency_payload)
     if replay is not None:
         return replay
     _ensure_valid_preset_id(preset_id)
     _ensure_dirs()
-    ext = Path(audio.filename or "").suffix or ".bin"
+
+    # Route to appropriate storage function based on file type
     try:
-        stored_audio = save_audio(
-            audio.file,
-            f"{lecture_id}{ext}",
-            max_bytes=_max_audio_upload_bytes(),
-        )
+        if is_pdf:
+            stored_path = save_document(
+                uploaded_file.file,
+                f"{lecture_id}.pdf",
+                max_bytes=_max_pdf_upload_bytes(),
+            )
+        else:
+            stored_path = save_audio(
+                uploaded_file.file,
+                f"{lecture_id}{ext}",
+                max_bytes=_max_audio_upload_bytes(),
+            )
     except ValueError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
 
@@ -682,10 +718,11 @@ def ingest_lecture(
         "durationSec": duration_sec,
         "audioSource": {
             "sourceType": source_type,
-            "originalFilename": audio.filename,
-            "storagePath": stored_audio,
-            "sizeBytes": Path(stored_audio).stat().st_size if "s3://" not in stored_audio else 0,
-            "checksumSha256": _sha256(Path(stored_audio)) if "s3://" not in stored_audio else "",
+            "originalFilename": uploaded_file.filename,
+            "storagePath": stored_path,
+            "sizeBytes": Path(stored_path).stat().st_size if not stored_path.startswith(("s3://", "gs://")) else 0,
+            "checksumSha256": _sha256(Path(stored_path)) if not stored_path.startswith(("s3://", "gs://")) else "",
+            "fileType": file_type,
         },
         "status": "uploaded",
         "artifacts": [],
@@ -710,8 +747,9 @@ def ingest_lecture(
             "preset_id": preset_id,
             "title": title,
             "status": "uploaded",
-            "audio_path": stored_audio,
+            "audio_path": stored_path,
             "transcript_path": None,
+            "source_type": file_type,
             "created_at": _iso_now(),
             "updated_at": _iso_now(),
         }
@@ -744,8 +782,9 @@ def ingest_lecture(
     response_payload = {
         "lectureId": lecture_id,
         "metadataPath": str(metadata_path),
-        "audioPath": stored_audio,
+        "audioPath": stored_path,
         "lectureMode": lecture_mode,
+        "fileType": file_type,
     }
     _remember_response(request, "lectures.ingest", idempotency_payload, response_payload)
     return response_payload
