@@ -5,9 +5,9 @@
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-delta-student-486911-n5}"
-REGION="${REGION:-europe-west1}"
+REGION="${REGION:-us-west1}"
 SERVICE_NAME="${SERVICE_NAME:-pegasus-api}"
-IMAGE_NAME="europe-west1-docker.pkg.dev/${PROJECT_ID}/pegasus/api:latest"
+IMAGE_NAME="us-west1-docker.pkg.dev/${PROJECT_ID}/pegasus/api:latest"
 
 echo "🚀 Deploying Pegasus with Google Speech-to-Text support"
 echo "Project: ${PROJECT_ID}"
@@ -22,7 +22,9 @@ echo "📦 Building Docker image with ffmpeg..."
 gcloud builds submit \
   --tag="${IMAGE_NAME}" \
   --project="${PROJECT_ID}" \
-  --timeout=15m
+  --timeout=15m \
+  --config=cloudbuild.yaml \
+  .
 
 echo ""
 echo "🚀 Deploying to Cloud Run..."
