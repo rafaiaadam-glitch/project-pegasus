@@ -392,8 +392,8 @@ def _lecture_links(lecture_id: str) -> dict[str, str]:
 
 
 
-def _delete_lecture_data(lecture_id: str, *, purge_storage: bool) -> dict:
-    db = get_database()
+def _delete_lecture_data(lecture_id: str, *, purge_storage: bool, db=None) -> dict:
+    db = db or get_database()
     lecture = db.fetch_lecture(lecture_id)
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found.")
@@ -450,6 +450,52 @@ def _delete_lecture_data(lecture_id: str, *, purge_storage: bool) -> dict:
             "metadataRemoved": purge_storage and not metadata_path.exists(),
         },
     }
+
+
+def _resolve_deletion_actor(request: Request) -> str:
+    actor = request.headers.get("x-actor-id", "").strip()
+    if actor:
+        return actor
+    if request.headers.get("authorization", "").strip():
+        return "authenticated"
+    return "anonymous"
+
+
+def _record_deletion_audit_event(
+    db,
+    *,
+    request: Request,
+    entity_type: str,
+    entity_id: str,
+    purge_storage: bool,
+    deleted_counts: dict,
+) -> None:
+    create_event = getattr(db, "create_deletion_audit_event", None)
+    if not callable(create_event):
+        return
+    try:
+        create_event(
+            {
+                "id": str(uuid4()),
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "action": "delete",
+                "purge_storage": purge_storage,
+                "actor": _resolve_deletion_actor(request),
+                "request_id": getattr(request.state, "request_id", None),
+                "deleted_counts": deleted_counts,
+                "created_at": _iso_now(),
+            }
+        )
+    except Exception:
+        LOGGER.exception(
+            "deletion.audit_write_failed",
+            extra={
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "request_id": getattr(request.state, "request_id", None),
+            },
+        )
 
 
 
@@ -1217,7 +1263,17 @@ def _job_api_payload(job: dict) -> dict:
 def delete_lecture(lecture_id: str, request: Request, purge_storage: bool = Query(default=True)) -> dict:
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)
-    return _delete_lecture_data(lecture_id, purge_storage=purge_storage)
+    db = get_database()
+    payload = _delete_lecture_data(lecture_id, purge_storage=purge_storage, db=db)
+    _record_deletion_audit_event(
+        db,
+        request=request,
+        entity_type="lecture",
+        entity_id=lecture_id,
+        purge_storage=purge_storage,
+        deleted_counts=payload.get("deleted", {}),
+    )
+    return payload
 
 
 @app.delete("/courses/{course_id}")
@@ -1233,8 +1289,15 @@ def delete_course(course_id: str, request: Request, purge_storage: bool = Query(
     lectures = db.fetch_lectures(course_id=course_id) if hasattr(db, "fetch_lectures") else []
     deleted_lectures: list[dict] = []
     for lecture in lectures:
-        deleted_lectures.append(
-            _delete_lecture_data(lecture["id"], purge_storage=purge_storage)
+        lecture_deletion_payload = _delete_lecture_data(lecture["id"], purge_storage=purge_storage, db=db)
+        deleted_lectures.append(lecture_deletion_payload)
+        _record_deletion_audit_event(
+            db,
+            request=request,
+            entity_type="lecture",
+            entity_id=lecture["id"],
+            purge_storage=purge_storage,
+            deleted_counts=lecture_deletion_payload.get("deleted", {}),
         )
 
     delete_course_method = getattr(db, "delete_course", None)
@@ -1242,11 +1305,59 @@ def delete_course(course_id: str, request: Request, purge_storage: bool = Query(
         raise HTTPException(status_code=500, detail="Database does not support course deletion.")
     removed = delete_course_method(course_id)
 
-    return {
+    payload = {
         "courseId": course_id,
         "courseDeleted": removed > 0,
         "lecturesDeleted": len(deleted_lectures),
         "lectureDeletions": deleted_lectures,
+    }
+    _record_deletion_audit_event(
+        db,
+        request=request,
+        entity_type="course",
+        entity_id=course_id,
+        purge_storage=purge_storage,
+        deleted_counts={"course": removed, "lectures": len(deleted_lectures)},
+    )
+    return payload
+
+
+@app.get("/ops/deletion-audit")
+def list_deletion_audit_events(
+    request: Request,
+    entity_type: Optional[str] = Query(default=None),
+    entity_id: Optional[str] = Query(default=None),
+    limit: Optional[int] = Query(default=None, ge=0),
+    offset: Optional[int] = Query(default=None, ge=0),
+) -> dict:
+    _enforce_write_auth(request)
+    db = get_database()
+    fetch_events = getattr(db, "fetch_deletion_audit_events", None)
+    if not callable(fetch_events):
+        return {
+            "events": [],
+            "pagination": _pagination_payload(limit=limit, offset=offset, count=0, total=0),
+        }
+
+    events = fetch_events(entity_type=entity_type, entity_id=entity_id, limit=limit, offset=offset)
+    total = _count_with_fallback(
+        db,
+        "count_deletion_audit_events",
+        events,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        fallback_counter=lambda: len(
+            fetch_events(entity_type=entity_type, entity_id=entity_id)
+        ),
+    )
+    return {
+        "events": events,
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(events),
+            total=total,
+        ),
     }
 
 @app.post("/jobs/{job_id}/replay")

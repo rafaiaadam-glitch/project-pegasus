@@ -31,6 +31,7 @@ class FakeDB:
         self.artifacts: list[dict] = []
         self.exports: list[dict] = []
         self.threads: dict[str, dict] = {}
+        self.deletion_audit_events: list[dict] = []
 
     def fetch_course(self, course_id: str):
         return self.courses.get(course_id)
@@ -95,6 +96,30 @@ class FakeDB:
 
     def delete_course(self, course_id: str) -> int:
         return 1 if self.courses.pop(course_id, None) else 0
+
+    def create_deletion_audit_event(self, payload: dict) -> None:
+        self.deletion_audit_events.append(payload)
+
+    def fetch_deletion_audit_events(
+        self,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ):
+        rows = list(self.deletion_audit_events)
+        if entity_type:
+            rows = [row for row in rows if row.get("entity_type") == entity_type]
+        if entity_id:
+            rows = [row for row in rows if row.get("entity_id") == entity_id]
+        if offset:
+            rows = rows[offset:]
+        if limit is not None:
+            rows = rows[:limit]
+        return rows
+
+    def count_deletion_audit_events(self, entity_type: Optional[str] = None, entity_id: Optional[str] = None) -> int:
+        return len(self.fetch_deletion_audit_events(entity_type=entity_type, entity_id=entity_id))
 
 
 def test_delete_single_lecture_removes_records_and_updates_threads(monkeypatch, tmp_path):
@@ -172,3 +197,48 @@ def test_delete_course_removes_course_and_all_lectures(monkeypatch, tmp_path):
     assert fake_db.courses == {}
     assert fake_db.lectures == {}
     assert fake_db.threads == {}
+
+
+def test_delete_lecture_records_audit_event(monkeypatch, tmp_path):
+    fake_db = FakeDB()
+    fake_db.courses["course-1"] = {"id": "course-1", "title": "Course"}
+    fake_db.lectures["lecture-1"] = {
+        "id": "lecture-1",
+        "course_id": "course-1",
+        "audio_path": str(tmp_path / "audio-1.mp3"),
+    }
+
+    metadata_dir = tmp_path / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    (metadata_dir / "lecture-1.json").write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    monkeypatch.setattr(app_module, "STORAGE_DIR", tmp_path)
+    monkeypatch.setattr(app_module, "delete_storage_path", lambda _path: True)
+
+    client = TestClient(app_module.app)
+    response = client.delete("/lectures/lecture-1", headers={"x-actor-id": "qa-user"})
+
+    assert response.status_code == 200
+    assert len(fake_db.deletion_audit_events) == 1
+    event = fake_db.deletion_audit_events[0]
+    assert event["entity_type"] == "lecture"
+    assert event["entity_id"] == "lecture-1"
+    assert event["actor"] == "qa-user"
+
+
+def test_deletion_audit_endpoint_lists_events(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.deletion_audit_events.extend([
+        {"id": "1", "entity_type": "lecture", "entity_id": "lecture-1", "action": "delete"},
+        {"id": "2", "entity_type": "course", "entity_id": "course-1", "action": "delete"},
+    ])
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+    client = TestClient(app_module.app)
+
+    response = client.get("/ops/deletion-audit?entity_type=lecture")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pagination"]["total"] == 1
+    assert payload["events"][0]["entity_type"] == "lecture"
