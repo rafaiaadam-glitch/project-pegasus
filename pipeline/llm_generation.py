@@ -8,9 +8,6 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-import vertexai
-from vertexai.generative_models import GenerativeModel, GenerationConfig
-
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -128,11 +125,6 @@ def generate_artifacts_with_llm(
 ) -> Dict[str, Dict[str, Any]]:
     if generated_at is None:
         generated_at = _iso_now()
-
-    # Initialize Vertex AI using your project ID from GCP_DEPLOYMENT.md
-    project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
-    location = os.getenv("GCP_REGION", "us-central1")
-    vertexai.init(project=project_id, location=location)
 
     prompt = (
         "You are generating structured study artifacts for Pegasus Lecture Copilot.\n"
