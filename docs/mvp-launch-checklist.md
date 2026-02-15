@@ -135,6 +135,12 @@ This sequence minimizes launch risk by first stabilizing the processing core and
 
 ---
 
+## 2-week acceleration plan
+
+- Execution plan to move from 36% to ~60% quickly: `docs/two-week-36-to-60-plan.md`
+
+---
+
 
 ## Evidence map (implemented today)
 

@@ -89,8 +89,10 @@ def main() -> int:
     if not raw_input_path.exists():
         raise FileNotFoundError(f"Audio file not found: {raw_input_path}")
 
-    # Convert to LINEAR16 WAV for Google STT
+    # --- ADD THIS: Convert audio before processing ---
     input_path = _convert_to_wav(raw_input_path)
+    print(f"Processing audio file: {input_path}")
+    # -----------------------------------------------
 
     # Initialize Google Cloud Speech Client
     try:
