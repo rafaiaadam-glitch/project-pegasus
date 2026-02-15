@@ -77,10 +77,10 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 6) Security, privacy, and compliance baseline
 
-- [ ] Add secrets management guidance for each deploy target
-- [ ] Add PII handling policy for transcripts and generated artifacts
+- [x] Add secrets management guidance for each deploy target
+- [x] Add PII handling policy for transcripts and generated artifacts
 - [ ] Add data deletion endpoint/workflow per lecture/course
-- [ ] Add dependency and container vulnerability scanning in CI
+- [x] Add dependency and container vulnerability scanning in CI
 
 **Definition of done:**
 - documented deletion flow and auditability for destructive operations
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **15**
-- Items remaining: **21**
-- Completion: **42%**
+- Items marked complete: **18**
+- Items remaining: **18**
+- Completion: **50%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -164,6 +164,9 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Incident response runbook (queue/OpenAI/storage) → `docs/runbooks/incident-response.md`
 - SLO definitions (ingest success, generation success, p95 processing time) → `docs/runbooks/observability-slos.md`
 - Metrics endpoints + instrumentation (JSON + Prometheus for queue depth, latency/failures/retries) → `backend/observability.py`, `backend/app.py`, `backend/jobs.py`, `backend/tests/test_observability_metrics.py`
+- Canonical secrets guidance (Cloud Run, CI, local dev, mobile constraints) → `docs/security/secrets-management.md`, `docs/deploy.md`
+- PII handling policy for transcripts and generated artifacts → `docs/security/pii-handling-policy.md`
+- Dependency + container vulnerability scans in CI (pip-audit, npm audit, Trivy) → `.github/workflows/ci.yml`
 
 ## Progress notes
 

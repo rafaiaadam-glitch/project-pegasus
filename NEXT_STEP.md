@@ -23,7 +23,7 @@ This will:
 3. Create all necessary tables
 4. Create indexes for performance
 
-**You'll need to enter the password for `pegasus_user` (same as before: Reddevils07)**
+**You'll need valid `pegasus_user` credentials available in your environment (do not place plaintext passwords in docs or shell history).**
 
 ## After Schema is Created
 

@@ -55,3 +55,49 @@ jobs:
         run: pytest backend/tests
       - name: Run pipeline tests
         run: pytest pipeline/tests -v
+
+  vulnerability-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python dependency vulnerability scan
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip-audit \
+            -r backend/requirements.txt \
+            -r backend/requirements-dev.txt \
+            -r pipeline/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: NPM dependency vulnerability scan (root)
+        run: npm audit --audit-level=high --omit=dev
+
+      - name: NPM dependency vulnerability scan (backend)
+        working-directory: backend
+        run: npm audit --audit-level=high --omit=dev
+
+      - name: NPM dependency vulnerability scan (mobile)
+        working-directory: mobile
+        run: npm audit --audit-level=high --omit=dev
+
+      - name: Container vulnerability scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true

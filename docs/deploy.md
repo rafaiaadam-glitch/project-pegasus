@@ -113,6 +113,9 @@ services:
 
 ### Secrets & env var management
 
+Canonical policy and environment-specific procedures live in
+`docs/security/secrets-management.md` and `docs/security/pii-handling-policy.md`.
+
 Use your provider’s secrets tooling to store sensitive values:
 - `DATABASE_URL`, `REDIS_URL`
 - `PLC_LLM_PROVIDER`, plus provider credentials (`GEMINI_API_KEY`/`GOOGLE_API_KEY` or `OPENAI_API_KEY`)
