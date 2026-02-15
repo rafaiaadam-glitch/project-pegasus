@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}"
-REGION="${REGION:-us-central1}"
+REGION="${REGION:-europe-west1}"
 DB_INSTANCE="${DB_INSTANCE:-pegasus-db}"
 DB_NAME="${DB_NAME:-pegasus}"
 DB_USER="${DB_USER:-pegasus}"

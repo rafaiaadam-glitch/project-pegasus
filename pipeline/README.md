@@ -97,8 +97,10 @@ python pipeline/run_pipeline.py --help
 - `--course-id ID` - Course identifier (default: `course-001`)
 - `--lecture-id ID` - Lecture identifier (default: `lecture-001`)
 - `--preset-id ID` - Preset mode (default: `exam-mode`)
-- `--use-llm` - Use OpenAI for generation (requires `OPENAI_API_KEY`)
-- `--openai-model MODEL` - OpenAI model to use (default: `gpt-4o-mini`)
+- `--use-llm` - Use configured LLM provider for generation
+- `--llm-provider PROVIDER` - LLM provider (`openai`, `gemini`, `vertex`; default from `PLC_LLM_PROVIDER` or `openai`)
+- `--llm-model MODEL` - Model for selected provider
+- `--openai-model MODEL` - Deprecated alias for OpenAI model compatibility (default: `gpt-4o-mini`)
 - `--export` - Export to Markdown, PDF, and Anki CSV
 - `--output-dir PATH` - Output directory (default: `pipeline/output`)
 - `--progress-log-file PATH` - Optional file to append progress events and summary
@@ -270,10 +272,12 @@ artifact.update(template)
 
 ## LLM-Backed Generation
 
-Use OpenAI for intelligent artifact generation instead of templates:
+Use provider-backed generation instead of templates:
 
 ```bash
-export OPENAI_API_KEY="your-api-key"
+# Gemini / Vertex path
+export PLC_LLM_PROVIDER="gemini"
+export GEMINI_API_KEY="your-api-key"
 
 python pipeline/run_pipeline.py \
   --input storage/transcripts/lecture-001.json \
@@ -281,7 +285,8 @@ python pipeline/run_pipeline.py \
   --lecture-id lecture-001 \
   --preset-id exam-mode \
   --use-llm \
-  --openai-model gpt-4o-mini
+  --llm-provider gemini \
+  --llm-model gemini-1.5-pro
 ```
 
 **Features:**
@@ -290,10 +295,9 @@ python pipeline/run_pipeline.py \
 - Schema-validated output
 - Thread reference integration
 
-**Supported models:**
-- `gpt-4o-mini` (default, cost-effective)
-- `gpt-4o` (higher quality)
-- `gpt-4-turbo`
+**Supported providers/models (examples):**
+- OpenAI: `gpt-4o-mini` (default compatibility path), `gpt-4o`
+- Gemini/Vertex: `gemini-1.5-pro`, `gemini-1.5-flash`
 
 ---
 
@@ -435,8 +439,11 @@ done
 # Test with exports
 python pipeline/run_pipeline.py --export --lecture-id test-export
 
-# Test LLM generation (requires API key)
-OPENAI_API_KEY=... python pipeline/run_pipeline.py --use-llm --lecture-id test-llm
+# Test LLM generation (Gemini)
+PLC_LLM_PROVIDER=gemini GEMINI_API_KEY=... python pipeline/run_pipeline.py --use-llm --llm-provider gemini --llm-model gemini-1.5-flash --lecture-id test-llm
+
+# Test LLM generation (OpenAI compatibility path)
+PLC_LLM_PROVIDER=openai OPENAI_API_KEY=... python pipeline/run_pipeline.py --use-llm --llm-provider openai --llm-model gpt-4o-mini --lecture-id test-llm-openai
 ```
 
 **Verify outputs:**
@@ -471,10 +478,12 @@ pip install -r pipeline/requirements.txt
 - Ensure artifact structure matches schema
 
 **LLM generation fails**
-- Verify `OPENAI_API_KEY` is set correctly
-- Check API key has sufficient credits
+- Verify provider credentials match selected provider:
+  - OpenAI: `OPENAI_API_KEY`
+  - Gemini/Vertex: `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+- Check API key has sufficient quota/credits
 - Review retry logs for specific errors
-- Reduce `--openai-model` to `gpt-4o-mini` for cost
+- For OpenAI compatibility path, reduce model to `gpt-4o-mini`
 
 **Progress not showing**
 - Progress tracking is automatic

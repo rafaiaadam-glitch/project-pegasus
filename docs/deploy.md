@@ -115,7 +115,7 @@ services:
 
 Use your provider’s secrets tooling to store sensitive values:
 - `DATABASE_URL`, `REDIS_URL`
-- `OPENAI_API_KEY`
+- `PLC_LLM_PROVIDER`, plus provider credentials (`GEMINI_API_KEY`/`GOOGLE_API_KEY` or `OPENAI_API_KEY`)
 - `S3_BUCKET`, `S3_PREFIX`, plus any storage credentials required by your S3
   provider (or Supabase Storage keys)
 
