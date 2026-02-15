@@ -136,14 +136,53 @@ def generate_artifacts_with_llm(
 
     prompt = (
         "You are generating structured study artifacts for Pegasus Lecture Copilot.\n"
-        "Return STRICT JSON only. Produce an object with keys:\n"
-        "summary, outline, key_terms, flashcards, exam_questions.\n"
-        "Each value must match these rules:\n"
-        "- Include metadata fields: id, courseId, lectureId, presetId, artifactType,\n"
-        "  generatedAt, version.\n"
-        "- artifactType must be one of: summary, outline, key-terms, flashcards, exam-questions.\n"
-        "- Use presetId to change structure and emphasis.\n"
-        "Use the transcript below to generate content.\n"
+        "Return STRICT JSON only. You MUST return a JSON OBJECT (not an array) with these exact keys:\n"
+        "summary, outline, key_terms, flashcards, exam_questions.\n\n"
+        "All artifacts must include: id, courseId, lectureId, presetId, artifactType, generatedAt, version.\n\n"
+        "EXACT STRUCTURES REQUIRED:\n\n"
+        '1. summary (artifactType: "summary"):\n'
+        '   {\n'
+        '     "id": "uuid", "courseId": "...", "lectureId": "...", "presetId": "...",\n'
+        '     "artifactType": "summary", "generatedAt": "ISO date", "version": "0.2",\n'
+        '     "overview": "Brief overview paragraph",\n'
+        '     "sections": [\n'
+        '       {"title": "Section Title", "bullets": ["Point 1", "Point 2"]}\n'
+        '     ]\n'
+        '   }\n\n'
+        '2. outline (artifactType: "outline"):\n'
+        '   {\n'
+        '     "id": "uuid", "courseId": "...", "lectureId": "...", "presetId": "...",\n'
+        '     "artifactType": "outline", "generatedAt": "ISO date", "version": "0.2",\n'
+        '     "outline": [\n'
+        '       {"title": "Main Topic", "points": ["Detail 1"], "children": [...]}\n'
+        '     ]\n'
+        '   }\n\n'
+        '3. key_terms (artifactType: "key-terms"):\n'
+        '   {\n'
+        '     "id": "uuid", "courseId": "...", "lectureId": "...", "presetId": "...",\n'
+        '     "artifactType": "key-terms", "generatedAt": "ISO date", "version": "0.2",\n'
+        '     "terms": [\n'
+        '       {"term": "Term Name", "definition": "Definition text"}\n'
+        '     ]\n'
+        '   }\n\n'
+        '4. flashcards (artifactType: "flashcards"):\n'
+        '   {\n'
+        '     "id": "uuid", "courseId": "...", "lectureId": "...", "presetId": "...",\n'
+        '     "artifactType": "flashcards", "generatedAt": "ISO date", "version": "0.2",\n'
+        '     "cards": [\n'
+        '       {"front": "Question?", "back": "Answer"}\n'
+        '     ]\n'
+        '   }\n\n'
+        '5. exam_questions (artifactType: "exam-questions"):\n'
+        '   {\n'
+        '     "id": "uuid", "courseId": "...", "lectureId": "...", "presetId": "...",\n'
+        '     "artifactType": "exam-questions", "generatedAt": "ISO date", "version": "0.2",\n'
+        '     "questions": [\n'
+        '       {"prompt": "Question?", "type": "multiple-choice", "answer": "Correct answer",\n'
+        '        "choices": ["A", "B", "C"], "correctChoiceIndex": 0}\n'
+        '     ]\n'
+        '   }\n\n'
+        "Generate artifacts from the transcript below.\n"
     )
 
     user_content = f"Preset: {preset_id}\nTranscript:\n{transcript}"
