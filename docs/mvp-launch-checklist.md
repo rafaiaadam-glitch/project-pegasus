@@ -164,6 +164,7 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Incident response runbook (queue/OpenAI/storage) → `docs/runbooks/incident-response.md`
 - SLO definitions (ingest success, generation success, p95 processing time) → `docs/runbooks/observability-slos.md`
 - Metrics endpoints + instrumentation (JSON + Prometheus for queue depth, latency/failures/retries) → `backend/observability.py`, `backend/app.py`, `backend/jobs.py`, `backend/tests/test_observability_metrics.py`
+- Synthetic canary script + runbook scaffold (ingest→transcribe→generate→export) with success/failure regression harnesses → `scripts/canary_pipeline.sh`, `scripts/test_canary_pipeline_http.sh`, `scripts/test_canary_pipeline_http_failure.sh`, `docs/runbooks/synthetic-canary.md`
 
 ## Progress notes
 
@@ -181,4 +182,5 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Complete backup/restore and rollback drills in staging (runbooks are documented; drill evidence still needed).
 - Mobile UX completion for a no-terminal first-time flow.
 - Dashboards and alerting.
+- Wire synthetic canary scheduler + alert policies in the target runtime (script/runbook now present in-repo).
 - Security/compliance baseline work and final launch gate rehearsal.
