@@ -1,2 +1,4 @@
 jsonschema>=4.20.0
 pytest>=8.0.0
+google-cloud-speech==2.27.0
+google-cloud-aiplatform==1.70.0

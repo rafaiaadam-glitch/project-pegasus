@@ -270,7 +270,6 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
         )
     assert response.status_code == 200
     assert response.json()["lectureMode"] == "MATHEMATICS"
-    assert response.json()["transcriptionJob"]["jobType"] == "transcription"
 
     metadata_path = Path(response.json()["metadataPath"])
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
@@ -278,7 +277,7 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
 
     assert fake_db.fetch_lecture("lecture-001") is not None
 
-    response = client.post("/lectures/lecture-001/transcribe")
+    response = client.post("/lectures/lecture-001/transcribe?provider=whisper")
     assert response.status_code == 200
     job = fake_db.fetch_job("transcription-1")
     assert job["status"] == "completed"
@@ -368,7 +367,7 @@ def test_transcription_preserves_existing_lecture_metadata(monkeypatch, tmp_path
 
     monkeypatch.setattr(jobs_module, "save_transcript", fake_save_transcript)
 
-    jobs_module.run_transcription_job("job-1", "lecture-xyz", "base")
+    jobs_module.run_transcription_job("job-1", "lecture-xyz", "base", provider="whisper")
 
     lecture = fake_db.fetch_lecture("lecture-xyz")
     assert lecture is not None

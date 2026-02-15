@@ -36,14 +36,12 @@ processed consistently.
 
 Startup validates runtime configuration with clear errors: `DATABASE_URL` is always required; `REDIS_URL` is required unless `PLC_INLINE_JOBS` is enabled for API (worker always requires Redis); and storage env is validated based on `STORAGE_MODE`.
 
-- `PLC_LLM_PROVIDER` (optional, default: `openai`; supports `openai`, `gemini`, `vertex`)
+- `PLC_LLM_PROVIDER` (optional, default: `gemini`; supports `openai`, `gemini`, `vertex` - Gemini recommended for GCP deployments)
 - `OPENAI_API_KEY` (required when `PLC_LLM_PROVIDER=openai`)
 - `OPENAI_MODEL` (optional default model for OpenAI path, default: `gpt-4o-mini`)
 - `GEMINI_API_KEY` or `GOOGLE_API_KEY` (required when `PLC_LLM_PROVIDER=gemini|vertex`)
 - `PLC_GCP_STT_MODEL` (optional, default: `latest_long` for `provider=google` transcription)
 - `PLC_STT_LANGUAGE` (optional, default: `en-US` for `provider=google` transcription)
-- `PLC_INGEST_TRANSCRIBE_PROVIDER` (optional, default: `google`; used when ingest auto-enqueues transcription)
-- `PLC_INGEST_TRANSCRIBE_MODEL` (optional, default: `base`; used when ingest auto-enqueues transcription)
 - `PLC_STORAGE_DIR` (optional, default: `storage`)
 - `DATABASE_URL` (required, Postgres/Supabase)
 - `REDIS_URL` (optional, default: `redis://localhost:6379/0`)
@@ -74,7 +72,7 @@ Startup validates runtime configuration with clear errors: `DATABASE_URL` is alw
 - `GET /courses/{course_id}/lectures` (404 if course does not exist; supports `status`, `preset_id`, `limit`, and `offset`; includes `pagination`)
 - `GET /courses/{course_id}/threads` (404 if course does not exist; supports `limit` and `offset`; includes `pagination`)
 - `GET /courses/{course_id}/progress` (404 if course does not exist; supports `include_lectures=false`; includes `overallStatus`, status-count rollups, `latestActivityAt`, and optional per-lecture stage snapshots with endpoint links)
-- `POST /lectures/ingest` (multipart upload; accepts optional `lecture_mode`; by default auto-enqueues a transcription job and returns `transcriptionJob`; supports optional form overrides `auto_transcribe`, `transcribe_provider`, `transcribe_model`, `transcribe_language_code`)
+- `POST /lectures/ingest` (multipart upload; accepts optional `lecture_mode` and stores it in lecture metadata as `lectureMode`)
 - `GET /lectures` (supports `course_id`, `status`, `preset_id`, `limit`, and `offset`; includes `pagination`)
 - `GET /lectures/{lecture_id}`
 - `GET /lectures/{lecture_id}/transcript` (returns transcript text + segments; supports `include_text` and `segment_limit`)
@@ -131,3 +129,5 @@ Use this when you want to run the backend/worker against GCP Cloud Storage:
 3. Sanity-check wiring before live testing:
    - `python -c "from backend.runtime_config import validate_runtime_environment; validate_runtime_environment('api')"`
    - then run ingest and verify returned `audioPath`/artifact paths use `gs://...`.
+- Run: `npm run test:e2e`
+- Note: CI/container environments may need system browser libraries (for example `libatk-1.0.so.0`) for Chromium to launch.

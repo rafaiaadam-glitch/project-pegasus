@@ -9,6 +9,22 @@ export type LectureMode =
   | "HUMANITIES"
   | "INTERDISCIPLINARY"
   | "OPEN"
+import permutations from "../dice/permutations.json"
+
+export type DiceFace =
+  | "RED"
+  | "ORANGE"
+  | "YELLOW"
+  | "GREEN"
+  | "BLUE"
+  | "PURPLE"
+
+export type LectureMode =
+  | "MATHEMATICS"
+  | "NATURAL_SCIENCE"
+  | "SOCIAL_SCIENCE"
+  | "HUMANITIES"
+  | "OPEN"
 
 export interface FacetScores {
   RED: number
@@ -71,6 +87,9 @@ function simpleHash(str: string): number {
   return Math.abs(hash)
 }
 
+/**
+ * The only ordering decision point for the Thread Engine.
+ */
 function selectPermutation(threadId: string, segmentIndex: number): DiceFace[] {
   const schedule = permutations.schedule as DiceFace[][]
   const key = `${threadId}-${segmentIndex}`
@@ -149,6 +168,12 @@ function collapsePriorityFace(scores: FacetScores, weights: FacetScores): DiceFa
 
 export function rotatePerspective(options: RotateOptions): DiceFace[] {
   const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
+export function rotatePerspective(options: RotateOptions): DiceFace[] {
+  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
+export function rotatePerspective(options: RotateOptions): DiceFace[] {
+  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
+export function rotatePerspective(options: RotateOptions): DiceFace[] {
+  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights } = options
 
   let permutation = selectPermutation(threadId, segmentIndex)
 
@@ -156,6 +181,8 @@ export function rotatePerspective(options: RotateOptions): DiceFace[] {
     const weights = resolveWeights(mode, modeWeights, empiricalMix)
     const prioritizedFace = collapsePriorityFace(facetScores, weights)
     permutation = [prioritizedFace, ...permutation.filter((face) => face !== prioritizedFace)]
+    const weakest = weakestFacet(facetScores)
+    permutation = [weakest, ...permutation.filter((face) => face !== weakest)]
     return permutation
   }
 

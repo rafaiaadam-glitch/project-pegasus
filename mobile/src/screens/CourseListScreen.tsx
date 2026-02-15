@@ -94,6 +94,8 @@ export default function CourseListScreen({ navigation }: Props) {
       index: 0,
       routes: [{ name: 'Home' }],
     });
+    navigation.getParent?.()?.goBack?.();
+    navigation.navigate('Home');
   };
 
 
@@ -164,6 +166,7 @@ export default function CourseListScreen({ navigation }: Props) {
                 onPress={handleBackPress}
                 activeOpacity={0.7}
                 hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                onPress={() => navigation.goBack()}
                 accessibilityRole="button"
                 accessibilityLabel="Go back"
               >

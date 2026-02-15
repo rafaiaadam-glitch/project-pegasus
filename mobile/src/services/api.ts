@@ -1,16 +1,42 @@
 // API Client for Pegasus Backend
+import { Platform } from 'react-native';
 import { Course, Lecture, Preset, Artifact, Job, LectureProgress } from '../types';
 import * as MockData from './mockData';
 
 // Configure this to point to your backend
 // For local development: http://localhost:8000
-// For production: your deployed backend URL
-const API_BASE_URL = __DEV__
-  ? 'http://localhost:8000'
-  : 'https://your-production-api.com';
+// For production: your deployed backend URL (Cloud Run, Render, Fly.io, etc.)
+
+const getApiBaseUrl = () => {
+  // Production: Set EXPO_PUBLIC_API_URL in your environment or .env file
+  // For Cloud Run: EXPO_PUBLIC_API_URL=https://pegasus-api-xxxxx-uc.a.run.app
+  // For Render: EXPO_PUBLIC_API_URL=https://pegasus-api.onrender.com
+  const productionUrl = process.env.EXPO_PUBLIC_API_URL;
+
+  // If production URL is explicitly set, use it (even in dev mode)
+  // This allows testing against the real backend during development
+  if (productionUrl) {
+    return productionUrl;
+  }
+
+  // Fallback to local development URLs
+  if (Platform.OS === 'android') {
+    // Android emulator uses 10.0.2.2 to access host machine
+    return 'http://10.0.2.2:8000';
+  } else if (Platform.OS === 'ios') {
+    // iOS simulator can use localhost
+    return 'http://localhost:8000';
+  } else {
+    // For physical devices, use your computer's IP address
+    // Replace with your actual IP if testing on a physical device
+    return 'http://192.168.1.78:8000';
+  }
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 // Set to true to use mock data (no backend required)
-const USE_MOCK_DATA = true;
+const USE_MOCK_DATA = false;
 
 class ApiClient {
   private baseUrl: string;
@@ -19,6 +45,20 @@ class ApiClient {
   constructor(baseUrl: string = API_BASE_URL, useMock: boolean = USE_MOCK_DATA) {
     this.baseUrl = baseUrl;
     this.useMock = useMock;
+  }
+
+  private getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add write token if configured (optional, for production security)
+    const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
+    if (writeToken) {
+      headers['Authorization'] = `Bearer ${writeToken}`;
+    }
+
+    return headers;
   }
 
   private async request<T>(
@@ -31,7 +71,7 @@ class ApiClient {
       const response = await fetch(url, {
         ...options,
         headers: {
-          'Content-Type': 'application/json',
+          ...this.getAuthHeaders(),
           ...options.headers,
         },
       });
@@ -81,8 +121,13 @@ class ApiClient {
 
   // Lectures
   async getLectures(courseId?: string, limit = 50, offset = 0): Promise<{ lectures: Lecture[] }> {
-    if (this.useMock && courseId) {
-      return Promise.resolve(MockData.getMockLectures(courseId));
+    if (this.useMock) {
+      if (courseId) {
+        return Promise.resolve(MockData.getMockLectures(courseId));
+      }
+      // Return all lectures when no courseId is specified
+      const allLectures = Object.values(MockData.mockLectures).flat();
+      return Promise.resolve({ lectures: allLectures });
     }
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (courseId) params.append('course_id', courseId);
@@ -169,8 +214,17 @@ class ApiClient {
   // Processing Actions
   async ingestLecture(formData: FormData): Promise<any> {
     const url = `${this.baseUrl}/lectures/ingest`;
+
+    // Build headers (exclude Content-Type for multipart/form-data)
+    const headers: Record<string, string> = {};
+    const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
+    if (writeToken) {
+      headers['Authorization'] = `Bearer ${writeToken}`;
+    }
+
     const response = await fetch(url, {
       method: 'POST',
+      headers,
       body: formData, // Don't set Content-Type for multipart/form-data
     });
 
@@ -183,9 +237,13 @@ class ApiClient {
   }
 
   async transcribeLecture(lectureId: string): Promise<any> {
-    return this.request(`/lectures/${lectureId}/transcribe`, {
-      method: 'POST',
-    });
+    const languageCode = process.env.EXPO_PUBLIC_STT_LANGUAGE || 'en-US';
+    return this.request(
+      `/lectures/${lectureId}/transcribe?provider=google&language_code=${encodeURIComponent(languageCode)}`,
+      {
+        method: 'POST',
+      }
+    );
   }
 
   async generateArtifacts(

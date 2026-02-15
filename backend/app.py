@@ -16,7 +16,8 @@ from typing import Callable, Optional
 import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from redis import Redis
 
@@ -26,6 +27,7 @@ from backend.idempotency import (
     maybe_replay_response,
     store_idempotent_response,
 )
+from backend.observability import METRICS, render_prometheus_metrics
 from backend.jobs import (
     enqueue_job,
     run_export_job,
@@ -51,6 +53,16 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Pegasus Lecture Copilot API", lifespan=app_lifespan)
+
+# Configure CORS for mobile app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins in development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 LOGGER = logging.getLogger("pegasus.api")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
 
@@ -507,6 +519,16 @@ def _pagination_payload(
     }
 
 
+def _queue_depth_snapshot(db) -> dict[str, int]:
+    jobs = db.fetch_jobs() if hasattr(db, "fetch_jobs") else []
+    depth = {"queued": 0, "running": 0, "failed": 0}
+    for job in jobs:
+        status = str(job.get("status") or "").strip().lower()
+        if status in depth:
+            depth[status] += 1
+    return depth
+
+
 def _count_with_fallback(
     db,
     count_method: str,
@@ -521,6 +543,28 @@ def _count_with_fallback(
     if callable(fallback_counter):
         return int(fallback_counter())
     return len(fallback_rows)
+
+
+@app.get("/ops/metrics")
+def ops_metrics() -> dict:
+    db = get_database()
+    queue_depth = _queue_depth_snapshot(db)
+    return {
+        "status": "ok",
+        "time": _iso_now(),
+        "metrics": METRICS.snapshot(queue_depth=queue_depth),
+    }
+
+
+@app.get("/ops/metrics/prometheus")
+def ops_metrics_prometheus() -> PlainTextResponse:
+    db = get_database()
+    queue_depth = _queue_depth_snapshot(db)
+    snapshot = METRICS.snapshot(queue_depth=queue_depth)
+    return PlainTextResponse(
+        content=render_prometheus_metrics(snapshot),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @app.get("/health")
@@ -599,10 +643,6 @@ def ingest_lecture(
     duration_sec: int = Form(0),
     source_type: str = Form("upload"),
     lecture_mode: Optional[str] = Form(None),
-    auto_transcribe: bool = Form(True),
-    transcribe_provider: Optional[str] = Form(None),
-    transcribe_model: Optional[str] = Form(None),
-    transcribe_language_code: Optional[str] = Form(None),
     audio: UploadFile = File(...),
 ) -> dict:
     _enforce_write_auth(request)
@@ -615,10 +655,6 @@ def ingest_lecture(
         "duration_sec": duration_sec,
         "source_type": source_type,
         "lecture_mode": lecture_mode or "",
-        "auto_transcribe": auto_transcribe,
-        "transcribe_provider": transcribe_provider or "",
-        "transcribe_model": transcribe_model or "",
-        "transcribe_language_code": transcribe_language_code or "",
         "audio_filename": audio.filename or "",
     }
     replay = _replay_or_none(request, "lectures.ingest", idempotency_payload)
@@ -710,7 +746,6 @@ def ingest_lecture(
         "metadataPath": str(metadata_path),
         "audioPath": stored_audio,
         "lectureMode": lecture_mode,
-        "transcriptionJob": transcription_job,
     }
     _remember_response(request, "lectures.ingest", idempotency_payload, response_payload)
     return response_payload
@@ -989,8 +1024,8 @@ def list_lectures(
 def transcribe_lecture(
     request: Request,
     lecture_id: str,
-    model: str = "base",
-    provider: str = "whisper",
+    model: str = "latest_long",  # Google STT model
+    provider: str = "google",  # Default to Google Speech-to-Text
     language_code: Optional[str] = None,
 ) -> dict:
     _enforce_write_auth(request)
@@ -1079,8 +1114,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         lecture_id,
         course_id,
         preset_id,
-        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "openai"),
-        payload.llm_model or payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "gemini"),
+        payload.llm_model or payload.openai_model or os.getenv("PLC_LLM_MODEL") or os.getenv("OPENAI_MODEL", "gemini-1.5-flash"),
     )
     job = db.fetch_job(job_id)
     response_payload = {
@@ -1168,6 +1203,7 @@ def _enqueue_replay_job(db, job: dict) -> dict:
         raise HTTPException(status_code=400, detail="Replay is unsupported for this job type.")
 
     replayed_job = db.fetch_job(new_job_id)
+    METRICS.increment_retry(job_type)
     return {
         "jobId": new_job_id,
         "status": replayed_job["status"] if replayed_job else "queued",

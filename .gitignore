@@ -27,6 +27,10 @@ ENV/
 env/
 .venv
 
+# Environment variables
+.env
+.env.local
+
 # IDEs
 .vscode/
 .idea/
@@ -56,9 +60,13 @@ storage/threads/
 htmlcov/
 
 # JavaScript dependencies
+node_modules/
 mobile/node_modules/
 node_modules/
 
 # E2E artifacts
 test-results/
 playwright-report/
+backend/node_modules/
+mobile/.expo/
+.expo/
