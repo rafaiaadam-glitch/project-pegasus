@@ -13,11 +13,13 @@ const getApiBaseUrl = () => {
   // For Render: EXPO_PUBLIC_API_URL=https://pegasus-api.onrender.com
   const productionUrl = process.env.EXPO_PUBLIC_API_URL;
 
-  if (!__DEV__ && productionUrl) {
+  // If production URL is explicitly set, use it (even in dev mode)
+  // This allows testing against the real backend during development
+  if (productionUrl) {
     return productionUrl;
   }
 
-  // Development mode - choose based on platform
+  // Fallback to local development URLs
   if (Platform.OS === 'android') {
     // Android emulator uses 10.0.2.2 to access host machine
     return 'http://10.0.2.2:8000';
