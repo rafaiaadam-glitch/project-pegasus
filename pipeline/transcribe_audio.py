@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from google.cloud import speech
@@ -11,14 +13,47 @@ from google.cloud import speech
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+def _convert_to_wav(input_path: Path) -> Path:
+    """Convert any input file to LINEAR16 WAV (16kHz mono) via ffmpeg.
+
+    Returns the converted path on success. Falls back to the original path when
+    conversion fails so callers can decide how to handle provider errors.
+    """
+    output_path = input_path.with_suffix(".wav")
+
+    if input_path.suffix.lower() == ".wav":
+        return input_path
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(input_path),
+                "-ar",
+                "16000",
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                str(output_path),
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return output_path
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return input_path
+
 def _load_whisper():
     """
     Lazy-load the whisper module for local transcription.
     This function is imported by backend/jobs.py for transcription jobs.
     """
     try:
-        import whisper
-        return whisper
+        return importlib.import_module("whisper")
     except ImportError as e:
         raise ImportError(
             "Whisper is not installed. Install it with: pip install openai-whisper"
