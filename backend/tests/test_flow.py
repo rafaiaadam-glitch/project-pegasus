@@ -266,6 +266,7 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
                 "duration_sec": "120",
                 "source_type": "upload",
                 "lecture_mode": "MATHEMATICS",
+                "transcribe_provider": "whisper",
             },
         )
     assert response.status_code == 200
