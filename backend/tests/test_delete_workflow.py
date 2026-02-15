@@ -126,7 +126,10 @@ def test_delete_single_lecture_removes_records_and_updates_threads(monkeypatch, 
     monkeypatch.setattr(app_module, "delete_storage_path", lambda _path: True)
 
     client = TestClient(app_module.app)
-    response = client.delete("/lectures/lecture-1")
+    response = client.delete(
+        "/lectures/lecture-1",
+        headers={"x-request-id": "req-del-1", "x-actor-id": "tester"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
@@ -134,6 +137,10 @@ def test_delete_single_lecture_removes_records_and_updates_threads(monkeypatch, 
     assert payload["deleted"]["artifacts"] == 1
     assert payload["deleted"]["exports"] == 1
     assert payload["deleted"]["metadataRemoved"] is True
+    assert payload["auditEvent"]["eventType"] == "lecture.delete"
+    assert payload["auditEvent"]["requestId"] == "req-del-1"
+    assert payload["auditEvent"]["actorId"] == "tester"
+    assert isinstance(payload["auditEvent"]["occurredAt"], str)
     assert "lecture-1" not in fake_db.lectures
     assert fake_db.threads["thread-1"]["lecture_refs"] == ["lecture-2"]
 
@@ -163,12 +170,20 @@ def test_delete_course_removes_course_and_all_lectures(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "delete_storage_path", lambda _path: True)
 
     client = TestClient(app_module.app)
-    response = client.delete("/courses/course-1")
+    response = client.delete(
+        "/courses/course-1",
+        headers={"x-request-id": "req-course-del", "x-actor-id": "tester"},
+    )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["courseDeleted"] is True
     assert payload["lecturesDeleted"] == 2
+    assert payload["auditEvent"]["eventType"] == "course.delete"
+    assert payload["auditEvent"]["requestId"] == "req-course-del"
+    assert payload["auditEvent"]["actorId"] == "tester"
+    assert isinstance(payload["auditEvent"]["occurredAt"], str)
+    assert all(item.get("auditEvent", {}).get("eventType") == "lecture.delete" for item in payload["lectureDeletions"])
     assert fake_db.courses == {}
     assert fake_db.lectures == {}
     assert fake_db.threads == {}

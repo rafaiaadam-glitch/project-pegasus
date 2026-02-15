@@ -77,10 +77,10 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 6) Security, privacy, and compliance baseline
 
-- [ ] Add secrets management guidance for each deploy target
-- [ ] Add PII handling policy for transcripts and generated artifacts
-- [ ] Add data deletion endpoint/workflow per lecture/course
-- [ ] Add dependency and container vulnerability scanning in CI
+- [x] Add secrets management guidance for each deploy target
+- [x] Add PII handling policy for transcripts and generated artifacts
+- [x] Add data deletion endpoint/workflow per lecture/course
+- [x] Add dependency and container vulnerability scanning in CI
 
 **Definition of done:**
 - documented deletion flow and auditability for destructive operations
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **15**
-- Items remaining: **21**
-- Completion: **42%**
+- Items marked complete: **19**
+- Items remaining: **17**
+- Completion: **53%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -164,6 +164,10 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Incident response runbook (queue/OpenAI/storage) → `docs/runbooks/incident-response.md`
 - SLO definitions (ingest success, generation success, p95 processing time) → `docs/runbooks/observability-slos.md`
 - Metrics endpoints + instrumentation (JSON + Prometheus for queue depth, latency/failures/retries) → `backend/observability.py`, `backend/app.py`, `backend/jobs.py`, `backend/tests/test_observability_metrics.py`
+- Secrets management guidance (local/CI/Cloud Run/mobile) → `docs/security/secrets-management.md`
+- PII handling policy (transcripts + generated artifacts) → `docs/security/pii-handling-policy.md`
+- CI vulnerability scanning (dependency + container image gates) → `.github/workflows/security-scans.yml`
+- Data deletion workflow with audit event payloads (`DELETE /lectures/{lecture_id}`, `DELETE /courses/{course_id}`) → `backend/app.py`, `backend/tests/test_delete_workflow.py`, `docs/runbooks/data-deletion-auditability.md`
 
 ## Progress notes
 
@@ -181,4 +185,4 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Complete backup/restore and rollback drills in staging (runbooks are documented; drill evidence still needed).
 - Mobile UX completion for a no-terminal first-time flow.
 - Dashboards and alerting.
-- Security/compliance baseline work and final launch gate rehearsal.
+- Final launch gate rehearsal and remaining non-security launch items (mobile UX, dashboards/alerting, staging drills).

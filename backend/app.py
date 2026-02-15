@@ -392,7 +392,13 @@ def _lecture_links(lecture_id: str) -> dict[str, str]:
 
 
 
-def _delete_lecture_data(lecture_id: str, *, purge_storage: bool) -> dict:
+def _delete_lecture_data(
+    lecture_id: str,
+    *,
+    purge_storage: bool,
+    request_id: Optional[str] = None,
+    actor_id: Optional[str] = None,
+) -> dict:
     db = get_database()
     lecture = db.fetch_lecture(lecture_id)
     if not lecture:
@@ -441,6 +447,25 @@ def _delete_lecture_data(lecture_id: str, *, purge_storage: bool) -> dict:
             metadata_path.unlink()
             storage_deleted += 1
 
+    audit_event = {
+        "eventType": "lecture.delete",
+        "requestId": request_id,
+        "actorId": actor_id,
+        "occurredAt": _iso_now(),
+    }
+
+    LOGGER.info(
+        "lecture.delete",
+        extra={
+            "request_id": request_id,
+            "actor_id": actor_id,
+            "lecture_id": lecture_id,
+            "deleted_counts": deleted_counts,
+            "purge_storage": purge_storage,
+            "storage_paths_deleted": storage_deleted,
+        },
+    )
+
     return {
         "lectureId": lecture_id,
         "deleted": {
@@ -449,6 +474,7 @@ def _delete_lecture_data(lecture_id: str, *, purge_storage: bool) -> dict:
             "storagePaths": storage_deleted,
             "metadataRemoved": purge_storage and not metadata_path.exists(),
         },
+        "auditEvent": audit_event,
     }
 
 
@@ -1217,13 +1243,22 @@ def _job_api_payload(job: dict) -> dict:
 def delete_lecture(lecture_id: str, request: Request, purge_storage: bool = Query(default=True)) -> dict:
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)
-    return _delete_lecture_data(lecture_id, purge_storage=purge_storage)
+    actor_id = request.headers.get("x-actor-id")
+    return _delete_lecture_data(
+        lecture_id,
+        purge_storage=purge_storage,
+        request_id=getattr(request.state, "request_id", None),
+        actor_id=actor_id,
+    )
 
 
 @app.delete("/courses/{course_id}")
 def delete_course(course_id: str, request: Request, purge_storage: bool = Query(default=True)) -> dict:
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)
+
+    actor_id = request.headers.get("x-actor-id")
+    request_id = getattr(request.state, "request_id", None)
 
     db = get_database()
     course = db.fetch_course(course_id) if hasattr(db, "fetch_course") else None
@@ -1234,7 +1269,12 @@ def delete_course(course_id: str, request: Request, purge_storage: bool = Query(
     deleted_lectures: list[dict] = []
     for lecture in lectures:
         deleted_lectures.append(
-            _delete_lecture_data(lecture["id"], purge_storage=purge_storage)
+            _delete_lecture_data(
+                lecture["id"],
+                purge_storage=purge_storage,
+                request_id=request_id,
+                actor_id=actor_id,
+            )
         )
 
     delete_course_method = getattr(db, "delete_course", None)
@@ -1242,11 +1282,31 @@ def delete_course(course_id: str, request: Request, purge_storage: bool = Query(
         raise HTTPException(status_code=500, detail="Database does not support course deletion.")
     removed = delete_course_method(course_id)
 
+    audit_event = {
+        "eventType": "course.delete",
+        "requestId": request_id,
+        "actorId": actor_id,
+        "occurredAt": _iso_now(),
+    }
+
+    LOGGER.info(
+        "course.delete",
+        extra={
+            "request_id": request_id,
+            "actor_id": actor_id,
+            "course_id": course_id,
+            "course_deleted": removed > 0,
+            "lectures_deleted": len(deleted_lectures),
+            "purge_storage": purge_storage,
+        },
+    )
+
     return {
         "courseId": course_id,
         "courseDeleted": removed > 0,
         "lecturesDeleted": len(deleted_lectures),
         "lectureDeletions": deleted_lectures,
+        "auditEvent": audit_event,
     }
 
 @app.post("/jobs/{job_id}/replay")

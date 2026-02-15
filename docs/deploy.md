@@ -123,6 +123,16 @@ Ensure the API and worker services both receive the same `DATABASE_URL`,
 `REDIS_URL`, storage, LLM provider settings, and transcription provider settings so jobs can enqueue and execute
 consistently.
 
+### CI vulnerability scanning gates
+
+Security scan gates run in GitHub Actions via `.github/workflows/security-scans.yml`:
+
+- Python dependency scanning with `pip-audit` for `backend/requirements.txt` and `pipeline/requirements.txt`
+- Node dependency scanning with `npm audit --audit-level=high --omit=dev` for root, `backend/`, and `mobile/`
+- Container image scanning with Trivy on the built backend image (`backend/Dockerfile`)
+
+Any HIGH/CRITICAL findings in those scans fail CI for the workflow run.
+
 ## Migration startup check
 
 Database migrations are applied on startup from `backend/db.py` via
