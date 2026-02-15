@@ -23,7 +23,7 @@ gcloud builds submit \
   --tag="${IMAGE_NAME}" \
   --project="${PROJECT_ID}" \
   --timeout=15m \
-  --config=cloudbuild.yaml \
+  --dockerfile=backend/Dockerfile \
   .
 
 echo ""
