@@ -45,6 +45,20 @@ class ApiClient {
     this.useMock = useMock;
   }
 
+  private getAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add write token if configured (optional, for production security)
+    const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
+    if (writeToken) {
+      headers['Authorization'] = `Bearer ${writeToken}`;
+    }
+
+    return headers;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -55,7 +69,7 @@ class ApiClient {
       const response = await fetch(url, {
         ...options,
         headers: {
-          'Content-Type': 'application/json',
+          ...this.getAuthHeaders(),
           ...options.headers,
         },
       });
@@ -198,8 +212,17 @@ class ApiClient {
   // Processing Actions
   async ingestLecture(formData: FormData): Promise<any> {
     const url = `${this.baseUrl}/lectures/ingest`;
+
+    // Build headers (exclude Content-Type for multipart/form-data)
+    const headers: Record<string, string> = {};
+    const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
+    if (writeToken) {
+      headers['Authorization'] = `Bearer ${writeToken}`;
+    }
+
     const response = await fetch(url, {
       method: 'POST',
+      headers,
       body: formData, // Don't set Content-Type for multipart/form-data
     });
 
