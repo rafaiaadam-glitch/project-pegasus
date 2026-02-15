@@ -22,9 +22,7 @@ echo "📦 Building Docker image with ffmpeg..."
 gcloud builds submit \
   --tag="${IMAGE_NAME}" \
   --project="${PROJECT_ID}" \
-  --timeout=15m \
-  --dockerfile=backend/Dockerfile \
-  .
+  --timeout=15m
 
 echo ""
 echo "🚀 Deploying to Cloud Run..."
