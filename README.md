@@ -248,16 +248,19 @@ Early milestones:
 
 ## Production Deployment (LIVE)
 
-**Backend API:** https://pegasus-api-988514135894.us-west1.run.app
+**Backend API:** https://pegasus-api-988514135894.europe-west1.run.app
 
-- **Platform:** Google Cloud Run (us-west1)
-- **LLM Provider:** Gemini/Vertex AI (primary), OpenAI (fallback)
-- **Transcription:** Google Cloud Speech-to-Text (primary), Whisper (fallback)
+- **Platform:** Google Cloud Run (europe-west1)
+- **LLM Provider:** Gemini/Vertex AI (default), OpenAI (fallback)
+- **Transcription:** Google Speech-to-Text (default, with automatic M4A→MP3 conversion), Whisper (fallback)
 - **Database:** PostgreSQL on Cloud SQL
 - **Storage:** Google Cloud Storage
 - **Container Registry:** Artifact Registry
+- **Audio Processing:** FFmpeg for format conversion (M4A, MP3, WAV support)
 
 All 6 lecture style presets are live and operational.
+
+**Note:** The mobile app records in M4A format (AAC), which is automatically converted to MP3 for Google Speech-to-Text processing. This ensures optimal compatibility and transcription quality.
 
 ---
 
@@ -279,10 +282,13 @@ All 6 lecture style presets are live and operational.
 - Simple worker (BullMQ/Redis) **or** serverless background jobs
 
 **Transcription**
-- Google Speech-to-Text (Vertex AI Speech) as primary; Whisper fallback for local/dev
+- Google Speech-to-Text (default) with `latest_long` model for high accuracy
+- Automatic M4A to MP3 conversion via FFmpeg (mobile recordings)
+- Whisper available for local/dev or explicit fallback
 
 **LLM**
-- Gemini (Vertex AI / Google Generative Language API) as primary; OpenAI fallback
+- Gemini (Vertex AI / Google Generative Language API) as default
+- OpenAI available for local/dev or explicit fallback
 
 ---
 

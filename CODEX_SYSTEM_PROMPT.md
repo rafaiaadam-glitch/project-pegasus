@@ -11,15 +11,18 @@ If an implementation decision conflicts with this definition, the definition alw
 PRIMARY CLOUD ALIGNMENT
 
 **Production Deployment (LIVE):**
-- **API URL:** https://pegasus-api-988514135894.us-west1.run.app
-- **Region:** us-west1
+- **API URL:** https://pegasus-api-988514135894.europe-west1.run.app
+- **Region:** europe-west1
 - **Platform:** Google Cloud Run
 
-Deployments on GCP should prefer:
-- Gemini/Vertex AI for LLM generation and thread intelligence
-- Google Speech-to-Text for transcription
+**Default Production Stack:**
+- **Transcription:** Google Speech-to-Text (default, model: `latest_long`)
+  - Automatic M4A to MP3 conversion via FFmpeg for mobile recordings
+  - Explicit audio encoding detection (MP3, WAV, M4A support)
+- **LLM:** Gemini/Vertex AI for generation and thread intelligence
+- **Storage:** Google Cloud Storage with GCS bucket backend
 
-Production uses Google-native providers. Fallbacks (OpenAI/Whisper) are acceptable for local development, testing, or controlled rollback.
+Production uses Google-native providers by default. Fallbacks (OpenAI/Whisper) are available for local development, testing, or explicit override via provider parameters.
 
 PRODUCT DEFINITION (AUTHORITATIVE)
 Product name
