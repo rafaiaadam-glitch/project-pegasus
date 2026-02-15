@@ -237,9 +237,13 @@ class ApiClient {
   }
 
   async transcribeLecture(lectureId: string): Promise<any> {
-    return this.request(`/lectures/${lectureId}/transcribe`, {
-      method: 'POST',
-    });
+    const languageCode = process.env.EXPO_PUBLIC_STT_LANGUAGE || 'en-US';
+    return this.request(
+      `/lectures/${lectureId}/transcribe?provider=google&language_code=${encodeURIComponent(languageCode)}`,
+      {
+        method: 'POST',
+      }
+    );
   }
 
   async generateArtifacts(

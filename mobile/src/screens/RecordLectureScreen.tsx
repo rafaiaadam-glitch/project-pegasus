@@ -56,15 +56,11 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     };
   }, []);
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isRecording && !isPaused) {
-      interval = setInterval(() => {
-        setRecordingDuration((prev) => prev + 1);
-      }, 1000);
+  const handleRecordingStatus = (status: Audio.RecordingStatus) => {
+    if (typeof status.durationMillis === 'number') {
+      setRecordingDuration(Math.floor(status.durationMillis / 1000));
     }
-    return () => clearInterval(interval);
-  }, [isRecording, isPaused]);
+  };
 
   // Pulsing animation for recording dot
   useEffect(() => {
@@ -104,10 +100,6 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   const safeStopAndUnload = async (activeRecording: Audio.Recording) => {
     try {
       const status = await activeRecording.getStatusAsync();
-      if (!status.isLoaded) {
-        return;
-      }
-
       if (status.isRecording || status.canRecord) {
         await activeRecording.stopAndUnloadAsync();
       }
@@ -183,16 +175,17 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
       });
 
-      console.log('[Recording] Creating new Recording object...');
-      const newRecording = new Audio.Recording();
-
-      console.log('[Recording] Preparing to record (HIGH_QUALITY)...');
-      await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-
-      console.log('[Recording] Starting recording...');
-      await newRecording.startAsync();
+      console.log('[Recording] Creating and starting recording...');
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        handleRecordingStatus,
+        500
+      );
 
       console.log('[Recording] Recording started successfully!');
       setSelectedFile(null);
@@ -239,7 +232,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
 
     try {
       const status = await recording.getStatusAsync();
-      if (!status.isLoaded || (!status.isRecording && !status.canRecord)) {
+      if (!status.isRecording && !status.canRecord) {
         setIsRecording(false);
         setRecording(null);
         return;
@@ -251,13 +244,20 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         setSelectedFile({
           uri,
           name: `recording_${Date.now()}.m4a`,
-          mimeType: 'audio/m4a',
+          mimeType: 'audio/mp4',
         });
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to stop recording');
       console.error(error);
     } finally {
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+        });
+      } catch (audioModeError) {
+        console.warn('[Recording] Failed to reset audio mode:', audioModeError);
+      }
       setIsRecording(false);
       setRecording(null);
     }
