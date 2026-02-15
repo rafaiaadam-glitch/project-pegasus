@@ -78,7 +78,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 ## 6) Security, privacy, and compliance baseline
 
 - [ ] Add secrets management guidance for each deploy target
-- [ ] Add PII handling policy for transcripts and generated artifacts
+- [x] Add PII handling policy for transcripts and generated artifacts
 - [x] Add data deletion endpoint/workflow per lecture/course
 - [ ] Add dependency and container vulnerability scanning in CI
 
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **16**
-- Items remaining: **20**
-- Completion: **44%**
+- Items marked complete: **17**
+- Items remaining: **19**
+- Completion: **47%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -165,6 +165,7 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - SLO definitions (ingest success, generation success, p95 processing time) → `docs/runbooks/observability-slos.md`
 - Metrics endpoints + instrumentation (JSON + Prometheus for queue depth, latency/failures/retries) → `backend/observability.py`, `backend/app.py`, `backend/jobs.py`, `backend/tests/test_observability_metrics.py`
 - Data deletion endpoints + auditability (`DELETE /lectures/{lecture_id}`, `DELETE /courses/{course_id}`, `GET /ops/deletion-audit`) → `backend/app.py`, `backend/db.py`, `backend/migrations/002_deletion_audit.sql`, `backend/tests/test_delete_audit_helpers.py`, `docs/runbooks/data-deletion-auditability.md`
+- PII handling policy (transcripts/artifacts, logging/redaction, incident expectations) → `docs/runbooks/pii-handling-policy.md`, `docs/runbooks/incident-response.md`
 
 ## Progress notes
 
