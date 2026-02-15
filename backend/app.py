@@ -17,7 +17,7 @@ import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from pydantic import BaseModel
 from redis import Redis
 
@@ -27,6 +27,7 @@ from backend.idempotency import (
     maybe_replay_response,
     store_idempotent_response,
 )
+from backend.observability import METRICS, render_prometheus_metrics
 from backend.jobs import (
     enqueue_job,
     run_export_job,
@@ -518,6 +519,16 @@ def _pagination_payload(
     }
 
 
+def _queue_depth_snapshot(db) -> dict[str, int]:
+    jobs = db.fetch_jobs() if hasattr(db, "fetch_jobs") else []
+    depth = {"queued": 0, "running": 0, "failed": 0}
+    for job in jobs:
+        status = str(job.get("status") or "").strip().lower()
+        if status in depth:
+            depth[status] += 1
+    return depth
+
+
 def _count_with_fallback(
     db,
     count_method: str,
@@ -532,6 +543,28 @@ def _count_with_fallback(
     if callable(fallback_counter):
         return int(fallback_counter())
     return len(fallback_rows)
+
+
+@app.get("/ops/metrics")
+def ops_metrics() -> dict:
+    db = get_database()
+    queue_depth = _queue_depth_snapshot(db)
+    return {
+        "status": "ok",
+        "time": _iso_now(),
+        "metrics": METRICS.snapshot(queue_depth=queue_depth),
+    }
+
+
+@app.get("/ops/metrics/prometheus")
+def ops_metrics_prometheus() -> PlainTextResponse:
+    db = get_database()
+    queue_depth = _queue_depth_snapshot(db)
+    snapshot = METRICS.snapshot(queue_depth=queue_depth)
+    return PlainTextResponse(
+        content=render_prometheus_metrics(snapshot),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 @app.get("/health")
@@ -1145,6 +1178,7 @@ def _enqueue_replay_job(db, job: dict) -> dict:
         raise HTTPException(status_code=400, detail="Replay is unsupported for this job type.")
 
     replayed_job = db.fetch_job(new_job_id)
+    METRICS.increment_retry(job_type)
     return {
         "jobId": new_job_id,
         "status": replayed_job["status"] if replayed_job else "queued",

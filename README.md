@@ -228,6 +228,15 @@ If a student needs to rewrite the output before studying, the feature is incompl
 
 ---
 
+## Execution status and near-term priorities
+
+- Launch checklist (source of truth): `docs/mvp-launch-checklist.md`
+- 2-week acceleration plan: `docs/two-week-36-to-60-plan.md`
+- Immediate "what next" actions: `docs/next-steps.md`
+- SLO definitions for launch operations: `docs/runbooks/observability-slos.md`
+
+---
+
 ## Project status
 
 PLC is under active development.

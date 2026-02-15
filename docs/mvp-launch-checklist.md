@@ -65,8 +65,8 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 5) Observability & SLOs
 
-- [ ] Define SLOs (ingest success, generation success, p95 processing time)
-- [ ] Emit metrics for queue depth, job latency, failure rate, retries
+- [x] Define SLOs (ingest success, generation success, p95 processing time)
+- [x] Emit metrics for queue depth, job latency, failure rate, retries
 - [ ] Add alerting for sustained failure spikes and queue backlogs
 - [ ] Add dashboards for per-stage pipeline timings
 
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **13**
-- Items remaining: **23**
-- Completion: **36%**
+- Items marked complete: **15**
+- Items remaining: **21**
+- Completion: **42%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -162,6 +162,8 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Thread continuity scoring checks → `pipeline/thread_continuity.py`, `pipeline/tests/test_thread_continuity_scoring.py`
 - Export quality threshold (`PLC_EXPORT_MIN_SUMMARY_SECTIONS`) → `backend/jobs.py`, `backend/tests/test_jobs.py`
 - Incident response runbook (queue/OpenAI/storage) → `docs/runbooks/incident-response.md`
+- SLO definitions (ingest success, generation success, p95 processing time) → `docs/runbooks/observability-slos.md`
+- Metrics endpoints + instrumentation (JSON + Prometheus for queue depth, latency/failures/retries) → `backend/observability.py`, `backend/app.py`, `backend/jobs.py`, `backend/tests/test_observability_metrics.py`
 
 ## Progress notes
 
@@ -178,5 +180,5 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 ### Still open before launch
 - Complete backup/restore and rollback drills in staging (runbooks are documented; drill evidence still needed).
 - Mobile UX completion for a no-terminal first-time flow.
-- SLO definitions, metrics, dashboards, and alerting.
+- Dashboards and alerting.
 - Security/compliance baseline work and final launch gate rehearsal.
