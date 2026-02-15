@@ -716,6 +716,31 @@ def ingest_lecture(
             "updated_at": _iso_now(),
         }
     )
+
+    transcription_job: Optional[dict] = None
+    if auto_transcribe:
+        provider = transcribe_provider or os.getenv("PLC_INGEST_TRANSCRIBE_PROVIDER", "google")
+        model = transcribe_model or os.getenv("PLC_INGEST_TRANSCRIBE_MODEL", "base")
+        language_code = transcribe_language_code or os.getenv("PLC_STT_LANGUAGE")
+
+        job_id = enqueue_job(
+            "transcription",
+            lecture_id,
+            run_transcription_job,
+            lecture_id,
+            model,
+            provider,
+            language_code,
+        )
+        job = db.fetch_job(job_id)
+        transcription_job = {
+            "jobId": job_id,
+            "status": job["status"] if job else "queued",
+            "jobType": job.get("job_type") if job else "transcription",
+            "provider": provider,
+            "model": model,
+        }
+
     response_payload = {
         "lectureId": lecture_id,
         "metadataPath": str(metadata_path),
