@@ -103,6 +103,8 @@ class GenerateRequest(BaseModel):
     course_id: Optional[str] = None
     preset_id: Optional[str] = None
     openai_model: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_model: Optional[str] = None
 
 
 def _iso_now() -> str:
@@ -596,6 +598,7 @@ def ingest_lecture(
     course_title: Optional[str] = Form(None),
     duration_sec: int = Form(0),
     source_type: str = Form("upload"),
+    lecture_mode: Optional[str] = Form(None),
     audio: UploadFile = File(...),
 ) -> dict:
     _enforce_write_auth(request)
@@ -607,6 +610,7 @@ def ingest_lecture(
         "title": title,
         "duration_sec": duration_sec,
         "source_type": source_type,
+        "lecture_mode": lecture_mode or "",
         "audio_filename": audio.filename or "",
     }
     replay = _replay_or_none(request, "lectures.ingest", idempotency_payload)
@@ -629,6 +633,7 @@ def ingest_lecture(
         "courseId": course_id,
         "presetId": preset_id,
         "title": title,
+        "lectureMode": lecture_mode,
         "recordedAt": _iso_now(),
         "durationSec": duration_sec,
         "audioSource": {
@@ -671,6 +676,7 @@ def ingest_lecture(
         "lectureId": lecture_id,
         "metadataPath": str(metadata_path),
         "audioPath": stored_audio,
+        "lectureMode": lecture_mode,
     }
     _remember_response(request, "lectures.ingest", idempotency_payload, response_payload)
     return response_payload
@@ -946,10 +952,21 @@ def list_lectures(
 
 
 @app.post("/lectures/{lecture_id}/transcribe")
-def transcribe_lecture(request: Request, lecture_id: str, model: str = "base") -> dict:
+def transcribe_lecture(
+    request: Request,
+    lecture_id: str,
+    model: str = "base",
+    provider: str = "whisper",
+    language_code: Optional[str] = None,
+) -> dict:
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)
-    idempotency_payload = {"lecture_id": lecture_id, "model": model}
+    idempotency_payload = {
+        "lecture_id": lecture_id,
+        "model": model,
+        "provider": provider,
+        "language_code": language_code,
+    }
     replay = _replay_or_none(request, "lectures.transcribe", idempotency_payload)
     if replay is not None:
         return replay
@@ -975,6 +992,8 @@ def transcribe_lecture(request: Request, lecture_id: str, model: str = "base") -
         run_transcription_job,
         lecture_id,
         model,
+        provider,
+        language_code,
     )
     job = db.fetch_job(job_id)
     response_payload = {
@@ -995,6 +1014,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         "course_id": payload.course_id,
         "preset_id": payload.preset_id,
         "openai_model": payload.openai_model,
+        "llm_provider": payload.llm_provider,
+        "llm_model": payload.llm_model,
     }
     replay = _replay_or_none(request, "lectures.generate", idempotency_payload)
     if replay is not None:
@@ -1024,7 +1045,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         lecture_id,
         course_id,
         preset_id,
-        payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "openai"),
+        payload.llm_model or payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
     )
     job = db.fetch_job(job_id)
     response_payload = {

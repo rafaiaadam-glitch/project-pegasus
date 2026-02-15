@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -20,11 +21,7 @@ def _require_env(name: str) -> str:
 
 
 def _request_openai(payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any]:
-    from pipeline.retry_utils import (
-        with_retry,
-        retry_config_from_env,
-        NonRetryableError,
-    )
+    from pipeline.retry_utils import NonRetryableError, retry_config_from_env, with_retry
 
     def make_request() -> Dict[str, Any]:
         api_key = _require_env("OPENAI_API_KEY")
@@ -44,18 +41,61 @@ def _request_openai(payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any
     config = retry_config_from_env()
 
     try:
-        return with_retry(make_request, config=config,
-                         operation_name="OpenAI API request")
+        return with_retry(make_request, config=config, operation_name="OpenAI API request")
     except NonRetryableError as e:
         raise RuntimeError(f"OpenAI API request failed: {e}") from e
 
 
-def _extract_text(response: Dict[str, Any]) -> str:
+def _request_gemini(prompt: str, user_content: str, model: str, timeout: int = 90) -> Dict[str, Any]:
+    from pipeline.retry_utils import NonRetryableError, retry_config_from_env, with_retry
+
+    def make_request() -> Dict[str, Any]:
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise RuntimeError("Missing required environment variable: GEMINI_API_KEY or GOOGLE_API_KEY")
+
+        endpoint = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
+        )
+        payload = {
+            "system_instruction": {"parts": [{"text": prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_content}]}],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    config = retry_config_from_env()
+
+    try:
+        return with_retry(make_request, config=config, operation_name="Gemini API request")
+    except NonRetryableError as e:
+        raise RuntimeError(f"Gemini API request failed: {e}") from e
+
+
+def _extract_openai_text(response: Dict[str, Any]) -> str:
     for output in response.get("output", []):
         for content in output.get("content", []):
             if "text" in content:
                 return content["text"]
     raise ValueError("OpenAI response missing text output.")
+
+
+def _extract_gemini_text(response: Dict[str, Any]) -> str:
+    for candidate in response.get("candidates", []):
+        content = candidate.get("content", {})
+        for part in content.get("parts", []):
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                return text
+    raise ValueError("Gemini response missing text output.")
 
 
 def _base_artifact(
@@ -84,6 +124,7 @@ def generate_artifacts_with_llm(
     generated_at: str | None = None,
     model: str = "gpt-4o-mini",
     thread_refs: List[str] | None = None,
+    provider: str = "openai",
 ) -> Dict[str, Dict[str, Any]]:
     if generated_at is None:
         generated_at = _iso_now()
@@ -100,20 +141,26 @@ def generate_artifacts_with_llm(
         "Use the transcript below to generate content.\n"
     )
 
-    payload = {
-        "model": model,
-        "input": [
-            {"role": "system", "content": prompt},
-            {
-                "role": "user",
-                "content": f"Preset: {preset_id}\nTranscript:\n{transcript}",
-            },
-        ],
-        "response_format": {"type": "json_object"},
-    }
+    user_content = f"Preset: {preset_id}\nTranscript:\n{transcript}"
+    provider_key = provider.strip().lower()
 
-    response = _request_openai(payload)
-    raw_text = _extract_text(response)
+    if provider_key == "openai":
+        payload = {
+            "model": model,
+            "input": [
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_content},
+            ],
+            "response_format": {"type": "json_object"},
+        }
+        response = _request_openai(payload)
+        raw_text = _extract_openai_text(response)
+    elif provider_key in {"gemini", "vertex"}:
+        response = _request_gemini(prompt=prompt, user_content=user_content, model=model)
+        raw_text = _extract_gemini_text(response)
+    else:
+        raise ValueError(f"Unsupported LLM provider: {provider}")
+
     data = json.loads(raw_text)
 
     mapping = {
@@ -140,7 +187,6 @@ def generate_artifacts_with_llm(
         )
         base.update(artifact)
         base["artifactType"] = artifact_type
-        # Add threadRefs if provided
         if thread_refs:
             base["threadRefs"] = thread_refs
         artifacts[artifact_type] = base

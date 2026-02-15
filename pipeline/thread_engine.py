@@ -5,7 +5,7 @@ Detects concepts in a lecture transcript and tracks how they evolve across
 lectures within a course.
 
 Detection strategy:
-  - If OPENAI_API_KEY is set: uses OpenAI to identify real academic concepts
+  - If LLM credentials are set: uses configured provider to identify concepts
     and classify change types (refinement / contradiction / complexity).
   - Fallback: lightweight multi-word term extraction (no LLM required).
 
@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import urllib.parse
 import urllib.request
 
 
@@ -151,7 +152,7 @@ class ThreadStore:
 
 
 # ---------------------------------------------------------------------------
-# OpenAI concept detection
+# LLM-backed concept detection
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = """\
@@ -269,6 +270,63 @@ def _call_openai(
         raise RuntimeError(f"OpenAI thread detection failed: {e}") from e
 
 
+
+
+def _call_gemini(
+    transcript: str,
+    existing_threads: List[Dict[str, Any]],
+    model: str,
+    timeout: int = 90,
+) -> Dict[str, Any]:
+    """Call Gemini with retry logic and return parsed JSON response."""
+    from pipeline.retry_utils import NonRetryableError, retry_config_from_env, with_retry
+
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY is not set.")
+
+    existing_summary = [{"title": t["title"], "summary": t["summary"]} for t in existing_threads]
+    user_content = (
+        f"existing_threads: {json.dumps(existing_summary)}\n\n"
+        f"transcript:\n{transcript}"
+    )
+
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
+    )
+
+    payload = {
+        "system_instruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": user_content}]}],
+        "generationConfig": {"responseMimeType": "application/json"},
+    }
+
+    def make_request() -> Dict[str, Any]:
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+
+        for candidate in raw.get("candidates", []):
+            content = candidate.get("content", {})
+            for part in content.get("parts", []):
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    return json.loads(text)
+
+        raise ValueError("Gemini response did not contain extractable JSON text.")
+
+    config = retry_config_from_env()
+
+    try:
+        return with_retry(make_request, config=config, operation_name="Gemini thread detection")
+    except NonRetryableError as e:
+        raise RuntimeError(f"Gemini thread detection failed: {e}") from e
 def _safe_change_type(value: Any) -> str:
     if isinstance(value, str) and value in VALID_CHANGE_TYPES:
         return value
@@ -288,7 +346,7 @@ def _clamp_complexity(value: Any, current: int = 1) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Core: build thread / occurrence / update records from OpenAI output
+# Core: build thread / occurrence / update records from LLM output
 # ---------------------------------------------------------------------------
 
 def _process_llm_output(
@@ -514,6 +572,8 @@ def generate_thread_records(
     generated_at: Optional[str],
     storage_dir: Path,
     openai_model: str = "gpt-4o-mini",
+    llm_provider: str = "openai",
+    llm_model: str | None = None,
 ) -> Tuple[
     List[Dict[str, Any]],
     List[Dict[str, Any]],
@@ -523,8 +583,8 @@ def generate_thread_records(
     Analyse a transcript and return:
       (threads, thread_occurrences, thread_updates)
 
-    Uses OpenAI if OPENAI_API_KEY is set, otherwise falls back to keyword
-    extraction. All returned records conform to the project schemas.
+    Uses configured LLM provider if credentials are available, otherwise falls
+    back to keyword extraction. All returned records conform to project schemas.
     """
     if generated_at is None:
         generated_at = _iso_now()
@@ -533,20 +593,27 @@ def generate_thread_records(
     existing = store.load()
     existing_list = list(existing.values())
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    provider_key = (llm_provider or "openai").strip().lower()
+    model_name = llm_model or openai_model
+    has_openai_key = bool(os.getenv("OPENAI_API_KEY"))
+    has_gemini_key = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
 
-    if api_key:
+    should_try_llm = (provider_key == "openai" and has_openai_key) or (
+        provider_key in {"gemini", "vertex"} and has_gemini_key
+    )
+
+    if should_try_llm:
         try:
-            llm_result = _call_openai(transcript, existing_list, openai_model)
+            if provider_key == "openai":
+                llm_result = _call_openai(transcript, existing_list, model_name)
+            else:
+                llm_result = _call_gemini(transcript, existing_list, model_name)
             threads, occurrences, updates = _process_llm_output(
                 llm_result, existing, course_id, lecture_id, generated_at
             )
         except Exception as exc:
-            # Fail loudly as per engineering principles — do not silently accept
-            # garbage, but do fall back gracefully with a clear warning so the
-            # pipeline can continue producing other artifacts.
             print(
-                f"[ThreadEngine] WARNING: OpenAI call failed ({exc}). "
+                f"[ThreadEngine] WARNING: {provider_key} call failed ({exc}). "
                 "Falling back to keyword detection."
             )
             threads, occurrences, updates = _process_fallback(
