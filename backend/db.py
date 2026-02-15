@@ -535,6 +535,84 @@ class Database:
                 return cur.rowcount
 
 
+
+    def create_deletion_audit_event(self, payload: Dict[str, Any]) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into deletion_audit_events (
+                        id, entity_type, entity_id, actor, request_id,
+                        purge_storage, result, created_at
+                    ) values (
+                        %(id)s, %(entity_type)s, %(entity_id)s, %(actor)s, %(request_id)s,
+                        %(purge_storage)s, %(result)s, %(created_at)s
+                    );
+                    """,
+                    {
+                        **payload,
+                        "result": Json(payload.get("result") or {}),
+                    },
+                )
+
+    def fetch_deletion_audit_events(
+        self,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        clauses = []
+        params: Dict[str, Any] = {}
+        if entity_type:
+            clauses.append("entity_type = %(entity_type)s")
+            params["entity_type"] = entity_type
+        if entity_id:
+            clauses.append("entity_id = %(entity_id)s")
+            params["entity_id"] = entity_id
+
+        where_clause = f" where {' and '.join(clauses)}" if clauses else ""
+        limit_clause = ""
+        if limit is not None:
+            limit_clause += " limit %(limit)s"
+            params["limit"] = limit
+        if offset is not None:
+            limit_clause += " offset %(offset)s"
+            params["offset"] = offset
+
+        with self.connect() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(
+                    f"""
+                    select * from deletion_audit_events
+                    {where_clause}
+                    order by created_at desc{limit_clause};
+                    """,
+                    params,
+                )
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+
+    def count_deletion_audit_events(
+        self,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+    ) -> int:
+        clauses = []
+        params: Dict[str, Any] = {}
+        if entity_type:
+            clauses.append("entity_type = %(entity_type)s")
+            params["entity_type"] = entity_type
+        if entity_id:
+            clauses.append("entity_id = %(entity_id)s")
+            params["entity_id"] = entity_id
+        where_clause = f" where {' and '.join(clauses)}" if clauses else ""
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"select count(*) from deletion_audit_events{where_clause};", params)
+                row = cur.fetchone()
+                return int(row[0]) if row else 0
+
 def get_database() -> Database:
     dsn = os.getenv("DATABASE_URL")
     if not dsn:

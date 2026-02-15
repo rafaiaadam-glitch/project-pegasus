@@ -4,22 +4,10 @@ from pathlib import Path
 import sys
 from typing import Optional
 
-import pytest
+from starlette.requests import Request
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.append(str(ROOT))
-
-pytest.importorskip("fastapi")
-try:
-    from fastapi.testclient import TestClient
-except RuntimeError as exc:  # pragma: no cover
-    if "httpx" in str(exc):
-        TestClient = None
-    else:
-        raise
-
-if TestClient is None:
-    pytestmark = pytest.mark.skip(reason="fastapi.testclient requires httpx")
 
 import backend.app as app_module
 
@@ -31,6 +19,7 @@ class FakeDB:
         self.artifacts: list[dict] = []
         self.exports: list[dict] = []
         self.threads: dict[str, dict] = {}
+        self.deletion_audit_events: list[dict] = []
 
     def fetch_course(self, course_id: str):
         return self.courses.get(course_id)
@@ -96,6 +85,63 @@ class FakeDB:
     def delete_course(self, course_id: str) -> int:
         return 1 if self.courses.pop(course_id, None) else 0
 
+    def create_deletion_audit_event(self, payload: dict) -> None:
+        self.deletion_audit_events.append(payload)
+
+    def fetch_deletion_audit_events(
+        self,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ):
+        rows = list(self.deletion_audit_events)
+        if entity_type:
+            rows = [row for row in rows if row.get("entity_type") == entity_type]
+        if entity_id:
+            rows = [row for row in rows if row.get("entity_id") == entity_id]
+        if offset:
+            rows = rows[offset:]
+        if limit is not None:
+            rows = rows[:limit]
+        return rows
+
+    def count_deletion_audit_events(
+        self,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+    ) -> int:
+        return len(
+            self.fetch_deletion_audit_events(
+                entity_type=entity_type,
+                entity_id=entity_id,
+            )
+        )
+
+
+def _request(headers: Optional[dict[str, str]] = None) -> Request:
+    header_items = []
+    for key, value in (headers or {}).items():
+        header_items.append((key.lower().encode("latin-1"), value.encode("latin-1")))
+
+    request = Request(
+        {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/",
+            "raw_path": b"/",
+            "query_string": b"",
+            "headers": header_items,
+            "client": ("127.0.0.1", 9999),
+            "server": ("test", 80),
+        }
+    )
+    request.state.request_id = "req-123"
+    return request
+
 
 def test_delete_single_lecture_removes_records_and_updates_threads(monkeypatch, tmp_path):
     fake_db = FakeDB()
@@ -125,17 +171,18 @@ def test_delete_single_lecture_removes_records_and_updates_threads(monkeypatch, 
     monkeypatch.setattr(app_module, "STORAGE_DIR", tmp_path)
     monkeypatch.setattr(app_module, "delete_storage_path", lambda _path: True)
 
-    client = TestClient(app_module.app)
-    response = client.delete("/lectures/lecture-1")
+    payload = app_module.delete_lecture("lecture-1", _request(), purge_storage=True)
 
-    assert response.status_code == 200
-    payload = response.json()
     assert payload["deleted"]["lectures"] == 1
     assert payload["deleted"]["artifacts"] == 1
     assert payload["deleted"]["exports"] == 1
     assert payload["deleted"]["metadataRemoved"] is True
+    assert payload["auditEventId"]
     assert "lecture-1" not in fake_db.lectures
     assert fake_db.threads["thread-1"]["lecture_refs"] == ["lecture-2"]
+    assert len(fake_db.deletion_audit_events) == 1
+    assert fake_db.deletion_audit_events[0]["entity_type"] == "lecture"
+    assert "auditEventId" not in fake_db.deletion_audit_events[0]["result"]
 
 
 def test_delete_course_removes_course_and_all_lectures(monkeypatch, tmp_path):
@@ -162,13 +209,75 @@ def test_delete_course_removes_course_and_all_lectures(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "STORAGE_DIR", tmp_path)
     monkeypatch.setattr(app_module, "delete_storage_path", lambda _path: True)
 
-    client = TestClient(app_module.app)
-    response = client.delete("/courses/course-1")
+    payload = app_module.delete_course("course-1", _request(), purge_storage=True)
 
-    assert response.status_code == 200
-    payload = response.json()
     assert payload["courseDeleted"] is True
     assert payload["lecturesDeleted"] == 2
+    assert payload["auditEventId"]
     assert fake_db.courses == {}
     assert fake_db.lectures == {}
     assert fake_db.threads == {}
+    assert len(fake_db.deletion_audit_events) == 3
+    assert fake_db.deletion_audit_events[-1]["entity_type"] == "course"
+
+
+def test_list_deletion_audit_events_filters_by_entity(monkeypatch):
+    fake_db = FakeDB()
+    fake_db.deletion_audit_events = [
+        {"id": "e1", "entity_type": "lecture", "entity_id": "l1", "created_at": "2026-01-01T00:00:00Z"},
+        {"id": "e2", "entity_type": "course", "entity_id": "c1", "created_at": "2026-01-01T00:00:01Z"},
+    ]
+
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+
+    payload = app_module.list_deletion_audit_events(
+        _request(),
+        entity_type="lecture",
+        entity_id=None,
+        limit=100,
+        offset=0,
+    )
+
+    assert payload["pagination"]["total"] == 1
+    assert len(payload["events"]) == 1
+    assert payload["events"][0]["id"] == "e1"
+
+
+def test_list_deletion_audit_events_rejects_unknown_entity_type(monkeypatch):
+    fake_db = FakeDB()
+    monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
+
+    try:
+        app_module.list_deletion_audit_events(
+            _request(),
+            entity_type="artifact",
+            entity_id=None,
+            limit=100,
+            offset=0,
+        )
+    except app_module.HTTPException as exc:
+        assert exc.status_code == 400
+    else:  # pragma: no cover
+        raise AssertionError("Expected HTTPException for invalid entity_type")
+
+
+def test_deletion_audit_summary_strips_runtime_fields():
+    lecture_result = {
+        "lectureId": "l-1",
+        "deleted": {
+            "artifacts": 2,
+            "exports": 1,
+            "jobs": 3,
+            "lectures": 1,
+            "threadsUpdated": 0,
+            "storagePaths": 4,
+            "metadataRemoved": True,
+        },
+        "auditEventId": "runtime-only",
+    }
+
+    summary = app_module._deletion_audit_result_summary("lecture", lecture_result)
+
+    assert summary["lectureId"] == "l-1"
+    assert summary["deleted"]["artifacts"] == 2
+    assert "auditEventId" not in summary
