@@ -966,8 +966,8 @@ def list_lectures(
 def transcribe_lecture(
     request: Request,
     lecture_id: str,
-    model: str = "base",
-    provider: str = "whisper",
+    model: str = "latest_long",  # Google STT model
+    provider: str = "google",  # Default to Google Speech-to-Text
     language_code: Optional[str] = None,
 ) -> dict:
     _enforce_write_auth(request)

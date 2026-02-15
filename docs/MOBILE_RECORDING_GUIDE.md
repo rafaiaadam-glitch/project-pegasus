@@ -10,24 +10,28 @@ The Pegasus mobile app (iOS/Android) uses **Expo's HIGH_QUALITY preset**, which 
 
 ### Transcription Provider Compatibility
 
-#### ✅ **Whisper (Recommended for Mobile)**
-- **Supports:** M4A, MP3, WAV, FLAC, and more
-- **Accuracy:** Excellent for mobile recordings
+#### ✅ **Google Speech-to-Text (Default)**
+- **Supports:** MP3, FLAC, OGG_OPUS, WEBM_OPUS, LINEAR16 (WAV)
+- **M4A Support:** ✅ **Automatic conversion** - Backend converts M4A → MP3
+- **Accuracy:** Excellent, optimized for Google Cloud
 - **Setup:** Default transcription provider
 - **Usage:** No special configuration needed
 
-**Use Whisper for all mobile recordings:**
+**Use Google STT for all recordings (including mobile M4A):**
 ```bash
 POST /lectures/{lecture_id}/transcribe
-# provider defaults to "whisper" - M4A files work perfectly
+# provider defaults to "google" - M4A files automatically converted to MP3
 ```
 
-#### ⚠️ **Google Speech-to-Text (Limited Mobile Support)**
-- **Supports:** MP3, FLAC, OGG_OPUS, WEBM_OPUS, LINEAR16 (WAV)
-- **Does NOT support:** M4A (AAC format from mobile)
-- **Best for:** Server-uploaded audio in supported formats
+#### 🔄 **Whisper (Alternative)**
+- **Supports:** M4A, MP3, WAV, FLAC, and more (native M4A support)
+- **Accuracy:** Excellent for mobile recordings
+- **Best for:** Offline/local transcription
 
-**If using Google STT, convert M4A files first or use supported formats.**
+**To use Whisper instead:**
+```bash
+POST /lectures/{lecture_id}/transcribe?provider=whisper
+```
 
 ---
 
@@ -107,20 +111,21 @@ Automatically requested via app.json permissions. If denied:
 
 1. **User records audio** → M4A file created
 2. **Upload to backend** → `POST /lectures/ingest`
-3. **Automatic transcription** → Uses Whisper by default (supports M4A)
+3. **Automatic transcription** → Uses Google Speech-to-Text by default
+   - M4A files automatically converted to MP3 using ffmpeg
 4. **Artifact generation** → Uses Gemini (default)
 
 **Default configuration (works perfectly with mobile):**
 ```bash
-# No special config needed - Whisper handles M4A automatically
+# No special config needed - Google STT handles M4A via auto-conversion
 POST /lectures/{lecture_id}/transcribe
-# Provider defaults to "whisper"
+# Provider defaults to "google", M4A → MP3 conversion is automatic
 ```
 
-**To use Google Speech-to-Text (requires supported format):**
+**To use Whisper instead (native M4A support, no conversion):**
 ```bash
-# Only use if audio is in MP3, FLAC, OGG, WEBM, or WAV format
-POST /lectures/{lecture_id}/transcribe?provider=google
+# Whisper supports M4A natively, no conversion needed
+POST /lectures/{lecture_id}/transcribe?provider=whisper
 ```
 
 ---
@@ -157,16 +162,24 @@ POST /lectures/{lecture_id}/transcribe?provider=google
    - Default limit: 200 MB
    - Check: `PLC_MAX_AUDIO_UPLOAD_MB` env var
 
-### Transcription Fails with Google STT
+### Transcription Fails
 
-**Most common cause:** M4A format not supported
+**Possible causes:**
 
-**Solution:** Use Whisper instead:
+1. **ffmpeg not installed** (for M4A conversion)
+   - Check Docker container has ffmpeg
+   - Should be in Dockerfile: `apt-get install ffmpeg`
+
+2. **Audio file corrupted**
+   - Verify file size > 0
+   - Check upload completed successfully
+
+3. **Google STT quota exceeded**
+   - Check GCP Console → Speech-to-Text → Quotas
+   - Default: 1,000 minutes/month free tier
+
+**Alternative:** Use Whisper (no conversion needed):
 ```bash
-# Let it default to Whisper
-POST /lectures/{lecture_id}/transcribe
-
-# Or explicitly specify
 POST /lectures/{lecture_id}/transcribe?provider=whisper
 ```
 
@@ -224,8 +237,11 @@ PLC_LLM_PROVIDER=gemini  # Fast and cost-effective
 PLC_MAX_AUDIO_UPLOAD_MB=200  # Allow large lectures
 PLC_INLINE_JOBS=1  # Process immediately (or use Redis for queue)
 
-# Transcription: Whisper (default) - supports M4A from mobile
-# No need to set provider - defaults to Whisper
+# Transcription: Google Speech-to-Text (default)
+# M4A files from mobile are automatically converted to MP3
+# Requires ffmpeg in Docker container (already included)
+PLC_GCP_STT_MODEL=latest_long  # High accuracy model
+PLC_STT_LANGUAGE=en-US  # Default language
 
 # Storage: Use Cloud Storage for production
 STORAGE_MODE=gcs
@@ -233,19 +249,29 @@ GCS_BUCKET=your-bucket-name
 GCS_PREFIX=pegasus
 ```
 
-**Do NOT set these for mobile apps:**
+**Alternative: Use Whisper for local/offline transcription:**
 ```bash
-# Don't force Google STT - it won't work with M4A files
-❌ PLC_DEFAULT_STT_PROVIDER=google  # Bad for mobile!
+# Set provider=whisper in API calls (not as env var)
+# Whisper has native M4A support, no conversion needed
 ```
 
 ---
 
 ## Summary
 
-✅ **Use Whisper for mobile recordings** (M4A format)
+✅ **Use Google Speech-to-Text for transcription** (M4A auto-converted to MP3)
 ✅ **Use Gemini for artifact generation** (fast, cheap, accurate)
 ✅ **Production URL in .env** for builds
+✅ **ffmpeg in Docker** for M4A conversion
 ✅ **Test on real devices** before launch
 
 Your mobile app is production-ready with this configuration! 🚀
+
+### Key Technical Details
+
+- **Mobile recordings:** M4A (AAC) format
+- **Google STT:** Requires MP3/FLAC/WAV/OGG
+- **Auto-conversion:** M4A → MP3 (ffmpeg)
+- **Fallback:** Whisper supports M4A natively (no conversion)
+- **Default:** Google Speech-to-Text for cloud accuracy
+- **Cost:** ~$0.54/hour (Google STT enhanced model)
