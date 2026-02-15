@@ -108,52 +108,150 @@ def test_transcription_uses_metadata_when_lecture_missing(monkeypatch, tmp_path)
 
 
 def test_google_transcription_converts_input_to_wav(monkeypatch, tmp_path):
+
+
     source_audio = tmp_path / "lecture.m4a"
+
+
     source_audio.write_bytes(b"m4a-audio")
+
+
     converted_audio = tmp_path / "lecture.wav"
+
+
     converted_audio.write_bytes(b"wav-audio")
 
+
+
+
+
     class FakeAlternative:
+
+
         def __init__(self, transcript: str):
+
+
             self.transcript = transcript
 
+
+
+
+
     class FakeResult:
+
+
         def __init__(self, transcript: str):
+
+
             self.alternatives = [FakeAlternative(transcript)]
 
+
+
+
+
     class FakeResponse:
+
+
         def __init__(self):
+
+
             self.results = [FakeResult("Hello world")]
 
+
+
+
+
     class FakeSpeechClient:
+
+
         def recognize(self, config, audio):
+
+
             assert audio.content == b"wav-audio"
+
+
             assert config.model == "latest_long"
+
+
             return FakeResponse()
 
+
+
+
+
     class FakeRecognitionAudio:
+
+
         def __init__(self, content):
+
+
             self.content = content
 
+
+
+
+
     class FakeRecognitionConfig:
-        def __init__(self, language_code, enable_automatic_punctuation, model):
+
+
+        def __init__(self, language_code, enable_automatic_punctuation, model, encoding, sample_rate_hertz):
+
+
             self.language_code = language_code
+
+
             self.enable_automatic_punctuation = enable_automatic_punctuation
+
+
             self.model = model
 
+
+            self.encoding = encoding
+
+
+            self.sample_rate_hertz = sample_rate_hertz
+
+
+
+
+
+    FakeRecognitionConfig.AudioEncoding = types.SimpleNamespace(LINEAR16=1)
+
+
     fake_speech = types.SimpleNamespace(
+
+
         SpeechClient=FakeSpeechClient,
+
+
         RecognitionAudio=FakeRecognitionAudio,
+
+
         RecognitionConfig=FakeRecognitionConfig,
+
+
     )
 
+
+
+
+
     monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
+
+
     monkeypatch.setitem(sys.modules, "google.cloud", types.ModuleType("google.cloud"))
+
+
     monkeypatch.setitem(sys.modules, "google.cloud.speech_v1", fake_speech)
+
+
     monkeypatch.setattr(jobs_module, "_convert_to_wav", lambda _path: converted_audio)
 
-    result = jobs_module._transcribe_with_google_speech(source_audio, "en-US")
 
+
+
+
+    result = jobs_module._transcribe_with_google_speech(source_audio, "en-US")
     assert result["text"] == "Hello world"
     assert result["segments"][0]["text"] == "Hello world"
     assert result["engine"]["provider"] == "google_speech"

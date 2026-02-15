@@ -27,6 +27,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       PLC_STORAGE_DIR: /data
       STORAGE_MODE: local
+      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
+      GEMINI_API_KEY: AIzaSyDF2x4zRg_JjTBIanZaEKbOm-k56pwBG6Q
+      PLC_LLM_MODEL: gemini-2.0-flash
     ports:
       - "8000:8000"
     depends_on:
@@ -34,6 +37,7 @@ services:
       - redis
     volumes:
       - storage:/data
+      - /Users/rafaiaadam/.config/gcloud/application_default_credentials.json:/app/gcp-credentials.json:ro
 
   worker:
     build:
@@ -45,11 +49,15 @@ services:
       REDIS_URL: redis://redis:6379/0
       PLC_STORAGE_DIR: /data
       STORAGE_MODE: local
+      GOOGLE_APPLICATION_CREDENTIALS: /app/gcp-credentials.json
+      GEMINI_API_KEY: AIzaSyDF2x4zRg_JjTBIanZaEKbOm-k56pwBG6Q
+      PLC_LLM_MODEL: gemini-2.0-flash
     depends_on:
       - postgres
       - redis
     volumes:
       - storage:/data
+      - /Users/rafaiaadam/.config/gcloud/application_default_credentials.json:/app/gcp-credentials.json:ro
 
 volumes:
   pgdata:

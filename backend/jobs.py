@@ -303,8 +303,13 @@ def _transcribe_with_google_speech(audio_path: Path, language_code: str | None) 
     stt_input_path = _convert_to_wav(audio_path)
 
     client = speech.SpeechClient()
-    audio = speech.RecognitionAudio(content=stt_input_path.read_bytes())
+    with open(stt_input_path, "rb") as audio_file:
+        content = audio_file.read()
+
+    audio = speech.RecognitionAudio(content=content)
     config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=16000,
         language_code=language_code or os.getenv("PLC_STT_LANGUAGE", "en-US"),
         enable_automatic_punctuation=True,
         model=os.getenv("PLC_GCP_STT_MODEL", "latest_long"),

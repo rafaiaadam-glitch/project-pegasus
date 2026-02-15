@@ -184,13 +184,24 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       }
 
       console.log('[Recording] Setting audio mode...');
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        playThroughEarpieceAndroid: false,
-        staysActiveInBackground: false,
-      });
+      try {
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false,
+          staysActiveInBackground: false,
+        });
+        console.log('[Recording] Audio mode set successfully');
+      } catch (audioModeError) {
+        console.error('[Recording] Failed to set audio mode:', audioModeError);
+        // Try a simpler audio mode configuration
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+        console.log('[Recording] Fallback audio mode set');
+      }
 
       console.log('[Recording] Creating Recording object...');
       console.log('[Recording] Using HIGH_QUALITY preset');
@@ -352,6 +363,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       formData.append('title', title);
       formData.append('preset_id', selectedPreset);
       formData.append('lecture_mode', lectureMode);
+      formData.append('auto_transcribe', 'true');
 
       const result = await api.ingestLecture(formData);
 
@@ -429,7 +441,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         <>
           <Text style={styles.sectionTitle}>Record Audio</Text>
           {hasMicPermission === false && (
-            <Text style={styles.permissionHint}>Microphone permission is required to record audio.</Text>
+            <Text style={styles.hint}>Microphone permission is required to record audio.</Text>
           )}
           <TouchableOpacity style={styles.recordStartButton} onPress={startRecording}>
             <View style={styles.recordIconLarge}>

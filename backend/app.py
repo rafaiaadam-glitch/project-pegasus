@@ -748,6 +748,10 @@ def ingest_lecture(
     lecture_mode: Optional[str] = Form(None),
     audio: Optional[UploadFile] = File(None),
     file: Optional[UploadFile] = File(None),
+    auto_transcribe: bool = Form(True),
+    transcribe_provider: Optional[str] = Form(None),
+    transcribe_model: Optional[str] = Form(None),
+    transcribe_language_code: Optional[str] = Form(None),
 ) -> dict:
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)

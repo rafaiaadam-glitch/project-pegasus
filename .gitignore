@@ -70,3 +70,4 @@ playwright-report/
 backend/node_modules/
 mobile/.expo/
 .expo/
+secrets/
