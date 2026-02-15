@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -390,10 +391,98 @@ def _lecture_links(lecture_id: str) -> dict[str, str]:
     }
 
 
+def _request_actor(request: Request) -> str:
+    actor = request.headers.get("x-actor-id", "").strip()
+    if actor:
+        return actor
+
+    authorization = request.headers.get("authorization", "").strip()
+    if authorization.lower().startswith("bearer "):
+        return "bearer-token"
+
+    return "anonymous"
 
 
-def _delete_lecture_data(lecture_id: str, *, purge_storage: bool) -> dict:
-    db = get_database()
+def _deletion_audit_result_summary(entity_type: str, result: dict) -> dict:
+    if entity_type == "lecture":
+        deleted = result.get("deleted") if isinstance(result.get("deleted"), dict) else {}
+        return {
+            "lectureId": result.get("lectureId"),
+            "deleted": {
+                "artifacts": int(deleted.get("artifacts") or 0),
+                "exports": int(deleted.get("exports") or 0),
+                "jobs": int(deleted.get("jobs") or 0),
+                "lectures": int(deleted.get("lectures") or 0),
+                "threadsUpdated": int(deleted.get("threadsUpdated") or 0),
+                "storagePaths": int(deleted.get("storagePaths") or 0),
+                "metadataRemoved": bool(deleted.get("metadataRemoved")),
+            },
+        }
+
+    lecture_deletions = []
+    for lecture in result.get("lectureDeletions") or []:
+        if not isinstance(lecture, dict):
+            continue
+        lecture_deleted = lecture.get("deleted") if isinstance(lecture.get("deleted"), dict) else {}
+        lecture_deletions.append(
+            {
+                "lectureId": lecture.get("lectureId"),
+                "deleted": {
+                    "lectures": int(lecture_deleted.get("lectures") or 0),
+                    "artifacts": int(lecture_deleted.get("artifacts") or 0),
+                    "exports": int(lecture_deleted.get("exports") or 0),
+                    "jobs": int(lecture_deleted.get("jobs") or 0),
+                },
+            }
+        )
+
+    return {
+        "courseId": result.get("courseId"),
+        "courseDeleted": bool(result.get("courseDeleted")),
+        "lecturesDeleted": int(result.get("lecturesDeleted") or 0),
+        "lectureDeletions": lecture_deletions,
+    }
+
+
+def _record_deletion_audit_event(
+    db,
+    *,
+    request: Request,
+    entity_type: str,
+    entity_id: str,
+    purge_storage: bool,
+    result: dict,
+) -> Optional[str]:
+    create_event = getattr(db, "create_deletion_audit_event", None)
+    if not callable(create_event):
+        return None
+
+    event_id = str(uuid4())
+    create_event(
+        {
+            "id": event_id,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "actor": _request_actor(request),
+            "request_id": getattr(request.state, "request_id", None),
+            "purge_storage": purge_storage,
+            "result": copy.deepcopy(_deletion_audit_result_summary(entity_type, result)),
+            "created_at": _iso_now(),
+        }
+    )
+    return event_id
+
+
+def _validate_deletion_entity_type(entity_type: Optional[str]) -> Optional[str]:
+    if entity_type is None:
+        return None
+    normalized = entity_type.strip().lower()
+    if normalized not in {"lecture", "course"}:
+        raise HTTPException(status_code=400, detail="entity_type must be one of: lecture, course.")
+    return normalized
+
+
+def _delete_lecture_data(db, lecture_id: str, *, purge_storage: bool) -> dict:
     lecture = db.fetch_lecture(lecture_id)
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found.")
@@ -1217,7 +1306,19 @@ def _job_api_payload(job: dict) -> dict:
 def delete_lecture(lecture_id: str, request: Request, purge_storage: bool = Query(default=True)) -> dict:
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)
-    return _delete_lecture_data(lecture_id, purge_storage=purge_storage)
+    db = get_database()
+    result = _delete_lecture_data(db, lecture_id, purge_storage=purge_storage)
+    audit_event_id = _record_deletion_audit_event(
+        db,
+        request=request,
+        entity_type="lecture",
+        entity_id=lecture_id,
+        purge_storage=purge_storage,
+        result=result,
+    )
+    if audit_event_id:
+        result["auditEventId"] = audit_event_id
+    return result
 
 
 @app.delete("/courses/{course_id}")
@@ -1233,20 +1334,81 @@ def delete_course(course_id: str, request: Request, purge_storage: bool = Query(
     lectures = db.fetch_lectures(course_id=course_id) if hasattr(db, "fetch_lectures") else []
     deleted_lectures: list[dict] = []
     for lecture in lectures:
-        deleted_lectures.append(
-            _delete_lecture_data(lecture["id"], purge_storage=purge_storage)
+        lecture_result = _delete_lecture_data(db, lecture["id"], purge_storage=purge_storage)
+        lecture_audit_event_id = _record_deletion_audit_event(
+            db,
+            request=request,
+            entity_type="lecture",
+            entity_id=lecture["id"],
+            purge_storage=purge_storage,
+            result=lecture_result,
         )
+        if lecture_audit_event_id:
+            lecture_result["auditEventId"] = lecture_audit_event_id
+        deleted_lectures.append(lecture_result)
 
     delete_course_method = getattr(db, "delete_course", None)
     if not callable(delete_course_method):
         raise HTTPException(status_code=500, detail="Database does not support course deletion.")
     removed = delete_course_method(course_id)
 
-    return {
+    result = {
         "courseId": course_id,
         "courseDeleted": removed > 0,
         "lecturesDeleted": len(deleted_lectures),
         "lectureDeletions": deleted_lectures,
+    }
+    audit_event_id = _record_deletion_audit_event(
+        db,
+        request=request,
+        entity_type="course",
+        entity_id=course_id,
+        purge_storage=purge_storage,
+        result=result,
+    )
+    if audit_event_id:
+        result["auditEventId"] = audit_event_id
+    return result
+
+
+@app.get("/ops/deletion-audit")
+def list_deletion_audit_events(
+    request: Request,
+    entity_type: Optional[str] = Query(default=None),
+    entity_id: Optional[str] = Query(default=None),
+    limit: Optional[int] = Query(default=100, ge=1, le=500),
+    offset: Optional[int] = Query(default=0, ge=0),
+) -> dict:
+    _enforce_write_auth(request)
+
+    normalized_entity_type = _validate_deletion_entity_type(entity_type)
+
+    db = get_database()
+    fetch_events = getattr(db, "fetch_deletion_audit_events", None)
+    count_events = getattr(db, "count_deletion_audit_events", None)
+
+    if not callable(fetch_events) or not callable(count_events):
+        raise HTTPException(status_code=501, detail="Deletion audit storage is not configured.")
+
+    rows = fetch_events(
+        entity_type=normalized_entity_type,
+        entity_id=entity_id,
+        limit=limit,
+        offset=offset,
+    )
+    total = count_events(entity_type=normalized_entity_type, entity_id=entity_id)
+    return {
+        "events": rows,
+        "filters": {
+            "entityType": normalized_entity_type,
+            "entityId": entity_id,
+        },
+        "pagination": _pagination_payload(
+            limit=limit,
+            offset=offset,
+            count=len(rows),
+            total=total,
+        ),
     }
 
 @app.post("/jobs/{job_id}/replay")
