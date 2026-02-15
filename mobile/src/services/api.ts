@@ -36,7 +36,8 @@ const getApiBaseUrl = () => {
 const API_BASE_URL = getApiBaseUrl();
 
 // Set to true to use mock data (no backend required)
-const USE_MOCK_DATA = false;
+// Enable this temporarily while fixing database connection issues
+const USE_MOCK_DATA = true;
 
 class ApiClient {
   private baseUrl: string;
