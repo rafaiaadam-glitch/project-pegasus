@@ -264,9 +264,27 @@ def _transcribe_with_google_speech(audio_path: Path, language_code: str | None) 
             "Install with `pip install google-cloud-speech`."
         ) from exc
 
+    # Detect audio encoding from file extension
+    # Google Speech-to-Text supports: LINEAR16, FLAC, MP3, OGG_OPUS, WEBM_OPUS
+    # Note: M4A/AAC is NOT supported - use Whisper for mobile recordings
+    suffix = audio_path.suffix.lower()
+    encoding_map = {
+        ".mp3": speech.RecognitionConfig.AudioEncoding.MP3,
+        ".flac": speech.RecognitionConfig.AudioEncoding.FLAC,
+        ".ogg": speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
+        ".opus": speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
+        ".webm": speech.RecognitionConfig.AudioEncoding.WEBM_OPUS,
+        ".wav": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+    }
+
+    # Default to MP3 for unknown formats (most compatible)
+    # For M4A files from mobile, this will use MP3 encoding
+    encoding = encoding_map.get(suffix, speech.RecognitionConfig.AudioEncoding.MP3)
+
     client = speech.SpeechClient()
     audio = speech.RecognitionAudio(content=audio_path.read_bytes())
     config = speech.RecognitionConfig(
+        encoding=encoding,
         language_code=language_code or os.getenv("PLC_STT_LANGUAGE", "en-US"),
         enable_automatic_punctuation=True,
         model=os.getenv("PLC_GCP_STT_MODEL", "latest_long"),

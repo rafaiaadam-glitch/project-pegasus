@@ -117,34 +117,46 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   };
   const requestAudioPermissions = async (): Promise<boolean> => {
     try {
+      console.log('[Permissions] Checking current audio permissions...');
       const current = await Audio.getPermissionsAsync();
+      console.log('[Permissions] Current status:', current.status);
+
       if (current.status === 'granted') {
+        console.log('[Permissions] Permission already granted');
         setHasMicPermission(true);
         return true;
       }
 
+      console.log('[Permissions] Requesting audio permissions...');
       const requested = await Audio.requestPermissionsAsync();
       const granted = requested.status === 'granted';
+      console.log('[Permissions] Request result:', granted);
+
       setHasMicPermission(granted);
 
       if (!granted) {
+        console.log('[Permissions] Permission denied by user');
         Alert.alert('Permission Required', 'Audio recording permission is required');
       }
 
       return granted;
     } catch (error) {
+      console.error('[Permissions] Error requesting permissions:', error);
       setHasMicPermission(false);
-      console.error('Error requesting permissions:', error);
       return false;
     }
   };
 
   const startRecording = async () => {
+    console.log('[Recording] Start recording button pressed');
+
     if (isRecording) {
+      console.log('[Recording] Already recording, ignoring');
       return;
     }
 
     if (isWeb) {
+      console.log('[Recording] Platform is web, showing alert');
       Alert.alert(
         'Recording Not Available',
         'Audio recording is only available on iOS and Android devices.'
@@ -153,24 +165,36 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     }
 
     try {
+      console.log('[Recording] Requesting audio permissions...');
       const permissionGranted = await requestAudioPermissions();
+      console.log('[Recording] Permission granted:', permissionGranted);
+
       if (!permissionGranted) {
+        console.log('[Recording] Permission denied, aborting');
         return;
       }
 
       if (recording) {
+        console.log('[Recording] Cleaning up previous recording...');
         await safeStopAndUnload(recording);
       }
 
+      console.log('[Recording] Setting audio mode...');
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
+      console.log('[Recording] Creating new Recording object...');
       const newRecording = new Audio.Recording();
+
+      console.log('[Recording] Preparing to record (HIGH_QUALITY)...');
       await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+
+      console.log('[Recording] Starting recording...');
       await newRecording.startAsync();
 
+      console.log('[Recording] Recording started successfully!');
       setSelectedFile(null);
       setRecording(newRecording);
       setIsRecording(true);
@@ -181,8 +205,8 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         setTitle(`Lecture ${new Date().toLocaleDateString()}`);
       }
     } catch (error) {
+      console.error('[Recording] Error starting recording:', error);
       Alert.alert('Error', 'Failed to start recording. Please try again.');
-      console.error(error);
       setIsRecording(false);
       setIsPaused(false);
     }
