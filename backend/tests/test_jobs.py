@@ -159,6 +159,56 @@ def test_google_transcription_converts_input_to_wav(monkeypatch, tmp_path):
     assert result["engine"]["provider"] == "google_speech"
 
 
+
+def test_transcription_provider_defaults_to_google_when_blank(monkeypatch, tmp_path):
+    storage_dir = tmp_path / "storage"
+    (storage_dir / "audio").mkdir(parents=True, exist_ok=True)
+    audio_path = storage_dir / "audio" / "lecture-default.mp3"
+    audio_path.write_bytes(b"audio")
+
+    fake_db = FakeDB()
+    fake_db.create_job(
+        {
+            "id": "job-default",
+            "lecture_id": "lecture-default",
+            "job_type": "transcription",
+            "status": "queued",
+            "result": None,
+            "error": None,
+            "created_at": "2024-03-10T00:00:00Z",
+            "updated_at": "2024-03-10T00:00:00Z",
+        }
+    )
+
+    def fake_google(_audio_path, _language_code):
+        return {
+            "language": "en-US",
+            "text": "google transcript",
+            "segments": [{"startSec": 0.0, "endSec": 1.0, "text": "google transcript"}],
+            "engine": {"provider": "google_speech", "model": "latest_long"},
+        }
+
+    def fail_whisper(*_args, **_kwargs):
+        raise AssertionError("Whisper should not be used when provider is blank")
+
+    def fake_save_transcript(payload: str, name: str) -> str:
+        out = storage_dir / "transcripts"
+        out.mkdir(parents=True, exist_ok=True)
+        target = out / name
+        target.write_text(payload, encoding="utf-8")
+        return str(target)
+
+    monkeypatch.setenv("PLC_STORAGE_DIR", str(storage_dir))
+    monkeypatch.setattr(jobs_module, "get_database", lambda: fake_db)
+    monkeypatch.setattr(jobs_module, "_transcribe_with_google_speech", fake_google)
+    monkeypatch.setattr(jobs_module, "_transcribe_with_whisper", fail_whisper)
+    monkeypatch.setattr(jobs_module, "save_transcript", fake_save_transcript)
+
+    jobs_module.run_transcription_job("job-default", "lecture-default", "base", provider="")
+
+    job = fake_db.jobs["job-default"]
+    assert job["status"] == "completed"
+
 def test_enqueue_job_runs_inline_when_configured(monkeypatch):
     fake_db = FakeDB()
     monkeypatch.setattr(jobs_module, "get_database", lambda: fake_db)

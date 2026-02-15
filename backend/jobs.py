@@ -345,7 +345,7 @@ def run_transcription_job(
             raise FileNotFoundError("Audio not found for lecture.")
         audio_path = audio_files[0]
 
-        provider_key = (provider or "whisper").strip().lower()
+        provider_key = (provider or "google").strip().lower()
         if provider_key == "google":
             transcription = _transcribe_with_google_speech(audio_path, language_code)
         elif provider_key == "whisper":
