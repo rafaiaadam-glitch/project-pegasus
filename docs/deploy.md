@@ -123,6 +123,29 @@ Ensure the API and worker services both receive the same `DATABASE_URL`,
 `REDIS_URL`, storage, LLM provider settings, and transcription provider settings so jobs can enqueue and execute
 consistently.
 
+Canonical reference:
+- `docs/security/secrets-management.md` (deploy-target specific secret handling + rotation workflow)
+- `docs/security/pii-handling-policy.md` (transcript/artifact data handling and retention policy)
+
+
+### Health/readiness probes in platform configs
+
+- Render: `render.yaml` sets `healthCheckPath: /health/ready` for `pegasus-api`.
+- Fly.io: `fly.toml` defines `[[http_service.checks]]` to probe `/health/ready` every 15s with a 5s timeout.
+- Railway: `railway.toml` configures `healthcheckPath = "/health/ready"`.
+
+Recommended thresholds:
+- readiness interval: 10-30s
+- timeout: 3-5s
+- grace period: 20-30s after startup/redeploy
+
+### Canonical deployment guides
+
+Use these as source-of-truth deployment docs:
+- Primary deployment guide (API + worker + storage): `docs/deploy.md`
+- Staging parity checklist: `docs/runbooks/staging-parity-checklist.md`
+- Release checklist + rollback procedure: `docs/runbooks/release-checklist-with-rollback.md`
+
 ## Migration startup check
 
 Database migrations are applied on startup from `backend/db.py` via
