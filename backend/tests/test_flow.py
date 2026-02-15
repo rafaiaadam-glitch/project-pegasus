@@ -147,7 +147,7 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
 
     monkeypatch.setattr(jobs_module, "_load_whisper", lambda: StubWhisper())
 
-    def fake_run_pipeline(transcript, context, output_dir, use_llm=False, openai_model="gpt-4o-mini"):
+    def fake_run_pipeline(transcript, context, output_dir, use_llm=False, openai_model="gpt-4o-mini", llm_provider="openai", llm_model=None):
         base = output_dir / context.lecture_id
         now = context.generated_at
         summary = {
@@ -265,9 +265,17 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
                 "title": "Lecture 1",
                 "duration_sec": "120",
                 "source_type": "upload",
+                "lecture_mode": "MATHEMATICS",
             },
         )
     assert response.status_code == 200
+    assert response.json()["lectureMode"] == "MATHEMATICS"
+    assert response.json()["transcriptionJob"]["jobType"] == "transcription"
+
+    metadata_path = Path(response.json()["metadataPath"])
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["lectureMode"] == "MATHEMATICS"
+
     assert fake_db.fetch_lecture("lecture-001") is not None
 
     response = client.post("/lectures/lecture-001/transcribe")

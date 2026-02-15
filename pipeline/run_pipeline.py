@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import uuid
 from dataclasses import dataclass
@@ -108,7 +109,10 @@ def _exam_questions(context: PipelineContext) -> Dict[str, Any]:
 
 
 def _generate_thread_records(
-    context: PipelineContext, transcript: str
+    context: PipelineContext,
+    transcript: str,
+    llm_provider: str = "openai",
+    llm_model: str | None = None,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     from pipeline.thread_engine import generate_thread_records
 
@@ -118,6 +122,8 @@ def _generate_thread_records(
         transcript=transcript,
         generated_at=context.generated_at,
         storage_dir=Path("storage"),
+        llm_provider=llm_provider,
+        llm_model=llm_model,
     )
 
 
@@ -134,6 +140,8 @@ def run_pipeline(
     output_dir: Path,
     use_llm: bool = False,
     openai_model: str = "gpt-4o-mini",
+    llm_provider: str = "openai",
+    llm_model: str | None = None,
     progress_tracker=None,
     continuity_threshold: float | None = None,
 ) -> None:
@@ -142,7 +150,10 @@ def run_pipeline(
         progress_tracker.start_step("thread_generation")
 
     threads, thread_occurrences, thread_updates = _generate_thread_records(
-        context, transcript
+        context,
+        transcript,
+        llm_provider=llm_provider,
+        llm_model=llm_model or openai_model,
     )
 
     if progress_tracker:
@@ -189,7 +200,8 @@ def run_pipeline(
             course_id=updated_context.course_id,
             lecture_id=updated_context.lecture_id,
             generated_at=updated_context.generated_at,
-            model=openai_model,
+            model=llm_model or openai_model,
+            provider=llm_provider,
             thread_refs=thread_ids,  # Pass real thread IDs
         )
     else:
@@ -260,12 +272,23 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--use-llm",
         action="store_true",
-        help="Generate artifacts using OpenAI responses.",
+        help="Generate artifacts using configured LLM provider.",
     )
     parser.add_argument(
         "--openai-model",
         default="gpt-4o-mini",
-        help="OpenAI model for LLM-backed generation.",
+        help="Deprecated alias for --llm-model when using OpenAI.",
+    )
+    parser.add_argument(
+        "--llm-provider",
+        default=os.getenv("PLC_LLM_PROVIDER", "openai"),
+        choices=["openai", "gemini", "vertex"],
+        help="LLM provider for generation.",
+    )
+    parser.add_argument(
+        "--llm-model",
+        default=None,
+        help="Model name for selected LLM provider.",
     )
     parser.add_argument(
         "--export",
@@ -332,6 +355,8 @@ def main() -> None:
         args.output_dir,
         use_llm=args.use_llm,
         openai_model=args.openai_model,
+        llm_provider=args.llm_provider,
+        llm_model=args.llm_model,
         progress_tracker=tracker,
         continuity_threshold=args.continuity_threshold,
     )
