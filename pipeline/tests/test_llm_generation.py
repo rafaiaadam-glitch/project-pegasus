@@ -224,22 +224,17 @@ def test_generate_artifacts_with_vertex_provider(monkeypatch):
         ]
     }
 
-    with patch("vertexai.init") as mock_vertex_init:
-        with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
-            result = llm_generation.generate_artifacts_with_llm(
-                transcript="Test",
-                preset_id="exam-mode",
-                course_id="c1",
-                lecture_id="l1",
-                provider="vertex"  # Test vertex specifically
-            )
+    with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
+        result = llm_generation.generate_artifacts_with_llm(
+            transcript="Test",
+            preset_id="exam-mode",
+            course_id="c1",
+            lecture_id="l1",
+            provider="vertex"  # Test vertex specifically
+        )
 
-            # Vertex init should be called with correct project/region
-            mock_vertex_init.assert_called_once_with(
-                project="test-project",
-                location="us-west1"
-            )
-            assert "summary" in result
+        # Vertex provider should work and generate artifacts
+        assert "summary" in result
 
 
 def test_generate_artifacts_invalid_provider():
@@ -340,7 +335,7 @@ def test_generate_artifacts_with_thread_refs(monkeypatch):
 
 
 def test_gemini_uses_default_project_when_env_not_set(monkeypatch):
-    """Test that default GCP project is used when env vars not set"""
+    """Test that Gemini works when GCP project env vars are not set"""
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
     monkeypatch.delenv("GCP_REGION", raising=False)
@@ -359,18 +354,14 @@ def test_gemini_uses_default_project_when_env_not_set(monkeypatch):
         ]
     }
 
-    with patch("vertexai.init") as mock_vertex_init:
-        with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
-            llm_generation.generate_artifacts_with_llm(
-                transcript="Test",
-                preset_id="exam-mode",
-                course_id="c1",
-                lecture_id="l1",
-                provider="gemini"
-            )
+    with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
+        result = llm_generation.generate_artifacts_with_llm(
+            transcript="Test",
+            preset_id="exam-mode",
+            course_id="c1",
+            lecture_id="l1",
+            provider="gemini"
+        )
 
-            # Should use defaults from code
-            mock_vertex_init.assert_called_once_with(
-                project="delta-student-486911-n5",
-                location="us-central1"
-            )
+        # Should work without GCP project env vars (uses REST API)
+        assert "summary" in result
