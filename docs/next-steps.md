@@ -38,6 +38,42 @@ To de-risk launch, we should treat the checklist as the source of truth for next
    - Wire canary outcomes to alerts and dashboards.
    - Require green canary runs in launch decision checklist.
 
+## Immediate next actions (start here)
+
+If you're picking this project up now, execute these in order:
+
+1. **Open the launch checklist and mark ownership per item**
+   - Use `docs/mvp-launch-checklist.md` as source of truth.
+   - Add an owner and target date for every unchecked item.
+   - Group by: Observability, Reliability, Security, Mobile UX, Canary.
+
+2. **Stand up observability proof points before feature work**
+   - Implement the missing metrics in backend/pipeline stages.
+   - Create one dashboard with queue depth + stage latency + failure rate.
+   - Add alerts for backlog growth and sustained stage failures.
+
+3. **Run one staging reliability drill and capture evidence**
+   - Backup/restore or migration rollback (pick whichever is fastest first).
+   - Save exact commands run, timestamps, and validation output.
+   - Link this evidence directly in the checklist item.
+
+4. **Close one full mobile happy-path test with artifacts**
+   - Validate Course → Preset → Record/Upload → Processing → Review → Export.
+   - Capture at least one successful run and one failed/retry run.
+   - Document known UX failure states and follow-up fixes.
+
+5. **Add scheduled canary + alert path**
+   - Run at least hourly on staging (or production if safe).
+   - Alert to the on-call route used for other pipeline incidents.
+   - Do not mark launch-ready until canary has multiple green runs.
+
+## Suggested owner split
+
+- **Backend/Ops owner:** SLOs, metrics, dashboards, alerts, drills.
+- **Mobile owner:** first-time flow completion, retries, error messaging.
+- **Security owner:** secrets policy, PII retention/deletion, vuln scans.
+- **Release owner:** checklist hygiene, evidence links, go/no-go prep.
+
 ## Week-by-week execution slices
 
 ### Week 1 (ops first)

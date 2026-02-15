@@ -55,3 +55,51 @@ jobs:
         run: pytest backend/tests
       - name: Run pipeline tests
         run: pytest pipeline/tests -v
+
+  security_scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Python dependency audit (backend)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt
+
+      - name: Install npm dependencies for audits
+        run: |
+          npm ci
+          npm ci --prefix backend
+          npm ci --prefix mobile
+
+      - name: JavaScript dependency audit (all packages)
+        run: |
+          npm audit --audit-level=high
+          npm audit --prefix backend --audit-level=high
+          npm audit --prefix mobile --audit-level=high
+
+      - name: Repository vulnerability/config scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,config,secret
+          format: table
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+          exit-code: 1

@@ -80,7 +80,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 - [ ] Add secrets management guidance for each deploy target
 - [ ] Add PII handling policy for transcripts and generated artifacts
 - [ ] Add data deletion endpoint/workflow per lecture/course
-- [ ] Add dependency and container vulnerability scanning in CI
+- [x] Add dependency and container vulnerability scanning in CI
 
 **Definition of done:**
 - documented deletion flow and auditability for destructive operations
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **15**
-- Items remaining: **21**
-- Completion: **42%**
+- Items marked complete: **16**
+- Items remaining: **20**
+- Completion: **44%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -164,6 +164,8 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Incident response runbook (queue/OpenAI/storage) → `docs/runbooks/incident-response.md`
 - SLO definitions (ingest success, generation success, p95 processing time) → `docs/runbooks/observability-slos.md`
 - Metrics endpoints + instrumentation (JSON + Prometheus for queue depth, latency/failures/retries) → `backend/observability.py`, `backend/app.py`, `backend/jobs.py`, `backend/tests/test_observability_metrics.py`
+- Synthetic canary implementation + hourly scheduler scaffold → `scripts/run_synthetic_canary.py`, `.github/workflows/synthetic-canary.yml`, `docs/runbooks/synthetic-canary.md`
+- CI vulnerability scanning gate (pip-audit, npm audit, trivy) → `.github/workflows/ci.yml`, `docs/runbooks/security-scanning.md`
 
 ## Progress notes
 

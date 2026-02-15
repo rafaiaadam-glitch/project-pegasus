@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import math
 import threading
-from collections import defaultdict
+from collections import defaultdict, deque
 from typing import Any
 
 
@@ -10,8 +11,13 @@ class InMemoryMetricsStore:
         self._lock = threading.Lock()
         self._job_status_events: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         self._job_failures: dict[str, int] = defaultdict(int)
-        self._job_latency: dict[str, dict[str, float]] = defaultdict(
-            lambda: {"count": 0.0, "sum_ms": 0.0, "max_ms": 0.0}
+        self._job_latency: dict[str, dict[str, float | deque[float]]] = defaultdict(
+            lambda: {
+                "count": 0.0,
+                "sum_ms": 0.0,
+                "max_ms": 0.0,
+                "samples_ms": deque(maxlen=500),
+            }
         )
         self._retry_events: dict[str, int] = defaultdict(int)
 
@@ -35,11 +41,15 @@ class InMemoryMetricsStore:
 
     def observe_job_latency(self, job_type: str, duration_ms: float) -> None:
         normalized_type = (job_type or "unknown").strip() or "unknown"
+        duration = max(0.0, duration_ms)
         with self._lock:
             metric = self._job_latency[normalized_type]
             metric["count"] += 1
-            metric["sum_ms"] += max(0.0, duration_ms)
-            metric["max_ms"] = max(metric["max_ms"], max(0.0, duration_ms))
+            metric["sum_ms"] += duration
+            metric["max_ms"] = max(float(metric["max_ms"]), duration)
+            samples = metric["samples_ms"]
+            if isinstance(samples, deque):
+                samples.append(duration)
 
     def increment_retry(self, job_type: str) -> None:
         normalized_type = (job_type or "unknown").strip() or "unknown"
@@ -50,12 +60,19 @@ class InMemoryMetricsStore:
         with self._lock:
             latency: dict[str, dict[str, float]] = {}
             for job_type, metric in self._job_latency.items():
-                count = metric["count"]
-                avg_ms = (metric["sum_ms"] / count) if count > 0 else 0.0
+                count = float(metric["count"])
+                avg_ms = (float(metric["sum_ms"]) / count) if count > 0 else 0.0
+                samples = metric.get("samples_ms")
+                p95_ms = 0.0
+                if isinstance(samples, deque) and samples:
+                    sorted_samples = sorted(samples)
+                    percentile_index = max(0, math.ceil(0.95 * len(sorted_samples)) - 1)
+                    p95_ms = float(sorted_samples[percentile_index])
                 latency[job_type] = {
                     "count": int(count),
                     "avgMs": round(avg_ms, 2),
-                    "maxMs": round(metric["max_ms"], 2),
+                    "maxMs": round(float(metric["max_ms"]), 2),
+                    "p95Ms": round(p95_ms, 2),
                 }
 
             return {
@@ -102,12 +119,16 @@ def render_prometheus_metrics(snapshot: dict[str, Any]) -> str:
 
     lines.append("# HELP pegasus_job_latency_ms_avg Average observed job latency in milliseconds.")
     lines.append("# TYPE pegasus_job_latency_ms_avg gauge")
+    lines.append("# HELP pegasus_job_latency_ms_p95 p95 observed job latency in milliseconds.")
+    lines.append("# TYPE pegasus_job_latency_ms_p95 gauge")
     lines.append("# HELP pegasus_job_latency_ms_max Maximum observed job latency in milliseconds.")
     lines.append("# TYPE pegasus_job_latency_ms_max gauge")
     for job_type, values in sorted((snapshot.get("jobLatencyMs") or {}).items()):
         avg_ms = float((values or {}).get("avgMs") or 0.0)
+        p95_ms = float((values or {}).get("p95Ms") or 0.0)
         max_ms = float((values or {}).get("maxMs") or 0.0)
         lines.append(f'pegasus_job_latency_ms_avg{{job_type="{_escape_label(str(job_type))}"}} {avg_ms}')
+        lines.append(f'pegasus_job_latency_ms_p95{{job_type="{_escape_label(str(job_type))}"}} {p95_ms}')
         lines.append(f'pegasus_job_latency_ms_max{{job_type="{_escape_label(str(job_type))}"}} {max_ms}')
 
     return "\n".join(lines) + "\n"

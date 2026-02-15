@@ -106,6 +106,7 @@ def test_job_metrics_track_status_latency_and_retries(monkeypatch):
     assert snapshot["jobStatusEvents"]["generation"]["failed"] >= 1
     assert snapshot["jobFailures"]["generation"] >= 1
     assert snapshot["jobLatencyMs"]["generation"]["count"] >= 1
+    assert snapshot["jobLatencyMs"]["generation"]["p95Ms"] >= 0
     assert snapshot["jobRetries"]["generation"] == 1
 
 
@@ -121,7 +122,9 @@ def test_ops_metrics_prometheus_format(monkeypatch):
     METRICS.increment_job_status("generation", "failed")
     METRICS.increment_job_failure("generation")
     METRICS.increment_retry("generation")
+    METRICS.observe_job_latency("generation", 100.0)
     METRICS.observe_job_latency("generation", 123.0)
+    METRICS.observe_job_latency("generation", 200.0)
 
     monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
 
@@ -135,4 +138,5 @@ def test_ops_metrics_prometheus_format(monkeypatch):
     assert 'pegasus_queue_depth{status="failed"} 1' in text
     assert 'pegasus_job_failures_total{job_type="generation"} 1' in text
     assert 'pegasus_job_retries_total{job_type="generation"} 1' in text
-    assert 'pegasus_job_latency_ms_avg{job_type="generation"} 123.0' in text
+    assert 'pegasus_job_latency_ms_avg{job_type="generation"} 141.0' in text
+    assert 'pegasus_job_latency_ms_p95{job_type="generation"} 200.0' in text

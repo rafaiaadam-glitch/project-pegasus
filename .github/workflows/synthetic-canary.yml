@@ -1,0 +1,43 @@
+name: Synthetic Canary
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PEGASUS_API_URL: ${{ secrets.PEGASUS_CANARY_API_URL }}
+      PLC_WRITE_API_TOKEN: ${{ secrets.PEGASUS_CANARY_API_TOKEN }}
+      PEGASUS_CANARY_STT_PROVIDER: ${{ vars.PEGASUS_CANARY_STT_PROVIDER || 'google' }}
+      PEGASUS_CANARY_STT_MODEL: ${{ vars.PEGASUS_CANARY_STT_MODEL || 'latest_long' }}
+      PEGASUS_CANARY_LLM_PROVIDER: ${{ vars.PEGASUS_CANARY_LLM_PROVIDER || 'gemini' }}
+      PEGASUS_CANARY_LLM_MODEL: ${{ vars.PEGASUS_CANARY_LLM_MODEL || 'gemini-1.5-flash' }}
+
+    steps:
+      - name: Validate required secrets
+        run: |
+          test -n "$PEGASUS_API_URL" || (echo "Missing secret: PEGASUS_CANARY_API_URL" && exit 1)
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run synthetic canary
+        run: |
+          python scripts/run_synthetic_canary.py > canary-result.json
+          cat canary-result.json
+
+      - name: Upload canary artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-canary-result
+          path: canary-result.json

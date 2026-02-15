@@ -77,3 +77,21 @@ Before considering launch-gating observability complete:
 - dashboard links for all three SLIs
 - alert policy links and routed test-notification evidence
 - dated weekly SLO review note in operational log
+
+## Dashboard metric references
+
+Use these exported metrics for dashboard panels:
+
+- Queue backlog by status: `pegasus_queue_depth{status=...}`
+- Job failure totals by stage: `pegasus_job_failures_total{job_type=...}`
+- Retry totals by stage: `pegasus_job_retries_total{job_type=...}`
+- Stage latency (avg/p95/max):
+  - `pegasus_job_latency_ms_avg{job_type=...}`
+  - `pegasus_job_latency_ms_p95{job_type=...}`
+  - `pegasus_job_latency_ms_max{job_type=...}`
+
+Recommended initial alert thresholds:
+
+- Backlog alert: queued depth > 25 for 15m
+- Failure spike alert: failed status events ratio > 5% for 15m by `job_type`
+- Latency alert: p95 stage latency sustained above baseline for 15m
