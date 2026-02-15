@@ -77,12 +77,26 @@ If a step requires manual formatting by the user, the implementation is wrong.
 
 Presets are selected **before recording** and must materially affect output structure.
 
-Examples:
-- **Exam Mode** – definitions, examinable points, likely questions
-- **Concept Map Mode** – hierarchies and relationships
-- **Beginner Mode** – plain language and analogies
-- **Neurodivergent-Friendly Mode** – short chunks, low clutter
-- **Research Mode** – claims, arguments, evidence placeholders
+Available presets:
+- 📝 **Exam Mode** – definitions, examinable points, likely questions
+- 🗺️ **Concept Map Mode** – hierarchies and relationships
+- 👶 **Beginner Mode** – plain language and analogies
+- 🧩 **Neurodivergent-Friendly Mode** – short chunks, low clutter
+- 🔬 **Research Mode** – claims, arguments, evidence placeholders (methodological depth)
+- 🎓 **Seminar Mode** – arguments, counterarguments, debate positions (argumentative structure)
+
+**Seminar Mode** is specifically designed for seminar-heavy courses in:
+- Political Science, Philosophy, Sociology
+- Law, Literature, Anthropology
+- Any discussion-based humanities or social science course
+
+It emphasizes:
+- 🔵 WHO (speakers, authors, schools of thought)
+- 🟣 WHY (normative claims, philosophical stakes)
+- 🔴 HOW (argument structure)
+- 🟠 WHAT (core concepts)
+
+And extracts: claims, evidence, counterclaims, critiques, and discussion questions.
 
 Changing presets must result in **visibly different outputs**.
 
@@ -232,6 +246,22 @@ Early milestones:
 - Deployment notes under `docs/deploy.md`.
 - MVP→v1 launch execution checklist under `docs/mvp-launch-checklist.md`.
 
+## Production Deployment (LIVE)
+
+**Backend API:** https://pegasus-api-988514135894.europe-west1.run.app
+
+- **Platform:** Google Cloud Run (europe-west1)
+- **LLM Provider:** Gemini/Vertex AI (default), OpenAI (fallback)
+- **Transcription:** Google Speech-to-Text (default, with automatic M4A→MP3 conversion), Whisper (fallback)
+- **Database:** PostgreSQL on Cloud SQL
+- **Storage:** Google Cloud Storage
+- **Container Registry:** Artifact Registry
+- **Audio Processing:** FFmpeg for format conversion (M4A, MP3, WAV support)
+
+All 6 lecture style presets are live and operational.
+
+**Note:** The mobile app records in M4A format (AAC), which is automatically converted to MP3 for Google Speech-to-Text processing. This ensures optimal compatibility and transcription quality.
+
 ---
 
 ## MVP stack (recommended)
@@ -252,10 +282,13 @@ Early milestones:
 - Simple worker (BullMQ/Redis) **or** serverless background jobs
 
 **Transcription**
-- Google Speech-to-Text (Vertex AI Speech) as primary; Whisper fallback for local/dev
+- Google Speech-to-Text (default) with `latest_long` model for high accuracy
+- Automatic M4A to MP3 conversion via FFmpeg (mobile recordings)
+- Whisper available for local/dev or explicit fallback
 
 **LLM**
-- Gemini (Vertex AI / Google Generative Language API) as primary; OpenAI fallback
+- Gemini (Vertex AI / Google Generative Language API) as default
+- OpenAI available for local/dev or explicit fallback
 
 ---
 
