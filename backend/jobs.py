@@ -15,7 +15,7 @@ from backend.db import get_database
 from backend.storage import save_artifact_file, save_export, save_export_file, save_transcript
 from pipeline.export_artifacts import export_artifacts
 from pipeline.run_pipeline import PipelineContext, run_pipeline
-from pipeline.transcribe_audio import _load_whisper
+from pipeline.transcribe_audio import _convert_to_wav, _load_whisper
 
 
 LOGGER = logging.getLogger("pegasus.jobs")
