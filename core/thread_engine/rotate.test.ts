@@ -2,6 +2,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { rotatePerspective } from "./rotate.js"
+import { rotatePerspective } from "./rotate"
 
 test("deterministic permutation selection for same threadId and segmentIndex", () => {
   const first = rotatePerspective({ threadId: "thread-123", segmentIndex: 8 })
@@ -22,6 +23,7 @@ test("safeMode forces ORANGE then RED at the front", () => {
 })
 
 test("collapse override prioritises weakest face in OPEN mode", () => {
+test("collapse override prioritises weakest face", () => {
   const order = rotatePerspective({
     threadId: "thread-collapse",
     segmentIndex: 1,

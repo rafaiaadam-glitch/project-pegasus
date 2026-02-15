@@ -16,6 +16,7 @@ from typing import Callable, Optional
 import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from redis import Redis
@@ -51,6 +52,16 @@ async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Pegasus Lecture Copilot API", lifespan=app_lifespan)
+
+# Configure CORS for mobile app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins in development
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 LOGGER = logging.getLogger("pegasus.api")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
 
@@ -955,8 +966,8 @@ def list_lectures(
 def transcribe_lecture(
     request: Request,
     lecture_id: str,
-    model: str = "base",
-    provider: str = "whisper",
+    model: str = "latest_long",  # Google STT model
+    provider: str = "google",  # Default to Google Speech-to-Text
     language_code: Optional[str] = None,
 ) -> dict:
     _enforce_write_auth(request)
@@ -1045,8 +1056,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         lecture_id,
         course_id,
         preset_id,
-        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "openai"),
-        payload.llm_model or payload.openai_model or os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "gemini"),
+        payload.llm_model or payload.openai_model or os.getenv("PLC_LLM_MODEL") or os.getenv("OPENAI_MODEL", "gemini-1.5-flash"),
     )
     job = db.fetch_job(job_id)
     response_payload = {

@@ -264,15 +264,62 @@ def _transcribe_with_google_speech(audio_path: Path, language_code: str | None) 
             "Install with `pip install google-cloud-speech`."
         ) from exc
 
-    client = speech.SpeechClient()
-    stt_input_path = _convert_to_wav(audio_path)
-    audio = speech.RecognitionAudio(content=stt_input_path.read_bytes())
-    config = speech.RecognitionConfig(
-        language_code=language_code or os.getenv("PLC_STT_LANGUAGE", "en-US"),
-        enable_automatic_punctuation=True,
-        model=os.getenv("PLC_GCP_STT_MODEL", "latest_long"),
-    )
-    response = client.recognize(config=config, audio=audio)
+    # Detect audio encoding from file extension
+    # Google Speech-to-Text supports: LINEAR16, FLAC, MP3, OGG_OPUS, WEBM_OPUS
+    # M4A files from mobile need to be converted to MP3
+    suffix = audio_path.suffix.lower()
+    encoding_map = {
+        ".mp3": speech.RecognitionConfig.AudioEncoding.MP3,
+        ".flac": speech.RecognitionConfig.AudioEncoding.FLAC,
+        ".ogg": speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
+        ".opus": speech.RecognitionConfig.AudioEncoding.OGG_OPUS,
+        ".webm": speech.RecognitionConfig.AudioEncoding.WEBM_OPUS,
+        ".wav": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+    }
+
+    # Convert M4A to MP3 if needed (for mobile recordings)
+    working_path = audio_path
+    if suffix == ".m4a":
+        import subprocess
+        import tempfile
+
+        # Create temporary MP3 file
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+            mp3_path = Path(tmp.name)
+
+        try:
+            # Convert M4A to MP3 using ffmpeg
+            subprocess.run(
+                ["ffmpeg", "-i", str(audio_path), "-acodec", "libmp3lame", "-ab", "128k", str(mp3_path)],
+                check=True,
+                capture_output=True,
+            )
+            working_path = mp3_path
+            suffix = ".mp3"
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Failed to convert M4A to MP3: {e.stderr.decode()}") from e
+        except FileNotFoundError:
+            raise RuntimeError(
+                "ffmpeg is required to convert M4A files. Install with: apt-get install ffmpeg"
+            )
+
+    # Get encoding for the file format
+    encoding = encoding_map.get(suffix, speech.RecognitionConfig.AudioEncoding.MP3)
+
+    try:
+        client = speech.SpeechClient()
+        audio = speech.RecognitionAudio(content=working_path.read_bytes())
+        config = speech.RecognitionConfig(
+            encoding=encoding,
+            language_code=language_code or os.getenv("PLC_STT_LANGUAGE", "en-US"),
+            enable_automatic_punctuation=True,
+            model=os.getenv("PLC_GCP_STT_MODEL", "latest_long"),
+        )
+        response = client.recognize(config=config, audio=audio)
+    finally:
+        # Clean up temporary MP3 file if we created one
+        if working_path != audio_path and working_path.exists():
+            working_path.unlink()
 
     lines: list[str] = []
     segments: list[dict[str, Any]] = []
@@ -300,7 +347,7 @@ def run_transcription_job(
     job_id: str,
     lecture_id: str,
     model: str,
-    provider: str = "whisper",
+    provider: str = "google",  # Default to Google Speech-to-Text
     language_code: str | None = None,
 ) -> Dict[str, Any]:
     _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="transcription")

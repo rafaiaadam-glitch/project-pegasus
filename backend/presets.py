@@ -61,6 +61,31 @@ PRESETS: list[dict] = [
             "question_focus": True,
         },
     },
+    {
+        "id": "seminar-mode",
+        "name": "Seminar Mode",
+        "kind": "seminar",
+        "description": "Optimized for debate and discussion. Tracks arguments, counterarguments, and positions for seminar preparation.",
+        "outputProfile": {
+            "summary_style": "debate_focused",
+            "sections": [
+                "key_speakers",
+                "core_claims",
+                "evidence",
+                "counterclaims",
+                "critiques",
+                "discussion_questions",
+            ],
+            "chunking": "argument_based",
+            "question_focus": True,
+            "emphasis": {
+                "who": "high",  # Authors, speakers, schools of thought
+                "why": "high",  # Normative claims, philosophical stakes
+                "how": "high",  # Argument structure
+                "what": "medium",  # Core concepts
+            },
+        },
+    },
 ]
 
 

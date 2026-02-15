@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Platform,
+  Animated,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
@@ -41,6 +42,9 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   const [isPaused, setIsPaused] = useState(false);
   const [hasMicPermission, setHasMicPermission] = useState<boolean | null>(null);
 
+  // Animation for recording indicator
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
   useEffect(() => {
     loadPresets();
     requestAudioPermissions();
@@ -60,6 +64,30 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       }, 1000);
     }
     return () => clearInterval(interval);
+  }, [isRecording, isPaused]);
+
+  // Pulsing animation for recording dot
+  useEffect(() => {
+    if (isRecording && !isPaused) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.3,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      pulseAnim.setValue(1);
+    }
   }, [isRecording, isPaused]);
 
   const loadPresets = async () => {
@@ -89,34 +117,46 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   };
   const requestAudioPermissions = async (): Promise<boolean> => {
     try {
+      console.log('[Permissions] Checking current audio permissions...');
       const current = await Audio.getPermissionsAsync();
+      console.log('[Permissions] Current status:', current.status);
+
       if (current.status === 'granted') {
+        console.log('[Permissions] Permission already granted');
         setHasMicPermission(true);
         return true;
       }
 
+      console.log('[Permissions] Requesting audio permissions...');
       const requested = await Audio.requestPermissionsAsync();
       const granted = requested.status === 'granted';
+      console.log('[Permissions] Request result:', granted);
+
       setHasMicPermission(granted);
 
       if (!granted) {
+        console.log('[Permissions] Permission denied by user');
         Alert.alert('Permission Required', 'Audio recording permission is required');
       }
 
       return granted;
     } catch (error) {
+      console.error('[Permissions] Error requesting permissions:', error);
       setHasMicPermission(false);
-      console.error('Error requesting permissions:', error);
       return false;
     }
   };
 
   const startRecording = async () => {
+    console.log('[Recording] Start recording button pressed');
+
     if (isRecording) {
+      console.log('[Recording] Already recording, ignoring');
       return;
     }
 
     if (isWeb) {
+      console.log('[Recording] Platform is web, showing alert');
       Alert.alert(
         'Recording Not Available',
         'Audio recording is only available on iOS and Android devices.'
@@ -125,24 +165,36 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     }
 
     try {
+      console.log('[Recording] Requesting audio permissions...');
       const permissionGranted = await requestAudioPermissions();
+      console.log('[Recording] Permission granted:', permissionGranted);
+
       if (!permissionGranted) {
+        console.log('[Recording] Permission denied, aborting');
         return;
       }
 
       if (recording) {
+        console.log('[Recording] Cleaning up previous recording...');
         await safeStopAndUnload(recording);
       }
 
+      console.log('[Recording] Setting audio mode...');
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
+      console.log('[Recording] Creating new Recording object...');
       const newRecording = new Audio.Recording();
+
+      console.log('[Recording] Preparing to record (HIGH_QUALITY)...');
       await newRecording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+
+      console.log('[Recording] Starting recording...');
       await newRecording.startAsync();
 
+      console.log('[Recording] Recording started successfully!');
       setSelectedFile(null);
       setRecording(newRecording);
       setIsRecording(true);
@@ -153,8 +205,8 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         setTitle(`Lecture ${new Date().toLocaleDateString()}`);
       }
     } catch (error) {
+      console.error('[Recording] Error starting recording:', error);
       Alert.alert('Error', 'Failed to start recording. Please try again.');
-      console.error(error);
       setIsRecording(false);
       setIsPaused(false);
     }
@@ -379,16 +431,36 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         <View style={styles.recordingPanel}>
           <View style={styles.recordingHeader}>
             <View style={styles.recordingIndicator}>
-              <View style={styles.recordingDot} />
-              <Text style={styles.recordingText}>
+              <Animated.View
+                style={[
+                  styles.recordingDot,
+                  isPaused && styles.recordingDotPaused,
+                  !isPaused && { transform: [{ scale: pulseAnim }] },
+                ]}
+              />
+              <Text style={[styles.recordingText, isPaused && styles.recordingTextPaused]}>
                 {isPaused ? 'Paused' : 'Recording'}
               </Text>
             </View>
             <Text style={styles.durationText}>{formatDuration(recordingDuration)}</Text>
           </View>
 
-          <View style={styles.waveformPlaceholder}>
-            <Text style={styles.waveformText}>🎙️ Audio Waveform</Text>
+          <View style={[styles.waveformPlaceholder, isPaused && styles.waveformPaused]}>
+            {isPaused ? (
+              <>
+                <Text style={styles.waveformText}>⏸️</Text>
+                <Text style={[styles.waveformText, { fontSize: 13, marginTop: 4 }]}>
+                  Recording paused
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.waveformText}>🎙️</Text>
+                <Text style={[styles.waveformText, { fontSize: 13, marginTop: 4 }]}>
+                  Recording in progress...
+                </Text>
+              </>
+            )}
           </View>
 
           <View style={styles.recordingControls}>
@@ -628,10 +700,16 @@ const createStyles = (theme: any) =>
     backgroundColor: '#FF3B30',
     marginRight: 8,
   },
+  recordingDotPaused: {
+    backgroundColor: '#FF9500',
+  },
   recordingText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FF3B30',
+  },
+  recordingTextPaused: {
+    color: '#FF9500',
   },
   durationText: {
     fontSize: 24,
@@ -646,6 +724,12 @@ const createStyles = (theme: any) =>
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
+  },
+  waveformPaused: {
+    backgroundColor: theme.surface,
+    borderWidth: 2,
+    borderColor: '#FF9500',
+    borderStyle: 'dashed',
   },
   waveformText: {
     fontSize: 16,

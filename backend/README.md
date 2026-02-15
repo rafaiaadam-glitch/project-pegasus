@@ -36,7 +36,7 @@ processed consistently.
 
 Startup validates runtime configuration with clear errors: `DATABASE_URL` is always required; `REDIS_URL` is required unless `PLC_INLINE_JOBS` is enabled for API (worker always requires Redis); and storage env is validated based on `STORAGE_MODE`.
 
-- `PLC_LLM_PROVIDER` (optional, default: `openai`; supports `openai`, `gemini`, `vertex`)
+- `PLC_LLM_PROVIDER` (optional, default: `gemini`; supports `openai`, `gemini`, `vertex` - Gemini recommended for GCP deployments)
 - `OPENAI_API_KEY` (required when `PLC_LLM_PROVIDER=openai`)
 - `OPENAI_MODEL` (optional default model for OpenAI path, default: `gpt-4o-mini`)
 - `GEMINI_API_KEY` or `GOOGLE_API_KEY` (required when `PLC_LLM_PROVIDER=gemini|vertex`)
@@ -129,3 +129,5 @@ Use this when you want to run the backend/worker against GCP Cloud Storage:
 3. Sanity-check wiring before live testing:
    - `python -c "from backend.runtime_config import validate_runtime_environment; validate_runtime_environment('api')"`
    - then run ingest and verify returned `audioPath`/artifact paths use `gs://...`.
+- Run: `npm run test:e2e`
+- Note: CI/container environments may need system browser libraries (for example `libatk-1.0.so.0`) for Chromium to launch.

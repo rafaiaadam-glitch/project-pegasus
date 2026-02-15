@@ -10,11 +10,19 @@ If an implementation decision conflicts with this definition, the definition alw
 
 PRIMARY CLOUD ALIGNMENT
 
-Deployments on GCP should prefer:
-- Gemini/Vertex AI for LLM generation and thread intelligence
-- Google Speech-to-Text for transcription
+**Production Deployment (LIVE):**
+- **API URL:** https://pegasus-api-988514135894.europe-west1.run.app
+- **Region:** europe-west1
+- **Platform:** Google Cloud Run
 
-Fallbacks (OpenAI/Whisper) are acceptable for local development, testing, or controlled rollback, but new production wiring should default to Google-native providers when credentials are available.
+**Default Production Stack:**
+- **Transcription:** Google Speech-to-Text (default, model: `latest_long`)
+  - Automatic M4A to MP3 conversion via FFmpeg for mobile recordings
+  - Explicit audio encoding detection (MP3, WAV, M4A support)
+- **LLM:** Gemini/Vertex AI for generation and thread intelligence
+- **Storage:** Google Cloud Storage with GCS bucket backend
+
+Production uses Google-native providers by default. Fallbacks (OpenAI/Whisper) are available for local development, testing, or explicit override via provider parameters.
 
 PRODUCT DEFINITION (AUTHORITATIVE)
 Product name
@@ -86,17 +94,25 @@ Audio is private and user-owned
 
 Presets are selected before recording and must meaningfully alter output structure.
 
-Examples:
+Available presets:
 
-Exam Mode
+📝 Exam Mode – assessment optimization (definitions, examinable points, likely questions)
 
-Concept Map Mode
+🗺️ Concept Map Mode – structural overview (hierarchies, relationships, dependencies)
 
-Beginner Mode
+👶 Beginner Mode – simplified explanation (plain language, examples, analogies)
 
-Neurodivergent-Friendly Mode
+🧩 Neurodivergent-Friendly Mode – cognitive clarity (short chunks, low clutter, predictable structure)
 
-Research Mode
+🔬 Research Mode – methodological depth (claims, arguments, evidence, open questions)
+
+🎓 Seminar Mode – debate & argument clarity (speakers, claims, counterclaims, critiques, discussion prep)
+
+Seminar Mode is distinct from Research Mode:
+- Research Mode focuses on methodological rigor and evidence analysis
+- Seminar Mode focuses on argumentative structure and debate preparation
+- Seminar Mode emphasizes WHO (speakers/authors), WHY (stakes), HOW (argument structure)
+- Perfect for humanities seminars: philosophy, law, political theory, sociology, literature
 
 Presets must affect:
 
