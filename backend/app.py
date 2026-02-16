@@ -1946,7 +1946,8 @@ def get_lecture_dice_state(request: Request, lecture_id: str):
         raise HTTPException(status_code=404, detail="Lecture not found")
 
     # Fetch rotation state
-    rotation_state = db_module.fetch_dice_rotation_state_by_lecture(db.conn, lecture_id)
+    with db.connect() as conn:
+        rotation_state = db_module.fetch_dice_rotation_state_by_lecture(conn, lecture_id)
 
     if not rotation_state:
         return {
@@ -1977,7 +1978,8 @@ def get_course_dice_states(request: Request, course_id: str):
         raise HTTPException(status_code=404, detail="Course not found")
 
     # Fetch all rotation states for course
-    rotation_states = db_module.fetch_dice_rotation_states_by_course(db.conn, course_id)
+    with db.connect() as conn:
+        rotation_states = db_module.fetch_dice_rotation_states_by_course(conn, course_id)
 
     # Calculate aggregate statistics
     if rotation_states:
@@ -2026,7 +2028,8 @@ def get_dice_states_summary(request: Request):
     """
     db = get_database()
 
-    with db.conn.cursor() as cur:
+    with db.connect() as conn:
+      with conn.cursor() as cur:
         # Overall statistics
         cur.execute(
             """
