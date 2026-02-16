@@ -8,6 +8,18 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+# Initialize Vertex AI for GCP-native authentication
+try:
+    import vertexai
+    vertexai.init(
+        project=os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5"),
+        location=os.getenv("GCP_REGION", "us-west1")
+    )
+    VERTEX_INITIALIZED = True
+except ImportError:
+    VERTEX_INITIALIZED = False
+    print("[LLM Generation] WARNING: vertexai not available, falling back to API key mode")
+
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -270,8 +282,27 @@ def generate_artifacts_with_llm(
         response = _request_openai(payload)
         raw_text = _extract_openai_text(response)
     elif provider_key in {"gemini", "vertex"}:
-        response = _request_gemini(prompt=prompt, user_content=user_content, model=model)
-        raw_text = _extract_gemini_text(response)
+        # Use Vertex AI SDK for GCP-native authentication (no API keys needed)
+        if VERTEX_INITIALIZED:
+            from vertexai.generative_models import GenerativeModel, GenerationConfig
+
+            print(f"[LLM Generation] Generating artifacts via Vertex AI ({model})...")
+            generative_model = GenerativeModel(model)
+
+            response = generative_model.generate_content(
+                [prompt, user_content],
+                generation_config=GenerationConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2
+                )
+            )
+            # Vertex AI returns the text directly on response.text
+            raw_text = response.text
+        else:
+            # Fallback to manual API key mode if Vertex AI SDK not available
+            print(f"[LLM Generation] WARNING: Using fallback API key mode for Gemini")
+            response = _request_gemini(prompt=prompt, user_content=user_content, model=model)
+            raw_text = _extract_gemini_text(response)
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
