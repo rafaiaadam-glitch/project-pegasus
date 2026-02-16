@@ -369,26 +369,73 @@ def run_transcription_job(
 ) -> Dict[str, Any]:
     _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="transcription")
     _update_job(job_id, "running", job_type="transcription")
+    temp_file_path = None
     try:
         _ensure_dirs()
         storage_dir = _storage_dir()
+        storage_mode = os.getenv("STORAGE_MODE", "local").lower()
+        LOGGER.info("Starting transcription job for lecture %s (storage_mode=%s)", lecture_id, storage_mode)
 
-        # Check for PDF files first
-        pdf_files = list((storage_dir / "documents").glob(f"{lecture_id}.*"))
-        if pdf_files:
-            # PDF file found - extract text instead of transcribing audio
-            pdf_path = pdf_files[0]
-            transcription = _extract_pdf_text(pdf_path)
-            source_path = pdf_path
-            source_type = "pdf"
+        # For GCS/S3 storage, get the file path from the database
+        if storage_mode in ("gcs", "s3"):
+            from backend.db import get_database
+            from backend.storage import load_json_payload
+            import tempfile
+
+            db = get_database()
+            lecture = db.fetch_lecture(lecture_id)
+            if not lecture or not lecture.get("audio_path"):
+                raise FileNotFoundError(f"Lecture {lecture_id} not found or has no audio_path")
+
+            audio_path = lecture["audio_path"]
+            source_type = lecture.get("source_type", "audio")
+            LOGGER.info("Found lecture with audio_path=%s, source_type=%s", audio_path, source_type)
+
+            # Download file from cloud storage to temp location
+            if storage_mode == "gcs":
+                from google.cloud import storage as gcs_storage
+
+                # Parse gs://bucket/path format
+                if not audio_path.startswith("gs://"):
+                    raise ValueError(f"Expected gs:// path, got: {audio_path}")
+
+                bucket_name, blob_name = audio_path[5:].split("/", 1)
+                client = gcs_storage.Client()
+                bucket = client.bucket(bucket_name)
+                blob = bucket.blob(blob_name)
+
+                # Download to temp file
+                suffix = Path(blob_name).suffix
+                with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+                    blob.download_to_filename(tmp_file.name)
+                    source_path = Path(tmp_file.name)
+                    temp_file_path = source_path  # Track for cleanup
+                    LOGGER.info("Downloaded %s to %s", audio_path, source_path)
+            else:
+                # S3 storage (implement if needed)
+                raise NotImplementedError("S3 storage not yet supported for transcription")
+
         else:
-            # No PDF, fall back to audio transcription
-            audio_files = list((storage_dir / "audio").glob(f"{lecture_id}.*"))
-            if not audio_files:
-                raise FileNotFoundError("Neither PDF nor audio file found for lecture.")
-            source_path = audio_files[0]
-            source_type = "audio"
+            # Local storage - use glob as before
+            # Check for PDF files first
+            pdf_files = list((storage_dir / "documents").glob(f"{lecture_id}.*"))
+            if pdf_files:
+                LOGGER.info("PDF file found for lecture %s", lecture_id)
+                pdf_path = pdf_files[0]
+                source_path = pdf_path
+                source_type = "pdf"
+            else:
+                LOGGER.info("No PDF file found, looking for audio for lecture %s", lecture_id)
+                audio_files = list((storage_dir / "audio").glob(f"{lecture_id}.*"))
+                if not audio_files:
+                    raise FileNotFoundError("Neither PDF nor audio file found for lecture.")
+                source_path = audio_files[0]
+                source_type = "audio"
 
+        # Process the file based on source type
+        if source_type == "pdf":
+            transcription = _extract_pdf_text(source_path)
+        else:
             provider_key = (provider or "google").strip().lower()
             if provider_key == "google":
                 transcription = _transcribe_with_google_speech(source_path, language_code)
@@ -423,9 +470,18 @@ def run_transcription_job(
         _log_job_event("job.run.completed", job_id=job_id, lecture_id=lecture_id, job_type="transcription")
         return payload
     except Exception as exc:
+        LOGGER.error("Transcription job %s for lecture %s failed: %s", job_id, lecture_id, exc, exc_info=True)
         _update_job(job_id, "failed", error=str(exc), job_type="transcription")
         _log_job_event("job.run.failed", job_id=job_id, lecture_id=lecture_id, job_type="transcription", error=str(exc))
         raise
+    finally:
+        # Clean up temporary file if created
+        if temp_file_path and temp_file_path.exists():
+            try:
+                temp_file_path.unlink()
+                LOGGER.info("Cleaned up temporary file: %s", temp_file_path)
+            except Exception as cleanup_exc:
+                LOGGER.warning("Failed to clean up temporary file %s: %s", temp_file_path, cleanup_exc)
 
 
 def run_generation_job(

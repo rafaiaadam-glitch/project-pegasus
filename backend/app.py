@@ -749,16 +749,22 @@ async def _parse_cloudevent(request: Request) -> Optional[dict]:
     """Parse CloudEvent payload from Eventarc GCS trigger."""
     try:
         body = await request.json()
-        LOGGER.info("CloudEvent received: %s", body)
+        LOGGER.info("CloudEvent full body: %s", json.dumps(body, indent=2))
+        LOGGER.info("CloudEvent headers: %s", dict(request.headers))
 
         # CloudEvent format: https://cloud.google.com/eventarc/docs/cloudevents
-        data = body.get("data", {})
+        # Try both nested and flat formats
+        data = body.get("data", body)
+
+        # GCS CloudEvents have these fields
         bucket = data.get("bucket")
         name = data.get("name")  # Object path in GCS
         content_type = data.get("contentType", "")
 
+        LOGGER.info("Extracted - bucket: %s, name: %s, content_type: %s", bucket, name, content_type)
+
         if not bucket or not name:
-            LOGGER.warning("CloudEvent missing bucket or name: %s", data)
+            LOGGER.warning("CloudEvent missing bucket or name. Full data: %s", json.dumps(data, indent=2))
             return None
 
         return {
@@ -767,7 +773,7 @@ async def _parse_cloudevent(request: Request) -> Optional[dict]:
             "content_type": content_type,
         }
     except Exception as exc:
-        LOGGER.error("Failed to parse CloudEvent: %s", exc)
+        LOGGER.error("Failed to parse CloudEvent: %s", exc, exc_info=True)
         return None
 
 
