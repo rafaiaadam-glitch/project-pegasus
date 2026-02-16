@@ -271,15 +271,29 @@ def generate_artifacts_with_llm(
         "exam_questions": "exam-questions",
     }
 
+    # Check what keys are present in the LLM response
+    present_keys = [key for key in mapping.keys() if key in data]
+    missing_keys = [key for key in mapping.keys() if key not in data]
+
+    if missing_keys:
+        print(f"[LLM Generation] WARNING: LLM did not return all required artifacts!")
+        print(f"[LLM Generation] Present: {present_keys}")
+        print(f"[LLM Generation] Missing: {missing_keys}")
+        print(f"[LLM Generation] Available keys in response: {list(data.keys())}")
+
+        # Log a sample of the response to help debug
+        response_preview = json.dumps(data, indent=2)[:500]
+        print(f"[LLM Generation] Response preview: {response_preview}...")
+
     artifacts: Dict[str, Dict[str, Any]] = {}
     for key, artifact_type in mapping.items():
         if key not in data:
-            print(f"[LLM Generation] Warning: Missing '{key}' in LLM response.")
+            print(f"[LLM Generation] Skipping missing artifact: {key}")
             continue
 
         artifact = data[key]
         if not isinstance(artifact, dict):
-            print(f"[LLM Generation] Warning: Artifact '{key}' is not an object.")
+            print(f"[LLM Generation] Warning: Artifact '{key}' is not a dict (type: {type(artifact).__name__})")
             continue
 
         base = _base_artifact(
@@ -297,5 +311,11 @@ def generate_artifacts_with_llm(
             base["threadRefs"] = thread_refs
 
         artifacts[artifact_type] = base
+
+    # Verify we got all required artifacts
+    if len(artifacts) < len(mapping):
+        missing = set(mapping.values()) - set(artifacts.keys())
+        print(f"[LLM Generation] ERROR: Failed to generate {len(missing)} artifacts: {missing}")
+        print(f"[LLM Generation] Successfully generated {len(artifacts)}/{len(mapping)} artifacts")
 
     return artifacts
