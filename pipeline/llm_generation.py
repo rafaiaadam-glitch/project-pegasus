@@ -233,7 +233,7 @@ def generate_artifacts_with_llm(
             # You can leave project/location as None if running on Cloud Run in the same project
             # or force them from environment variables if needed.
             project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
-            location = os.getenv("GCP_REGION", "us-central1")
+            location = os.getenv("GCP_REGION", "us-west1")  # Match Cloud Run deployment region
             vertexai.init(project=project_id, location=location)
 
             # 2. Instantiate Model
