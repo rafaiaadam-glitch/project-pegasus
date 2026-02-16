@@ -4,7 +4,7 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'us-west1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
       - '-f'
       - 'backend/Dockerfile'
       - '.'
@@ -13,7 +13,7 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'us-west1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
 
   # Deploy to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -23,15 +23,15 @@ steps:
       - 'deploy'
       - 'pegasus-api'
       - '--image'
-      - 'us-west1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
       - '--region'
-      - 'us-west1'
+      - 'us-central1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
 
 images:
-  - 'us-west1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
 
 options:
   machineType: 'E2_HIGHCPU_8'
