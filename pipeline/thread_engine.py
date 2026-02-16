@@ -58,6 +58,10 @@ STOPWORDS = {
 VALID_CHANGE_TYPES = {"refinement", "contradiction", "complexity"}
 VALID_STATUSES = {"foundational", "advanced"}
 
+# Module-level storage for last detection metrics
+_last_metrics = None
+_last_quality_score = None
+
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -602,20 +606,35 @@ def generate_thread_records(
         provider_key in {"gemini", "vertex"} and has_gemini_key
     )
 
+    # Metrics collection
+    import time
+    detection_method = "fallback"
+    api_response_time_ms = None
+    retry_count = 0
+    success = True
+    error_message = None
+
     if should_try_llm:
         try:
+            start_time = time.time()
             if provider_key == "openai":
                 llm_result = _call_openai(transcript, existing_list, model_name)
+                detection_method = "openai"
             else:
                 llm_result = _call_gemini(transcript, existing_list, model_name)
+                detection_method = "gemini"
+            api_response_time_ms = (time.time() - start_time) * 1000
+
             threads, occurrences, updates = _process_llm_output(
                 llm_result, existing, course_id, lecture_id, generated_at
             )
         except Exception as exc:
+            error_message = str(exc)
             print(
                 f"[ThreadEngine] WARNING: {provider_key} call failed ({exc}). "
                 "Falling back to keyword detection."
             )
+            detection_method = "fallback"
             threads, occurrences, updates = _process_fallback(
                 transcript, existing, course_id, lecture_id, generated_at
             )
@@ -625,4 +644,52 @@ def generate_thread_records(
         )
 
     store.save(threads)
+
+    # Collect and log metrics
+    try:
+        from pipeline.thread_metrics import calculate_thread_metrics, calculate_quality_score
+
+        metrics = calculate_thread_metrics(
+            threads=threads,
+            occurrences=occurrences,
+            updates=updates,
+            lecture_id=lecture_id,
+            course_id=course_id,
+            detection_method=detection_method,
+            model_name=model_name if detection_method != "fallback" else None,
+            llm_provider=provider_key if detection_method != "fallback" else None,
+            api_response_time_ms=api_response_time_ms,
+            token_usage=None,  # TODO: Extract from API response
+            retry_count=retry_count,
+            success=success,
+            error_message=error_message,
+        )
+
+        quality_score = calculate_quality_score(metrics)
+
+        # Log metrics
+        print(
+            f"[ThreadEngine] Detected {metrics.new_threads_detected} new threads, "
+            f"{metrics.existing_threads_updated} updates. "
+            f"Quality score: {quality_score}/100"
+        )
+
+        # Store metrics for later retrieval (stored in module variable for now)
+        # TODO: Save to database via API call
+        _last_metrics = metrics
+        _last_quality_score = quality_score
+
+    except Exception as e:
+        print(f"[ThreadEngine] WARNING: Failed to collect metrics: {e}")
+
     return threads, occurrences, updates
+
+
+def get_last_metrics():
+    """
+    Get the metrics from the last thread detection run.
+
+    Returns:
+        Tuple of (metrics, quality_score) or (None, None) if no metrics available
+    """
+    return _last_metrics, _last_quality_score

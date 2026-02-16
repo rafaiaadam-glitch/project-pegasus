@@ -620,3 +620,221 @@ def get_database() -> Database:
     db = Database(dsn=dsn)
     db.migrate()
     return db
+
+
+def insert_thread_metrics(
+    conn,
+    metrics_id: str,
+    lecture_id: str,
+    course_id: str,
+    detected_at: str,
+    new_threads_detected: int,
+    existing_threads_updated: int,
+    total_threads_after: int,
+    avg_complexity_level: float,
+    complexity_distribution: dict,
+    change_type_distribution: dict,
+    avg_evidence_length: float,
+    threads_with_evidence: int,
+    detection_method: str,
+    api_response_time_ms: float | None,
+    token_usage: dict | None,
+    retry_count: int,
+    model_name: str | None,
+    llm_provider: str | None,
+    success: bool,
+    error_message: str | None,
+    quality_score: float,
+):
+    """Insert thread detection metrics into the database."""
+    import json
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO thread_metrics (
+                id, lecture_id, course_id, detected_at,
+                new_threads_detected, existing_threads_updated, total_threads_after,
+                avg_complexity_level, complexity_distribution, change_type_distribution,
+                avg_evidence_length, threads_with_evidence,
+                detection_method, api_response_time_ms, token_usage, retry_count,
+                model_name, llm_provider, success, error_message, quality_score
+            ) VALUES (
+                %(id)s, %(lecture_id)s, %(course_id)s, %(detected_at)s,
+                %(new_threads_detected)s, %(existing_threads_updated)s, %(total_threads_after)s,
+                %(avg_complexity_level)s, %(complexity_distribution)s, %(change_type_distribution)s,
+                %(avg_evidence_length)s, %(threads_with_evidence)s,
+                %(detection_method)s, %(api_response_time_ms)s, %(token_usage)s, %(retry_count)s,
+                %(model_name)s, %(llm_provider)s, %(success)s, %(error_message)s, %(quality_score)s
+            )
+            """,
+            {
+                "id": metrics_id,
+                "lecture_id": lecture_id,
+                "course_id": course_id,
+                "detected_at": detected_at,
+                "new_threads_detected": new_threads_detected,
+                "existing_threads_updated": existing_threads_updated,
+                "total_threads_after": total_threads_after,
+                "avg_complexity_level": avg_complexity_level,
+                "complexity_distribution": json.dumps(complexity_distribution),
+                "change_type_distribution": json.dumps(change_type_distribution),
+                "avg_evidence_length": avg_evidence_length,
+                "threads_with_evidence": threads_with_evidence,
+                "detection_method": detection_method,
+                "api_response_time_ms": api_response_time_ms,
+                "token_usage": json.dumps(token_usage) if token_usage else None,
+                "retry_count": retry_count,
+                "model_name": model_name,
+                "llm_provider": llm_provider,
+                "success": success,
+                "error_message": error_message,
+                "quality_score": quality_score,
+            },
+        )
+    conn.commit()
+
+
+def fetch_thread_metrics_by_lecture(conn, lecture_id: str):
+    """Fetch thread metrics for a specific lecture."""
+    import json
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id, lecture_id, course_id, detected_at,
+                new_threads_detected, existing_threads_updated, total_threads_after,
+                avg_complexity_level, complexity_distribution, change_type_distribution,
+                avg_evidence_length, threads_with_evidence,
+                detection_method, api_response_time_ms, token_usage, retry_count,
+                model_name, llm_provider, success, error_message, quality_score,
+                created_at
+            FROM thread_metrics
+            WHERE lecture_id = %(lecture_id)s
+            ORDER BY detected_at DESC
+            """,
+            {"lecture_id": lecture_id},
+        )
+        rows = cur.fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "lectureId": row[1],
+            "courseId": row[2],
+            "detectedAt": row[3].isoformat() if row[3] else None,
+            "newThreadsDetected": row[4],
+            "existingThreadsUpdated": row[5],
+            "totalThreadsAfter": row[6],
+            "avgComplexityLevel": float(row[7]) if row[7] else None,
+            "complexityDistribution": json.loads(row[8]) if row[8] else {},
+            "changeTypeDistribution": json.loads(row[9]) if row[9] else {},
+            "avgEvidenceLength": float(row[10]) if row[10] else None,
+            "threadsWithEvidence": row[11],
+            "detectionMethod": row[12],
+            "apiResponseTimeMs": float(row[13]) if row[13] else None,
+            "tokenUsage": json.loads(row[14]) if row[14] else None,
+            "retryCount": row[15],
+            "modelName": row[16],
+            "llmProvider": row[17],
+            "success": row[18],
+            "errorMessage": row[19],
+            "qualityScore": float(row[20]) if row[20] else None,
+            "createdAt": row[21].isoformat() if row[21] else None,
+        }
+        for row in rows
+    ]
+
+
+def fetch_thread_metrics_by_course(conn, course_id: str, limit: int = 50):
+    """Fetch thread metrics for all lectures in a course."""
+    import json
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id, lecture_id, course_id, detected_at,
+                new_threads_detected, existing_threads_updated, total_threads_after,
+                avg_complexity_level, complexity_distribution, change_type_distribution,
+                avg_evidence_length, threads_with_evidence,
+                detection_method, api_response_time_ms, token_usage, retry_count,
+                model_name, llm_provider, success, error_message, quality_score,
+                created_at
+            FROM thread_metrics
+            WHERE course_id = %(course_id)s
+            ORDER BY detected_at DESC
+            LIMIT %(limit)s
+            """,
+            {"course_id": course_id, "limit": limit},
+        )
+        rows = cur.fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "lectureId": row[1],
+            "courseId": row[2],
+            "detectedAt": row[3].isoformat() if row[3] else None,
+            "newThreadsDetected": row[4],
+            "existingThreadsUpdated": row[5],
+            "totalThreadsAfter": row[6],
+            "avgComplexityLevel": float(row[7]) if row[7] else None,
+            "complexityDistribution": json.loads(row[8]) if row[8] else {},
+            "changeTypeDistribution": json.loads(row[9]) if row[9] else {},
+            "avgEvidenceLength": float(row[10]) if row[10] else None,
+            "threadsWithEvidence": row[11],
+            "detectionMethod": row[12],
+            "apiResponseTimeMs": float(row[13]) if row[13] else None,
+            "tokenUsage": json.loads(row[14]) if row[14] else None,
+            "retryCount": row[15],
+            "modelName": row[16],
+            "llmProvider": row[17],
+            "success": row[18],
+            "errorMessage": row[19],
+            "qualityScore": float(row[20]) if row[20] else None,
+            "createdAt": row[21].isoformat() if row[21] else None,
+        }
+        for row in rows
+    ]
+
+
+def fetch_thread_metrics_summary(conn, course_id: str | None = None):
+    """Fetch aggregated thread metrics summary."""
+    with conn.cursor() as cur:
+        where_clause = "WHERE course_id = %(course_id)s" if course_id else ""
+        cur.execute(
+            f"""
+            SELECT
+                COUNT(*) as total_detections,
+                AVG(new_threads_detected) as avg_new_threads,
+                AVG(existing_threads_updated) as avg_updates,
+                AVG(quality_score) as avg_quality_score,
+                AVG(api_response_time_ms) as avg_response_time,
+                SUM(CASE WHEN success = true THEN 1 ELSE 0 END) as successful_detections,
+                COUNT(DISTINCT detection_method) as methods_used,
+                AVG(CASE WHEN detection_method = 'gemini' THEN quality_score ELSE NULL END) as gemini_avg_quality,
+                AVG(CASE WHEN detection_method = 'fallback' THEN quality_score ELSE NULL END) as fallback_avg_quality
+            FROM thread_metrics
+            {where_clause}
+            """,
+            {"course_id": course_id} if course_id else {},
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "totalDetections": row[0],
+        "avgNewThreads": float(row[1]) if row[1] else 0,
+        "avgUpdates": float(row[2]) if row[2] else 0,
+        "avgQualityScore": float(row[3]) if row[3] else 0,
+        "avgResponseTimeMs": float(row[4]) if row[4] else 0,
+        "successfulDetections": row[5],
+        "methodsUsed": row[6],
+        "geminiAvgQuality": float(row[7]) if row[7] else None,
+        "fallbackAvgQuality": float(row[8]) if row[8] else None,
+        "successRate": round((row[5] / row[0] * 100) if row[0] > 0 else 0, 1),
+    }

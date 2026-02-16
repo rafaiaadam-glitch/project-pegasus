@@ -1743,3 +1743,36 @@ def lecture_summary(lecture_id: str) -> dict:
             "exports": f"/exports/{lecture_id}/{{export_type}}",
         },
     }
+
+
+# Thread Metrics Endpoints
+@app.get("/lectures/{lecture_id}/thread-metrics")
+def get_lecture_thread_metrics(request: Request, lecture_id: str):
+    """Get thread detection metrics for a specific lecture."""
+    db = get_database()
+    metrics = db_module.fetch_thread_metrics_by_lecture(db.conn, lecture_id)
+    return {"metrics": metrics}
+
+
+@app.get("/courses/{course_id}/thread-metrics")
+def get_course_thread_metrics(request: Request, course_id: str, limit: int = 50):
+    """Get thread detection metrics for all lectures in a course."""
+    db = get_database()
+    metrics = db_module.fetch_thread_metrics_by_course(db.conn, course_id, limit)
+    return {"metrics": metrics}
+
+
+@app.get("/courses/{course_id}/thread-metrics/summary")
+def get_course_thread_metrics_summary(request: Request, course_id: str):
+    """Get aggregated thread metrics summary for a course."""
+    db = get_database()
+    summary = db_module.fetch_thread_metrics_summary(db.conn, course_id)
+    return summary if summary else {"error": "No metrics found"}
+
+
+@app.get("/thread-metrics/summary")
+def get_global_thread_metrics_summary(request: Request):
+    """Get aggregated thread metrics summary across all courses."""
+    db = get_database()
+    summary = db_module.fetch_thread_metrics_summary(db.conn, None)
+    return summary if summary else {"error": "No metrics found"}

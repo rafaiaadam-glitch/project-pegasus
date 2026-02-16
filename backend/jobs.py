@@ -530,6 +530,42 @@ def run_generation_job(
                     }
                 )
 
+        # Save thread detection metrics
+        try:
+            from pipeline.thread_engine import get_last_metrics
+            from pipeline.thread_metrics import calculate_quality_score
+            import uuid
+
+            metrics, quality_score = get_last_metrics()
+            if metrics:
+                db_module.insert_thread_metrics(
+                    db.conn,
+                    metrics_id=str(uuid.uuid4()),
+                    lecture_id=metrics.lecture_id,
+                    course_id=metrics.course_id,
+                    detected_at=metrics.timestamp,
+                    new_threads_detected=metrics.new_threads_detected,
+                    existing_threads_updated=metrics.existing_threads_updated,
+                    total_threads_after=metrics.total_threads_after,
+                    avg_complexity_level=metrics.avg_complexity_level,
+                    complexity_distribution=metrics.complexity_distribution,
+                    change_type_distribution=metrics.change_type_distribution,
+                    avg_evidence_length=metrics.avg_evidence_length,
+                    threads_with_evidence=metrics.threads_with_evidence,
+                    detection_method=metrics.detection_method,
+                    api_response_time_ms=metrics.api_response_time_ms,
+                    token_usage=metrics.token_usage,
+                    retry_count=metrics.retry_count,
+                    model_name=metrics.model_name,
+                    llm_provider=metrics.llm_provider,
+                    success=metrics.success,
+                    error_message=metrics.error_message,
+                    quality_score=quality_score or 0.0,
+                )
+                print(f"[Job] Saved thread metrics: quality={quality_score}/100")
+        except Exception as e:
+            print(f"[Job] WARNING: Failed to save thread metrics: {e}")
+
         payload = {
             "lectureId": lecture_id,
             "outputDir": str(artifacts_dir),
