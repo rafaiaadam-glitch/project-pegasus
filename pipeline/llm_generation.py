@@ -193,7 +193,7 @@ def generate_artifacts_with_llm(
     course_id: str,
     lecture_id: str,
     generated_at: str | None = None,
-    model: str = "gemini-3-pro-thinking",  # Gemini 3 Pro with extended reasoning
+    model: str = "gemini-3.0-pro-thinking",  # Gemini 3.0 Pro with extended thinking
     thread_refs: List[str] | None = None,
     provider: str = "gemini",  # Default to Gemini/Vertex AI
 ) -> Dict[str, Dict[str, Any]]:
