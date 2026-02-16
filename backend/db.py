@@ -1000,3 +1000,221 @@ def delete_context_file(conn, file_id: str):
             {"file_id": file_id},
         )
     conn.commit()
+
+
+# =========================================================================
+# Dice Rotation State
+# =========================================================================
+
+
+def upsert_dice_rotation_state(conn, rotation_state: Dict[str, Any]):
+    """
+    Insert or update dice rotation state for a lecture.
+
+    Args:
+        conn: Database connection
+        rotation_state: Rotation state dictionary with structure:
+            - id: rotation state ID
+            - lectureId: lecture ID
+            - courseId: course ID
+            - iterationsCompleted: number of iterations
+            - maxIterations: max allowed iterations
+            - status: 'in_progress', 'equilibrium', 'collapsed', or 'max_iterations'
+            - scores: dict of facet scores
+            - entropy: Shannon entropy
+            - equilibriumGap: gap to equilibrium
+            - collapsed: boolean
+            - fullState: complete state (JSONB)
+    """
+    with conn.cursor() as cur:
+        # Extract facet scores
+        scores = rotation_state.get("scores", {})
+
+        # Determine dominant facet
+        dominant_facet = None
+        dominant_score = 0.0
+        if scores:
+            # Find facet with highest score
+            facet_map = {
+                "RED": ("how", scores.get("RED", 0.0)),
+                "ORANGE": ("what", scores.get("ORANGE", 0.0)),
+                "YELLOW": ("when", scores.get("YELLOW", 0.0)),
+                "GREEN": ("where", scores.get("WHERE", 0.0)),
+                "BLUE": ("who", scores.get("BLUE", 0.0)),
+                "PURPLE": ("why", scores.get("PURPLE", 0.0)),
+            }
+            dominant_facet, dominant_score = max(facet_map.values(), key=lambda x: x[1])
+
+        cur.execute(
+            """
+            INSERT INTO dice_rotation_states (
+                id, lecture_id, course_id,
+                iterations_completed, max_iterations, status,
+                score_how, score_what, score_when, score_where, score_who, score_why,
+                entropy, equilibrium_gap, collapsed,
+                dominant_facet, dominant_score,
+                full_state,
+                created_at, updated_at
+            )
+            VALUES (
+                %(id)s, %(lecture_id)s, %(course_id)s,
+                %(iterations_completed)s, %(max_iterations)s, %(status)s,
+                %(score_how)s, %(score_what)s, %(score_when)s,
+                %(score_where)s, %(score_who)s, %(score_why)s,
+                %(entropy)s, %(equilibrium_gap)s, %(collapsed)s,
+                %(dominant_facet)s, %(dominant_score)s,
+                %(full_state)s,
+                NOW(), NOW()
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                iterations_completed = EXCLUDED.iterations_completed,
+                status = EXCLUDED.status,
+                score_how = EXCLUDED.score_how,
+                score_what = EXCLUDED.score_what,
+                score_when = EXCLUDED.score_when,
+                score_where = EXCLUDED.score_where,
+                score_who = EXCLUDED.score_who,
+                score_why = EXCLUDED.score_why,
+                entropy = EXCLUDED.entropy,
+                equilibrium_gap = EXCLUDED.equilibrium_gap,
+                collapsed = EXCLUDED.collapsed,
+                dominant_facet = EXCLUDED.dominant_facet,
+                dominant_score = EXCLUDED.dominant_score,
+                full_state = EXCLUDED.full_state,
+                updated_at = NOW()
+            """,
+            {
+                "id": rotation_state.get("id"),
+                "lecture_id": rotation_state.get("lectureId"),
+                "course_id": rotation_state.get("courseId"),
+                "iterations_completed": rotation_state.get("iterationsCompleted", 0),
+                "max_iterations": rotation_state.get("maxIterations", 6),
+                "status": rotation_state.get("status", "in_progress"),
+                "score_how": scores.get("RED", 0.0),
+                "score_what": scores.get("ORANGE", 0.0),
+                "score_when": scores.get("YELLOW", 0.0),
+                "score_where": scores.get("GREEN", 0.0),
+                "score_who": scores.get("BLUE", 0.0),
+                "score_why": scores.get("PURPLE", 0.0),
+                "entropy": rotation_state.get("entropy", 0.0),
+                "equilibrium_gap": rotation_state.get("equilibriumGap", 1.0),
+                "collapsed": rotation_state.get("collapsed", False),
+                "dominant_facet": dominant_facet,
+                "dominant_score": dominant_score,
+                "full_state": Json(rotation_state.get("fullState", rotation_state)),
+            },
+        )
+    conn.commit()
+
+
+def fetch_dice_rotation_state_by_lecture(conn, lecture_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch dice rotation state for a lecture.
+
+    Args:
+        conn: Database connection
+        lecture_id: Lecture ID
+
+    Returns:
+        Rotation state dict or None if not found
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, lecture_id, course_id,
+                   iterations_completed, max_iterations, status,
+                   score_how, score_what, score_when, score_where, score_who, score_why,
+                   entropy, equilibrium_gap, collapsed,
+                   dominant_facet, dominant_score,
+                   full_state,
+                   created_at, updated_at
+            FROM dice_rotation_states
+            WHERE lecture_id = %(lecture_id)s
+            """,
+            {"lecture_id": lecture_id},
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "lectureId": row[1],
+        "courseId": row[2],
+        "iterationsCompleted": row[3],
+        "maxIterations": row[4],
+        "status": row[5],
+        "scores": {
+            "RED": row[6],    # how
+            "ORANGE": row[7],  # what
+            "YELLOW": row[8],  # when
+            "GREEN": row[9],   # where
+            "BLUE": row[10],   # who
+            "PURPLE": row[11], # why
+        },
+        "entropy": row[12],
+        "equilibriumGap": row[13],
+        "collapsed": row[14],
+        "dominantFacet": row[15],
+        "dominantScore": row[16],
+        "fullState": row[17],
+        "createdAt": row[18].isoformat() if row[18] else None,
+        "updatedAt": row[19].isoformat() if row[19] else None,
+    }
+
+
+def fetch_dice_rotation_states_by_course(conn, course_id: str) -> list[Dict[str, Any]]:
+    """
+    Fetch all dice rotation states for a course.
+
+    Args:
+        conn: Database connection
+        course_id: Course ID
+
+    Returns:
+        List of rotation state dicts
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, lecture_id, course_id,
+                   iterations_completed, max_iterations, status,
+                   score_how, score_what, score_when, score_where, score_who, score_why,
+                   entropy, equilibrium_gap, collapsed,
+                   dominant_facet, dominant_score,
+                   created_at, updated_at
+            FROM dice_rotation_states
+            WHERE course_id = %(course_id)s
+            ORDER BY created_at DESC
+            """,
+            {"course_id": course_id},
+        )
+        rows = cur.fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "lectureId": row[1],
+            "courseId": row[2],
+            "iterationsCompleted": row[3],
+            "maxIterations": row[4],
+            "status": row[5],
+            "scores": {
+                "RED": row[6],
+                "ORANGE": row[7],
+                "YELLOW": row[8],
+                "GREEN": row[9],
+                "BLUE": row[10],
+                "PURPLE": row[11],
+            },
+            "entropy": row[12],
+            "equilibriumGap": row[13],
+            "collapsed": row[14],
+            "dominantFacet": row[15],
+            "dominantScore": row[16],
+            "createdAt": row[17].isoformat() if row[17] else None,
+            "updatedAt": row[18].isoformat() if row[18] else None,
+        }
+        for row in rows
+    ]

@@ -816,6 +816,157 @@ def get_last_metrics():
     return _last_metrics, _last_quality_score
 
 
+# Global storage for last rotation state
+_last_rotation_state = None
+
+
+def generate_thread_records_with_rotation(
+    course_id: str,
+    lecture_id: str,
+    transcript: str,
+    generated_at: Optional[str],
+    storage_dir: Path,
+    openai_model: str = "gpt-4o-mini",
+    llm_provider: str = "openai",
+    llm_model: str | None = None,
+    preset_id: Optional[str] = None,
+    max_iterations: int = 6,
+) -> Tuple[
+    List[Dict[str, Any]],
+    List[Dict[str, Any]],
+    List[Dict[str, Any]],
+    Dict[str, Any],  # Rotation state
+]:
+    """
+    Generate thread records using dynamic dice rotation.
+
+    This function rotates through different facet permutations, analyzing
+    the transcript from multiple perspectives. It stops when equilibrium
+    is reached or collapse is detected.
+
+    Args:
+        course_id: Course identifier
+        lecture_id: Lecture identifier
+        transcript: Lecture transcript text
+        generated_at: ISO timestamp
+        storage_dir: Path to storage directory
+        openai_model: OpenAI model to use
+        llm_provider: LLM provider (openai/gemini/vertex)
+        llm_model: Specific model name
+        preset_id: Optional preset ID
+        max_iterations: Maximum rotation iterations
+
+    Returns:
+        Tuple of (threads, occurrences, updates, rotation_state)
+    """
+    from pipeline.dice_rotation import (
+        create_rotation_state,
+        rotate_next,
+        is_rotation_complete,
+        get_rotation_summary,
+    )
+
+    print(f"[ThreadEngine] Starting dice rotation (max {max_iterations} iterations)")
+
+    # Load preset weights if available
+    preset_weights = None
+    if preset_id:
+        try:
+            import sys
+            backend_path = Path(__file__).parent.parent / "backend"
+            if str(backend_path) not in sys.path:
+                sys.path.insert(0, str(backend_path))
+            from presets import PRESETS_BY_ID
+            preset_config = PRESETS_BY_ID.get(preset_id)
+            if preset_config and "diceWeights" in preset_config:
+                preset_weights = preset_config["diceWeights"]
+        except Exception as e:
+            print(f"[ThreadEngine] WARNING: Could not load preset weights: {e}")
+
+    # Create rotation state
+    rotation_state = create_rotation_state(
+        preset_weights=preset_weights,
+        max_iterations=max_iterations,
+    )
+
+    # Aggregate results across iterations
+    all_threads_map: Dict[str, Dict[str, Any]] = {}
+    all_occurrences: List[Dict[str, Any]] = []
+    all_updates: List[Dict[str, Any]] = []
+
+    # Iterate through permutations
+    iteration = 0
+    while iteration < max_iterations:
+        print(f"[ThreadEngine] Rotation iteration {iteration + 1}/{max_iterations}")
+
+        # Run standard thread detection for this iteration
+        # This reuses the existing logic
+        iter_threads, iter_occurrences, iter_updates = generate_thread_records(
+            course_id=course_id,
+            lecture_id=lecture_id,
+            transcript=transcript,
+            generated_at=generated_at,
+            storage_dir=storage_dir,
+            openai_model=openai_model,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            preset_id=preset_id,
+        )
+
+        # Merge threads (avoid duplicates by ID)
+        for thread in iter_threads:
+            thread_id = thread.get("id")
+            if thread_id and thread_id not in all_threads_map:
+                all_threads_map[thread_id] = thread
+
+        # Accumulate occurrences and updates
+        all_occurrences.extend(iter_occurrences)
+        all_updates.extend(iter_updates)
+
+        # Update rotation state
+        rotation_state, should_continue = rotate_next(
+            rotation_state,
+            iter_threads,
+            iter_occurrences,
+            iter_updates,
+        )
+
+        iteration += 1
+
+        # Check if rotation is complete
+        if not should_continue or is_rotation_complete(rotation_state):
+            summary = get_rotation_summary(rotation_state)
+            print(f"[ThreadEngine] Rotation complete: {summary['status']}")
+            print(f"  Iterations: {summary['iterations_completed']}")
+            print(f"  Dominant facet: {summary['dominant_facet']} ({summary['dominant_score']:.2f})")
+            print(f"  Equilibrium gap: {summary['equilibrium_gap']:.3f}")
+            break
+
+    # Convert aggregated threads to list
+    final_threads = list(all_threads_map.values())
+
+    # Store rotation state globally for retrieval
+    global _last_rotation_state
+    _last_rotation_state = rotation_state
+
+    print(f"[ThreadEngine] Final: {len(final_threads)} unique threads across {iteration} iterations")
+
+    return final_threads, all_occurrences, all_updates, rotation_state.to_dict()
+
+
+def get_last_rotation_state():
+    """
+    Get the rotation state from the last rotation run.
+
+    Returns:
+        Rotation state dict or None if no rotation has run
+    """
+    global _last_rotation_state
+    if _last_rotation_state:
+        return _last_rotation_state.to_dict()
+    return None
+
+
 def _load_course_context(course_id: str) -> Optional[Dict[str, str]]:
     """
     Load course context (syllabus + notes) from database.
