@@ -193,7 +193,7 @@ def generate_artifacts_with_llm(
     course_id: str,
     lecture_id: str,
     generated_at: str | None = None,
-    model: str = "gemini-1.5-flash",  # Default to Gemini on GCP
+    model: str = "gemini-1.5-flash-002",  # Default to Gemini Flash on GCP
     thread_refs: List[str] | None = None,
     provider: str = "gemini",  # Default to Gemini/Vertex AI
 ) -> Dict[str, Dict[str, Any]]:
