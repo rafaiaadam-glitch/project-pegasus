@@ -193,7 +193,7 @@ def generate_artifacts_with_llm(
     course_id: str,
     lecture_id: str,
     generated_at: str | None = None,
-    model: str = "gemini-2.5-pro",  # Gemini 2.5 Pro with enhanced reasoning
+    model: str = "gemini-3-pro-preview",  # Gemini 3 Pro with deep reasoning
     thread_refs: List[str] | None = None,
     provider: str = "gemini",  # Default to Gemini/Vertex AI
 ) -> Dict[str, Dict[str, Any]]:
@@ -232,26 +232,36 @@ def generate_artifacts_with_llm(
         start_time = time.time()
         try:
             # 1. Initialize Vertex AI (Uses GCP IAM Identity)
-            # You can leave project/location as None if running on Cloud Run in the same project
-            # or force them from environment variables if needed.
+            # Note: Use "global" location for Gemini 3 if regional endpoints fail
             project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
             location = os.getenv("GCP_REGION", "us-central1")
-            vertexai.init(project=project_id, location=location)
+            # Try global location if model not found in region
+            try:
+                vertexai.init(project=project_id, location=location)
+            except Exception:
+                print(f"[LLM Generation] Regional endpoint failed, trying global...")
+                vertexai.init(project=project_id, location="global")
 
             # 2. Instantiate Model
             generative_model = GenerativeModel(model)
             print(f"[LLM Generation] Generating via Vertex AI model: {model}")
 
-            # 3. Generate Content
-            # Note: For reasoning models, Google recommends temperature >= 0.8 or default 1.0
-            # to prevent the model from getting "stuck" in its reasoning
+            # 3. Generate Content with Thinking Mode
+            # Note: For Gemini 3, Google recommends temperature=1.0 and thinking_level="HIGH"
+            # to activate deep reasoning capabilities
+            config_params = {
+                "response_mime_type": "application/json",
+                "temperature": 1.0,  # Google strongly recommends 1.0 for Gemini 3
+                "max_output_tokens": 8192,  # Increased for longer transcripts
+            }
+
+            # Add thinking_level for Gemini 3 models
+            if "gemini-3" in model:
+                config_params["thinking_level"] = "HIGH"  # Activates deep reasoning
+
             response = generative_model.generate_content(
                 [prompt, user_content],
-                generation_config=GenerationConfig(
-                    response_mime_type="application/json",
-                    temperature=1.0,  # Higher temp for better reasoning performance
-                    max_output_tokens=8192,  # Increased for longer transcripts
-                )
+                generation_config=GenerationConfig(**config_params)
             )
             raw_text = response.text
             duration = time.time() - start_time
