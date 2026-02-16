@@ -63,18 +63,41 @@ PRESETS: list[dict] = [
     },
     {
         "id": "seminar-mode",
-        "name": "Seminar Mode",
+        "name": "🎓 Seminar / Discussion Mode",
         "kind": "seminar",
-        "description": "Optimized for debate and discussion. Tracks arguments, counterarguments, and positions for seminar preparation.",
+        "description": "Optimized for debate and discussion tracking. Ideal for Political Science, Philosophy, Law, Sociology, Anthropology, and Literature. Emphasizes argument clarity, position mapping, and normative stakes.",
+        "targetDisciplines": [
+            "Political Science",
+            "Philosophy",
+            "Law",
+            "Sociology",
+            "Anthropology",
+            "Literature",
+        ],
+        "diceWeights": {
+            "what": 0.18,  # ORANGE: Core concepts and definitions
+            "how": 0.22,   # RED: Argument structure and methodology
+            "when": 0.08,  # YELLOW: Historical/temporal context
+            "where": 0.12, # GREEN: Geographic/institutional context
+            "who": 0.20,   # BLUE: Speaker attribution and schools of thought
+            "why": 0.20,   # PURPLE: Normative claims and philosophical stakes
+        },
+        "optimizedFor": [
+            "Argument clarity",
+            "Debate tracking",
+            "Position mapping",
+            "Counterarguments",
+            "Normative stakes",
+            "Speaker attribution",
+        ],
         "outputProfile": {
             "summary_style": "debate_focused",
             "sections": [
-                "key_speakers",
-                "core_claims",
-                "evidence",
-                "counterclaims",
-                "critiques",
-                "discussion_questions",
+                "main_claim",
+                "supporting_argument",
+                "counterargument",
+                "critique",
+                "open_question",
             ],
             "chunking": "argument_based",
             "question_focus": True,
@@ -83,6 +106,8 @@ PRESETS: list[dict] = [
                 "why": "high",  # Normative claims, philosophical stakes
                 "how": "high",  # Argument structure
                 "what": "medium",  # Core concepts
+                "where": "low",  # Geographic context
+                "when": "low",   # Temporal context
             },
         },
     },

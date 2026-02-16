@@ -159,7 +159,17 @@ class ThreadStore:
 # LLM-backed concept detection
 # ---------------------------------------------------------------------------
 
-_SYSTEM_PROMPT = """\
+def _build_system_prompt(preset_config: Optional[Dict[str, Any]] = None) -> str:
+    """
+    Build a system prompt for thread detection, optionally customized for a preset.
+
+    Args:
+        preset_config: Optional preset configuration with diceWeights and emphasis
+
+    Returns:
+        System prompt string
+    """
+    base_prompt = """\
 You are the Thread Engine for Pegasus Lecture Copilot.
 
 Your job is to analyse a university lecture transcript and identify academic
@@ -171,7 +181,45 @@ You will be given:
    - Prioritize concepts that align with the syllabus
    - Use terminology consistent with course materials
 2. The lecture transcript.
-3. A list of concepts (threads) already tracked for this course.
+3. A list of concepts (threads) already tracked for this course."""
+
+    # Add preset-specific guidance
+    if preset_config:
+        dice_weights = preset_config.get("diceWeights", {})
+        optimized_for = preset_config.get("optimizedFor", [])
+        target_disciplines = preset_config.get("targetDisciplines", [])
+
+        if dice_weights or optimized_for:
+            base_prompt += "\n\nMODE: " + preset_config.get("name", "Standard Mode")
+
+            if target_disciplines:
+                base_prompt += f"\nTarget disciplines: {', '.join(target_disciplines)}"
+
+            if optimized_for:
+                base_prompt += f"\nOptimized for: {', '.join(optimized_for)}"
+
+            if dice_weights:
+                base_prompt += "\n\nCONCEPT DETECTION PRIORITIES (dice weights):"
+                if dice_weights.get("who", 0) > 0:
+                    weight_pct = int(dice_weights["who"] * 100)
+                    base_prompt += f"\n- WHO ({weight_pct}%): Identify speakers, authors, schools of thought, and attribution"
+                if dice_weights.get("why", 0) > 0:
+                    weight_pct = int(dice_weights["why"] * 100)
+                    base_prompt += f"\n- WHY ({weight_pct}%): Track normative claims, philosophical stakes, and underlying rationales"
+                if dice_weights.get("how", 0) > 0:
+                    weight_pct = int(dice_weights["how"] * 100)
+                    base_prompt += f"\n- HOW ({weight_pct}%): Capture argument structure, methodology, and logical flow"
+                if dice_weights.get("what", 0) > 0:
+                    weight_pct = int(dice_weights["what"] * 100)
+                    base_prompt += f"\n- WHAT ({weight_pct}%): Record core concepts, definitions, and subject matter"
+                if dice_weights.get("where", 0) > 0:
+                    weight_pct = int(dice_weights["where"] * 100)
+                    base_prompt += f"\n- WHERE ({weight_pct}%): Note geographic, institutional, or contextual settings"
+                if dice_weights.get("when", 0) > 0:
+                    weight_pct = int(dice_weights["when"] * 100)
+                    base_prompt += f"\n- WHEN ({weight_pct}%): Track historical context and temporal relationships"
+
+    base_prompt += """
 
 Return STRICT JSON only — no markdown, no explanation.
 
@@ -209,12 +257,18 @@ Rules:
 - Do NOT hallucinate content not present in the transcript.
 """
 
+    return base_prompt
+
+
+_SYSTEM_PROMPT = _build_system_prompt()  # Default prompt for backward compatibility
+
 
 def _call_openai(
     transcript: str,
     existing_threads: List[Dict[str, Any]],
     model: str,
     timeout: int = 90,
+    preset_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Call OpenAI with retry logic and return parsed JSON response."""
     from pipeline.retry_utils import (
@@ -237,10 +291,13 @@ def _call_openai(
         f"transcript:\n{transcript}"
     )
 
+    # Build preset-aware system prompt
+    system_prompt = _build_system_prompt(preset_config) if preset_config else _SYSTEM_PROMPT
+
     payload = {
         "model": model,
         "input": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
         "response_format": {"type": "json_object"},
@@ -286,6 +343,7 @@ def _call_gemini(
     model: str,
     timeout: int = 90,
     course_context: Optional[Dict[str, str]] = None,
+    preset_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Call Gemini with retry logic and return parsed JSON response."""
     from pipeline.retry_utils import NonRetryableError, retry_config_from_env, with_retry
@@ -315,13 +373,16 @@ def _call_gemini(
 
     user_content = "\n".join(content_parts)
 
+    # Build preset-aware system prompt
+    system_prompt = _build_system_prompt(preset_config) if preset_config else _SYSTEM_PROMPT
+
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
         f"{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
     )
 
     payload = {
-        "system_instruction": {"parts": [{"text": _SYSTEM_PROMPT}]},
+        "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": [{"role": "user", "parts": [{"text": user_content}]}],
         "generationConfig": {"responseMimeType": "application/json"},
     }
@@ -598,6 +659,7 @@ def generate_thread_records(
     openai_model: str = "gpt-4o-mini",
     llm_provider: str = "openai",
     llm_model: str | None = None,
+    preset_id: Optional[str] = None,
 ) -> Tuple[
     List[Dict[str, Any]],
     List[Dict[str, Any]],
@@ -609,6 +671,17 @@ def generate_thread_records(
 
     Uses configured LLM provider if credentials are available, otherwise falls
     back to keyword extraction. All returned records conform to project schemas.
+
+    Args:
+        course_id: Course identifier
+        lecture_id: Lecture identifier
+        transcript: Lecture transcript text
+        generated_at: ISO timestamp
+        storage_dir: Path to storage directory
+        openai_model: OpenAI model to use
+        llm_provider: LLM provider (openai/gemini/vertex)
+        llm_model: Specific model name
+        preset_id: Optional preset ID to customize thread detection behavior
     """
     if generated_at is None:
         generated_at = _iso_now()
@@ -625,6 +698,23 @@ def generate_thread_records(
     should_try_llm = (provider_key == "openai" and has_openai_key) or (
         provider_key in {"gemini", "vertex"} and has_gemini_key
     )
+
+    # Load preset configuration if provided
+    preset_config = None
+    if preset_id:
+        try:
+            # Import here to avoid circular dependency
+            import sys
+            from pathlib import Path
+            backend_path = Path(__file__).parent.parent / "backend"
+            if str(backend_path) not in sys.path:
+                sys.path.insert(0, str(backend_path))
+            from presets import PRESETS_BY_ID
+            preset_config = PRESETS_BY_ID.get(preset_id)
+            if preset_config:
+                print(f"[ThreadEngine] Using preset: {preset_config.get('name', preset_id)}")
+        except Exception as e:
+            print(f"[ThreadEngine] WARNING: Could not load preset {preset_id}: {e}")
 
     # Load course context from uploaded files (if available)
     course_context = _load_course_context(course_id)
@@ -645,10 +735,14 @@ def generate_thread_records(
         try:
             start_time = time.time()
             if provider_key == "openai":
-                llm_result = _call_openai(transcript, existing_list, model_name)
+                llm_result = _call_openai(transcript, existing_list, model_name, preset_config=preset_config)
                 detection_method = "openai"
             else:
-                llm_result = _call_gemini(transcript, existing_list, model_name, course_context=course_context)
+                llm_result = _call_gemini(
+                    transcript, existing_list, model_name,
+                    course_context=course_context,
+                    preset_config=preset_config
+                )
                 detection_method = "gemini"
             api_response_time_ms = (time.time() - start_time) * 1000
 

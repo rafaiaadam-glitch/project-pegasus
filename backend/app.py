@@ -13,7 +13,7 @@ from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile

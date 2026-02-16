@@ -124,6 +124,7 @@ def _generate_thread_records(
         storage_dir=Path("storage"),
         llm_provider=llm_provider,
         llm_model=llm_model,
+        preset_id=context.preset_id,  # Pass preset_id to enable preset-aware thread detection
     )
 
 
