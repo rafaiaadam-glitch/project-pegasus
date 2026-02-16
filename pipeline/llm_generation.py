@@ -245,10 +245,12 @@ def generate_artifacts_with_llm(
                 [prompt, user_content],
                 generation_config=GenerationConfig(
                     response_mime_type="application/json",
-                    temperature=0.2
+                    temperature=0.2,
+                    max_output_tokens=8192,  # Increased for longer transcripts
                 )
             )
             raw_text = response.text
+            print(f"[LLM Generation] Generated {len(raw_text)} characters of JSON")
 
         except Exception as e:
             print(f"[LLM Generation] Vertex AI Error: {e}")
@@ -260,7 +262,11 @@ def generate_artifacts_with_llm(
     try:
         data = json.loads(raw_text)
     except json.JSONDecodeError as e:
-        print(f"[LLM Generation] JSON Decode Error. Raw output:\n{raw_text[:200]}...")
+        print(f"[LLM Generation] JSON Decode Error at position {e.pos}: {e.msg}")
+        print(f"[LLM Generation] Error context: ...{raw_text[max(0, e.pos-100):e.pos+100]}...")
+        print(f"[LLM Generation] Response start: {raw_text[:300]}...")
+        print(f"[LLM Generation] Response end: ...{raw_text[-300:]}")
+        print(f"[LLM Generation] Total response length: {len(raw_text)} chars")
         raise ValueError(f"LLM failed to return valid JSON: {e}")
 
     mapping = {
