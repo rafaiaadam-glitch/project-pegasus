@@ -5,7 +5,7 @@
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-delta-student-486911-n5}"
-REGION="${REGION:-us-west1}"
+REGION="${REGION:-REGION=us-central1}"
 SERVICE_NAME="${SERVICE_NAME:-pegasus-api}"
 IMAGE_NAME="us-west1-docker.pkg.dev/${PROJECT_ID}/pegasus/api:latest"
 
