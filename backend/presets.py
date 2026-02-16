@@ -21,6 +21,19 @@ PRESETS: list[dict] = [
             "Contextual awareness",
             "Evaluation and analysis",
         ],
+        "generation_config": {
+            "summary_max_words": 800,
+            "flashcard_count": 25,
+            "exam_question_count": 15,
+            "tone": "formal_academic",
+            "question_types": ["definition", "explanation", "application", "evaluation"],
+            "special_instructions": [
+                "Include clear definitions suitable for memorization",
+                "Highlight examinable points and mark scheme criteria",
+                "Structure explanations in exam-friendly bullet points",
+                "Add 'Common mistakes to avoid' where relevant",
+            ],
+        },
         "outputProfile": {
             "summary_style": "concise_academic",
             "sections": ["overview", "examinable_points", "definitions", "likely_questions"],
@@ -56,6 +69,19 @@ PRESETS: list[dict] = [
             "Hierarchical structure",
             "Dependency chains",
         ],
+        "generation_config": {
+            "summary_max_words": 600,
+            "flashcard_count": 20,
+            "exam_question_count": 10,
+            "tone": "analytical_precise",
+            "question_types": ["relationship", "system_analysis", "dependency"],
+            "special_instructions": [
+                "Emphasize how concepts connect and interact",
+                "Identify hierarchical relationships and dependencies",
+                "Describe system boundaries and scope clearly",
+                "Use phrases like 'depends on', 'leads to', 'requires', 'influences'",
+            ],
+        },
         "outputProfile": {
             "summary_style": "conceptual",
             "sections": ["core_concepts", "relationships", "dependencies", "misconceptions"],
@@ -91,6 +117,20 @@ PRESETS: list[dict] = [
             "Reduced cognitive load",
             "Plain language",
         ],
+        "generation_config": {
+            "summary_max_words": 500,
+            "flashcard_count": 15,
+            "exam_question_count": 8,
+            "tone": "conversational",
+            "question_types": ["recognition", "basic_understanding", "simple_application"],
+            "special_instructions": [
+                "Use plain, everyday language - avoid jargon",
+                "Include concrete examples and analogies for every concept",
+                "Break complex ideas into simple, digestible chunks",
+                "Use phrases like 'Think of it like...', 'In simple terms...'",
+                "Avoid abstract theoretical discussions",
+            ],
+        },
         "outputProfile": {
             "summary_style": "plain_language",
             "sections": ["overview", "key_ideas", "examples", "analogy_bank"],
@@ -126,6 +166,21 @@ PRESETS: list[dict] = [
             "Explicit boundaries",
             "Minimal abstraction",
         ],
+        "generation_config": {
+            "summary_max_words": 400,
+            "flashcard_count": 12,
+            "exam_question_count": 6,
+            "tone": "direct_predictable",
+            "question_types": ["sequence", "recall", "pattern_recognition"],
+            "special_instructions": [
+                "Use numbered steps (1, 2, 3) instead of prose paragraphs",
+                "Keep sentences short and direct (max 15 words per sentence)",
+                "Use consistent structure and predictable formatting",
+                "Provide clear temporal markers ('First', 'Then', 'Finally')",
+                "Avoid metaphors, idioms, and ambiguous language",
+                "Use high contrast formatting with clear visual breaks",
+            ],
+        },
         "outputProfile": {
             "summary_style": "low_clutter",
             "sections": ["overview", "micro_chunks", "key_terms", "recall_prompts"],
@@ -161,6 +216,21 @@ PRESETS: list[dict] = [
             "Multi-source integration",
             "Theoretical framing",
         ],
+        "generation_config": {
+            "summary_max_words": 1000,
+            "flashcard_count": 20,
+            "exam_question_count": 12,
+            "tone": "analytical_precise",
+            "question_types": ["critical_analysis", "methodology", "evaluation", "synthesis"],
+            "special_instructions": [
+                "Emphasize methodological rigor and research design",
+                "Identify claims, evidence, and gaps in reasoning",
+                "Highlight contextual factors and boundary conditions",
+                "Use precise operational definitions",
+                "Include phrases like 'The evidence suggests...', 'A limitation is...'",
+                "Note stakeholders, populations, and sampling considerations",
+            ],
+        },
         "outputProfile": {
             "summary_style": "argumentative",
             "sections": ["claims", "arguments", "evidence", "open_questions"],
@@ -205,6 +275,21 @@ PRESETS: list[dict] = [
             "Normative stakes",
             "Speaker attribution",
         ],
+        "generation_config": {
+            "summary_max_words": 900,
+            "flashcard_count": 18,
+            "exam_question_count": 10,
+            "tone": "dialectical",
+            "question_types": ["argument_analysis", "position_comparison", "critique", "normative_evaluation"],
+            "special_instructions": [
+                "Clearly attribute positions to specific speakers/authors",
+                "Structure content around claims and counterarguments",
+                "Identify normative stakes and philosophical implications",
+                "Use phrases like 'X argues that...', 'In contrast, Y contends...'",
+                "Highlight points of disagreement and debate",
+                "Include open questions suitable for seminar discussion",
+            ],
+        },
         "outputProfile": {
             "summary_style": "debate_focused",
             "sections": [

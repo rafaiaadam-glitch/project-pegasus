@@ -113,24 +113,76 @@ def _base_artifact(
         "version": "0.2",
     }
 
-def generate_artifacts_with_llm(
-    transcript: str,
-    preset_id: str,
-    course_id: str,
-    lecture_id: str,
-    generated_at: str | None = None,
-    model: str = "gemini-1.5-flash",  # Default to Gemini on GCP
-    thread_refs: List[str] | None = None,
-    provider: str = "gemini",  # Default to Gemini/Vertex AI for GCP alignment
-) -> Dict[str, Dict[str, Any]]:
-    if generated_at is None:
-        generated_at = _iso_now()
+def _load_preset_config(preset_id: str) -> Dict[str, Any] | None:
+    """Load preset configuration from backend/presets.py."""
+    try:
+        import sys
+        from pathlib import Path
+        backend_path = Path(__file__).parent.parent / "backend"
+        if str(backend_path) not in sys.path:
+            sys.path.insert(0, str(backend_path))
+        from presets import PRESETS_BY_ID
+        return PRESETS_BY_ID.get(preset_id)
+    except Exception as e:
+        print(f"[LLM Generation] WARNING: Could not load preset {preset_id}: {e}")
+        return None
 
-    prompt = (
+
+def _build_generation_prompt(preset_id: str, preset_config: Dict[str, Any] | None) -> str:
+    """Build a system prompt customized for the preset's generation config."""
+
+    # Base structure requirement
+    base_prompt = (
         "You are generating structured study artifacts for Pegasus Lecture Copilot.\n"
         "Return STRICT JSON only. You MUST return a JSON OBJECT (not an array) with these exact keys:\n"
         "summary, outline, key_terms, flashcards, exam_questions.\n\n"
         "All artifacts must include: id, courseId, lectureId, presetId, artifactType, generatedAt, version.\n\n"
+    )
+
+    # Add preset-specific generation instructions
+    if preset_config and "generation_config" in preset_config:
+        gen_config = preset_config["generation_config"]
+        preset_name = preset_config.get("name", preset_id)
+
+        base_prompt += f"\nMODE: {preset_name}\n"
+        base_prompt += "=" * 60 + "\n\n"
+
+        # Tone directive
+        if "tone" in gen_config:
+            tone_guidance = {
+                "formal_academic": "Use formal academic language. Be precise and scholarly.",
+                "conversational": "Use plain, everyday language. Explain like you're talking to a friend. Include examples and analogies.",
+                "direct_predictable": "Use short, direct sentences (max 15 words). Use numbered steps. Avoid metaphors and ambiguity.",
+                "analytical_precise": "Use precise technical language. Emphasize methodology and evidence.",
+                "dialectical": "Present arguments and counterarguments. Attribute positions to speakers. Highlight points of disagreement.",
+            }
+            tone = gen_config["tone"]
+            if tone in tone_guidance:
+                base_prompt += f"TONE: {tone_guidance[tone]}\n\n"
+
+        # Length targets
+        if "summary_max_words" in gen_config:
+            base_prompt += f"SUMMARY LENGTH: Target ~{gen_config['summary_max_words']} words maximum\n"
+        if "flashcard_count" in gen_config:
+            base_prompt += f"FLASHCARD COUNT: Generate approximately {gen_config['flashcard_count']} flashcards\n"
+        if "exam_question_count" in gen_config:
+            base_prompt += f"EXAM QUESTIONS: Generate approximately {gen_config['exam_question_count']} questions\n"
+
+        # Question types
+        if "question_types" in gen_config:
+            q_types = ", ".join(gen_config["question_types"])
+            base_prompt += f"QUESTION TYPES: Focus on {q_types}\n"
+
+        # Special instructions
+        if "special_instructions" in gen_config:
+            base_prompt += "\nSPECIAL INSTRUCTIONS:\n"
+            for instruction in gen_config["special_instructions"]:
+                base_prompt += f"- {instruction}\n"
+
+        base_prompt += "\n" + "=" * 60 + "\n\n"
+
+    # Schema definitions
+    base_prompt += (
         "EXACT STRUCTURES REQUIRED:\n\n"
         '1. summary (artifactType: "summary"):\n'
         '   {\n'
@@ -176,6 +228,32 @@ def generate_artifacts_with_llm(
         '   }\n\n'
         "Generate artifacts from the transcript below.\n"
     )
+
+    return base_prompt
+
+
+def generate_artifacts_with_llm(
+    transcript: str,
+    preset_id: str,
+    course_id: str,
+    lecture_id: str,
+    generated_at: str | None = None,
+    model: str = "gemini-1.5-flash",  # Default to Gemini on GCP
+    thread_refs: List[str] | None = None,
+    provider: str = "gemini",  # Default to Gemini/Vertex AI for GCP alignment
+) -> Dict[str, Dict[str, Any]]:
+    if generated_at is None:
+        generated_at = _iso_now()
+
+    # Load preset configuration
+    preset_config = _load_preset_config(preset_id)
+    if preset_config:
+        print(f"[LLM Generation] Using preset: {preset_config.get('name', preset_id)}")
+    else:
+        print(f"[LLM Generation] WARNING: Could not load preset config for {preset_id}, using defaults")
+
+    # Build customized prompt
+    prompt = _build_generation_prompt(preset_id, preset_config)
 
     user_content = f"Preset: {preset_id}\nTranscript:\n{transcript}"
     provider_key = provider.strip().lower()
