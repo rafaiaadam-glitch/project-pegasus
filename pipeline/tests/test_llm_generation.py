@@ -1,4 +1,8 @@
-"""Tests for Gemini/Vertex AI LLM generation"""
+"""Tests for Vertex AI LLM generation
+
+Note: Tests for the old _request_gemini and _extract_gemini_text functions have been removed.
+The implementation now uses the Vertex AI SDK directly, which is tested via integration tests.
+"""
 from __future__ import annotations
 
 import json
@@ -7,361 +11,255 @@ from unittest.mock import Mock, patch, MagicMock
 from pipeline import llm_generation
 
 
-def test_request_gemini_success(monkeypatch):
-    """Test successful Gemini API request"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-api-key")
-
-    fake_response = {
-        "candidates": [
-            {
-                "content": {
-                    "parts": [{"text": '{"summary": "test", "outline": "test"}'}]
-                }
-            }
-        ]
-    }
-
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_response = Mock()
-        mock_response.read.return_value = json.dumps(fake_response).encode("utf-8")
-        mock_response.__enter__ = Mock(return_value=mock_response)
-        mock_response.__exit__ = Mock(return_value=False)
-        mock_urlopen.return_value = mock_response
-
-        result = llm_generation._request_gemini(
-            prompt="Test prompt",
-            user_content="Test content",
-            model="gemini-1.5-flash"
-        )
-
-        assert result == fake_response
-        assert mock_urlopen.called
-
-
-def test_request_gemini_uses_google_api_key_fallback(monkeypatch):
-    """Test that GOOGLE_API_KEY is used when GEMINI_API_KEY is not set"""
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
-
-    fake_response = {
-        "candidates": [
-            {"content": {"parts": [{"text": '{"summary": "test"}'}]}}
-        ]
-    }
-
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_response = Mock()
-        mock_response.read.return_value = json.dumps(fake_response).encode("utf-8")
-        mock_response.__enter__ = Mock(return_value=mock_response)
-        mock_response.__exit__ = Mock(return_value=False)
-        mock_urlopen.return_value = mock_response
-
-        result = llm_generation._request_gemini(
-            prompt="Test",
-            user_content="Content",
-            model="gemini-1.5-flash"
-        )
-
-        assert result == fake_response
-        # Verify the URL contains the Google API key
-        call_args = mock_urlopen.call_args
-        request_obj = call_args[0][0]
-        assert "test-google-key" in request_obj.full_url
-
-
-def test_request_gemini_missing_api_key(monkeypatch):
-    """Test that missing API key raises RuntimeError"""
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-
-    with pytest.raises(RuntimeError, match="GEMINI_API_KEY or GOOGLE_API_KEY"):
-        llm_generation._request_gemini(
-            prompt="Test",
-            user_content="Content",
-            model="gemini-1.5-flash"
-        )
-
-
-def test_extract_gemini_text_success():
-    """Test extracting text from Gemini API response"""
-    response = {
-        "candidates": [
-            {
-                "content": {
-                    "parts": [{"text": "Extracted text content"}]
-                }
-            }
-        ]
-    }
-
-    result = llm_generation._extract_gemini_text(response)
-    assert result == "Extracted text content"
-
-
-def test_extract_gemini_text_missing_candidates():
-    """Test that missing candidates raises ValueError"""
-    response = {"candidates": []}
-
-    with pytest.raises(ValueError, match="Gemini response missing text output"):
-        llm_generation._extract_gemini_text(response)
-
-
-def test_extract_gemini_text_missing_content():
-    """Test that missing content raises ValueError"""
-    response = {"candidates": [{}]}
-
-    with pytest.raises(ValueError, match="Gemini response missing text output"):
-        llm_generation._extract_gemini_text(response)
-
-
-def test_extract_gemini_text_missing_parts():
-    """Test that missing parts raises ValueError"""
-    response = {"candidates": [{"content": {"parts": []}}]}
-
-    with pytest.raises(ValueError, match="Gemini response missing text output"):
-        llm_generation._extract_gemini_text(response)
-
-
-def test_generate_artifacts_with_gemini_provider(monkeypatch):
-    """Test artifact generation with Gemini provider"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
-    monkeypatch.setenv("GCP_REGION", "us-central1")
-
-    fake_artifacts = {
-        "summary": {
-            "id": "summary-1",
-            "courseId": "course-1",
-            "lectureId": "lecture-1",
-            "presetId": "exam-mode",
-            "artifactType": "summary",
-            "overview": "Test overview",
-            "sections": []
-        },
-        "outline": {
-            "id": "outline-1",
-            "courseId": "course-1",
-            "lectureId": "lecture-1",
-            "presetId": "exam-mode",
-            "artifactType": "outline",
-            "items": []
-        },
-        "key_terms": {
-            "id": "terms-1",
-            "courseId": "course-1",
-            "lectureId": "lecture-1",
-            "presetId": "exam-mode",
-            "artifactType": "key-terms",
-            "terms": []
-        },
-        "flashcards": {
-            "id": "flash-1",
-            "courseId": "course-1",
-            "lectureId": "lecture-1",
-            "presetId": "exam-mode",
-            "artifactType": "flashcards",
-            "cards": []
-        },
-        "exam_questions": {
-            "id": "exam-1",
-            "courseId": "course-1",
-            "lectureId": "lecture-1",
-            "presetId": "exam-mode",
-            "artifactType": "exam-questions",
-            "questions": []
-        }
-    }
-
-    fake_gemini_response = {
-        "candidates": [
-            {
-                "content": {
-                    "parts": [{"text": json.dumps(fake_artifacts)}]
-                }
-            }
-        ]
-    }
-
-    with patch("vertexai.init"):
-        with patch.object(llm_generation, "_request_gemini", return_value=fake_gemini_response):
-            result = llm_generation.generate_artifacts_with_llm(
-                transcript="Test transcript",
-                preset_id="exam-mode",
-                course_id="course-1",
-                lecture_id="lecture-1",
-                provider="gemini",
-                model="gemini-1.5-flash"
-            )
-
-            assert "summary" in result
-            assert "outline" in result
-            assert "key-terms" in result
-            assert "flashcards" in result
-            assert "exam-questions" in result
-
-            # Verify artifact types are correctly set
-            assert result["summary"]["artifactType"] == "summary"
-            assert result["key-terms"]["artifactType"] == "key-terms"
-
-
-def test_generate_artifacts_with_vertex_provider(monkeypatch):
-    """Test that vertex provider uses same Gemini path"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
-    monkeypatch.setenv("GCP_REGION", "us-west1")
-
-    fake_artifacts = {
-        "summary": {"artifactType": "summary"},
-        "outline": {"artifactType": "outline"},
-        "key_terms": {"artifactType": "key-terms"},
-        "flashcards": {"artifactType": "flashcards"},
-        "exam_questions": {"artifactType": "exam-questions"}
-    }
-
-    fake_response = {
-        "candidates": [
-            {"content": {"parts": [{"text": json.dumps(fake_artifacts)}]}}
-        ]
-    }
-
-    with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
-        result = llm_generation.generate_artifacts_with_llm(
-            transcript="Test",
-            preset_id="exam-mode",
-            course_id="c1",
-            lecture_id="l1",
-            provider="vertex"  # Test vertex specifically
-        )
-
-        # Vertex provider should work and generate artifacts
-        assert "summary" in result
-
-
 def test_generate_artifacts_invalid_provider():
     """Test that invalid provider raises ValueError"""
     with pytest.raises(ValueError, match="Unsupported LLM provider"):
         llm_generation.generate_artifacts_with_llm(
-            transcript="Test",
-            preset_id="exam-mode",
-            course_id="c1",
-            lecture_id="l1",
+            transcript="Test transcript",
+            preset_id="exam",
+            course_id="course-1",
+            lecture_id="lecture-1",
             provider="invalid-provider"
         )
 
 
-def test_generate_artifacts_invalid_json_response(monkeypatch):
-    """Test that invalid JSON from LLM raises ValueError"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+def test_base_artifact_structure():
+    """Test that _base_artifact generates correct structure"""
+    result = llm_generation._base_artifact(
+        artifact_type="summary",
+        course_id="course-123",
+        lecture_id="lecture-456",
+        preset_id="exam",
+        generated_at="2024-01-01T00:00:00Z"
+    )
 
-    fake_response = {
-        "candidates": [
-            {"content": {"parts": [{"text": "Not valid JSON"}]}}
-        ]
+    assert result["artifactType"] == "summary"
+    assert result["courseId"] == "course-123"
+    assert result["lectureId"] == "lecture-456"
+    assert result["presetId"] == "exam"
+    assert result["generatedAt"] == "2024-01-01T00:00:00Z"
+    assert result["version"] == "0.2"
+    assert "id" in result
+
+
+def test_build_generation_prompt_includes_required_structures():
+    """Test that prompt includes all required artifact structures"""
+    prompt = llm_generation._build_generation_prompt("exam", None)
+
+    assert "summary" in prompt
+    assert "outline" in prompt
+    assert "key_terms" in prompt
+    assert "flashcards" in prompt
+    assert "exam_questions" in prompt
+    assert "artifactType" in prompt
+
+
+def test_build_generation_prompt_with_preset_config():
+    """Test that preset config modifies the prompt"""
+    preset_config = {
+        "name": "Test Mode",
+        "generation_config": {
+            "tone": "conversational",
+            "summary_max_words": 300,
+            "flashcard_count": 15,
+            "exam_question_count": 10,
+            "question_types": ["multiple-choice", "short-answer"],
+            "special_instructions": ["Focus on practical examples"]
+        }
     }
 
-    with patch("vertexai.init"):
-        with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
-            with pytest.raises(ValueError, match="failed to return valid JSON"):
-                llm_generation.generate_artifacts_with_llm(
-                    transcript="Test",
-                    preset_id="exam-mode",
-                    course_id="c1",
-                    lecture_id="l1",
-                    provider="gemini"
-                )
+    prompt = llm_generation._build_generation_prompt("test", preset_config)
+
+    assert "Test Mode" in prompt
+    assert "conversational" in prompt or "plain, everyday language" in prompt
+    assert "300" in prompt
+    assert "15" in prompt
+    assert "10" in prompt
+    assert "practical examples" in prompt
 
 
-def test_generate_artifacts_missing_required_keys(monkeypatch):
-    """Test that missing required artifact keys raises ValueError"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+@patch('pipeline.llm_generation.vertexai')
+@patch('pipeline.llm_generation.GenerativeModel')
+def test_generate_artifacts_with_vertex_ai(mock_model_class, mock_vertexai, monkeypatch):
+    """Test artifact generation with Vertex AI SDK"""
+    monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
+    monkeypatch.setenv("GCP_REGION", "us-central1")
 
-    # Missing 'outline' key
-    incomplete_artifacts = {
-        "summary": {"artifactType": "summary"},
-        "key_terms": {"artifactType": "key-terms"}
-    }
+    # Mock the Vertex AI response
+    mock_model_instance = Mock()
+    mock_response = Mock()
+    mock_response.text = json.dumps({
+        "summary": {
+            "overview": "Test overview",
+            "sections": [{"title": "Section 1", "bullets": ["Point 1"]}]
+        },
+        "outline": {
+            "outline": [{"title": "Topic 1", "points": ["Detail 1"], "children": []}]
+        },
+        "key_terms": {
+            "terms": [{"term": "Term 1", "definition": "Definition 1"}]
+        },
+        "flashcards": {
+            "cards": [{"front": "Question?", "back": "Answer"}]
+        },
+        "exam_questions": {
+            "questions": [{
+                "prompt": "Test question?",
+                "type": "multiple-choice",
+                "answer": "A",
+                "choices": ["A", "B", "C"],
+                "correctChoiceIndex": 0
+            }]
+        }
+    })
 
-    fake_response = {
-        "candidates": [
-            {"content": {"parts": [{"text": json.dumps(incomplete_artifacts)}]}}
-        ]
-    }
+    mock_model_instance.generate_content.return_value = mock_response
+    mock_model_class.return_value = mock_model_instance
 
-    with patch("vertexai.init"):
-        with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
-            with pytest.raises(ValueError, match="Missing 'outline'"):
-                llm_generation.generate_artifacts_with_llm(
-                    transcript="Test",
-                    preset_id="exam-mode",
-                    course_id="c1",
-                    lecture_id="l1",
-                    provider="gemini"
-                )
+    result = llm_generation.generate_artifacts_with_llm(
+        transcript="Test transcript about photosynthesis",
+        preset_id="exam",
+        course_id="bio-101",
+        lecture_id="lecture-1",
+        provider="vertex"
+    )
 
+    # Verify Vertex AI was initialized
+    mock_vertexai.init.assert_called_once()
 
-def test_generate_artifacts_with_thread_refs(monkeypatch):
-    """Test that thread_refs are added to artifacts when provided"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    # Verify model was instantiated
+    mock_model_class.assert_called_once()
 
-    fake_artifacts = {
-        "summary": {"artifactType": "summary"},
-        "outline": {"artifactType": "outline"},
-        "key_terms": {"artifactType": "key-terms"},
-        "flashcards": {"artifactType": "flashcards"},
-        "exam_questions": {"artifactType": "exam-questions"}
-    }
+    # Verify artifacts were generated
+    assert "summary" in result
+    assert "outline" in result
+    assert "key-terms" in result
+    assert "flashcards" in result
+    assert "exam-questions" in result
 
-    fake_response = {
-        "candidates": [
-            {"content": {"parts": [{"text": json.dumps(fake_artifacts)}]}}
-        ]
-    }
-
-    with patch("vertexai.init"):
-        with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
-            result = llm_generation.generate_artifacts_with_llm(
-                transcript="Test",
-                preset_id="exam-mode",
-                course_id="c1",
-                lecture_id="l1",
-                provider="gemini",
-                thread_refs=["thread-1", "thread-2"]
-            )
-
-            # All artifacts should have thread refs
-            assert result["summary"]["threadRefs"] == ["thread-1", "thread-2"]
-            assert result["outline"]["threadRefs"] == ["thread-1", "thread-2"]
-            assert result["key-terms"]["threadRefs"] == ["thread-1", "thread-2"]
+    # Verify artifact structure
+    assert result["summary"]["artifactType"] == "summary"
+    assert result["summary"]["courseId"] == "bio-101"
+    assert result["summary"]["lectureId"] == "lecture-1"
+    assert result["summary"]["presetId"] == "exam"
+    assert "overview" in result["summary"]
 
 
-def test_gemini_uses_default_project_when_env_not_set(monkeypatch):
-    """Test that Gemini works when GCP project env vars are not set"""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.delenv("GCP_PROJECT_ID", raising=False)
-    monkeypatch.delenv("GCP_REGION", raising=False)
+@patch('pipeline.llm_generation.vertexai')
+@patch('pipeline.llm_generation.GenerativeModel')
+def test_generate_artifacts_with_thread_refs(mock_model_class, mock_vertexai, monkeypatch):
+    """Test that thread_refs are included in artifacts"""
+    monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
 
-    fake_artifacts = {
-        "summary": {"artifactType": "summary"},
-        "outline": {"artifactType": "outline"},
-        "key_terms": {"artifactType": "key-terms"},
-        "flashcards": {"artifactType": "flashcards"},
-        "exam_questions": {"artifactType": "exam-questions"}
-    }
+    mock_model_instance = Mock()
+    mock_response = Mock()
+    mock_response.text = json.dumps({
+        "summary": {"overview": "Test", "sections": []},
+        "outline": {"outline": []},
+        "key_terms": {"terms": []},
+        "flashcards": {"cards": []},
+        "exam_questions": {"questions": []}
+    })
 
-    fake_response = {
-        "candidates": [
-            {"content": {"parts": [{"text": json.dumps(fake_artifacts)}]}}
-        ]
-    }
+    mock_model_instance.generate_content.return_value = mock_response
+    mock_model_class.return_value = mock_model_instance
 
-    with patch.object(llm_generation, "_request_gemini", return_value=fake_response):
-        result = llm_generation.generate_artifacts_with_llm(
+    thread_refs = ["thread-1", "thread-2", "thread-3"]
+    result = llm_generation.generate_artifacts_with_llm(
+        transcript="Test",
+        preset_id="exam",
+        course_id="course-1",
+        lecture_id="lecture-1",
+        thread_refs=thread_refs,
+        provider="gemini"
+    )
+
+    # Verify thread refs are in all artifacts
+    for artifact in result.values():
+        assert "threadRefs" in artifact
+        assert artifact["threadRefs"] == thread_refs
+
+
+@patch('pipeline.llm_generation.vertexai')
+@patch('pipeline.llm_generation.GenerativeModel')
+def test_generate_artifacts_handles_missing_keys(mock_model_class, mock_vertexai, monkeypatch, capsys):
+    """Test that missing keys in LLM response are handled gracefully"""
+    monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
+
+    mock_model_instance = Mock()
+    mock_response = Mock()
+    # Response missing 'flashcards' and 'exam_questions'
+    mock_response.text = json.dumps({
+        "summary": {"overview": "Test", "sections": []},
+        "outline": {"outline": []},
+        "key_terms": {"terms": []}
+    })
+
+    mock_model_instance.generate_content.return_value = mock_response
+    mock_model_class.return_value = mock_model_instance
+
+    result = llm_generation.generate_artifacts_with_llm(
+        transcript="Test",
+        preset_id="exam",
+        course_id="course-1",
+        lecture_id="lecture-1",
+        provider="gemini"
+    )
+
+    # Should have 3 artifacts
+    assert len(result) == 3
+    assert "summary" in result
+    assert "outline" in result
+    assert "key-terms" in result
+
+    # Should not have missing artifacts
+    assert "flashcards" not in result
+    assert "exam-questions" not in result
+
+    # Should print warnings
+    captured = capsys.readouterr()
+    assert "Missing 'flashcards'" in captured.out
+    assert "Missing 'exam_questions'" in captured.out
+
+
+@patch('pipeline.llm_generation.vertexai')
+@patch('pipeline.llm_generation.GenerativeModel')
+def test_vertex_ai_error_handling(mock_model_class, mock_vertexai, monkeypatch):
+    """Test that Vertex AI errors are handled properly"""
+    monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
+
+    mock_model_instance = Mock()
+    mock_model_instance.generate_content.side_effect = Exception("Vertex AI API Error")
+    mock_model_class.return_value = mock_model_instance
+
+    with pytest.raises(RuntimeError, match="Vertex AI generation failed"):
+        llm_generation.generate_artifacts_with_llm(
             transcript="Test",
-            preset_id="exam-mode",
-            course_id="c1",
-            lecture_id="l1",
-            provider="gemini"
+            preset_id="exam",
+            course_id="course-1",
+            lecture_id="lecture-1",
+            provider="vertex"
         )
 
-        # Should work without GCP project env vars (uses REST API)
-        assert "summary" in result
+
+@patch('pipeline.llm_generation.vertexai')
+@patch('pipeline.llm_generation.GenerativeModel')
+def test_vertex_ai_invalid_json_response(mock_model_class, mock_vertexai, monkeypatch):
+    """Test that invalid JSON responses are handled"""
+    monkeypatch.setenv("GCP_PROJECT_ID", "test-project")
+
+    mock_model_instance = Mock()
+    mock_response = Mock()
+    mock_response.text = "This is not valid JSON"
+
+    mock_model_instance.generate_content.return_value = mock_response
+    mock_model_class.return_value = mock_model_instance
+
+    with pytest.raises(ValueError, match="LLM failed to return valid JSON"):
+        llm_generation.generate_artifacts_with_llm(
+            transcript="Test",
+            preset_id="exam",
+            course_id="course-1",
+            lecture_id="lecture-1",
+            provider="gemini"
+        )
