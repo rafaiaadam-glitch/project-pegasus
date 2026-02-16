@@ -8,17 +8,9 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-# Initialize Vertex AI for GCP-native authentication
-try:
-    import vertexai
-    vertexai.init(
-        project=os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5"),
-        location=os.getenv("GCP_REGION", "us-west1")
-    )
-    VERTEX_INITIALIZED = True
-except ImportError:
-    VERTEX_INITIALIZED = False
-    print("[LLM Generation] WARNING: vertexai not available, falling back to API key mode")
+# Google Vertex AI Imports
+import vertexai
+from vertexai.generative_models import GenerativeModel, GenerationConfig
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -28,7 +20,6 @@ def _require_env(name: str) -> str:
     if not value:
         raise RuntimeError(f"Missing required environment variable: {name}")
     return value
-
 
 def _request_openai(payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any]:
     from pipeline.retry_utils import NonRetryableError, retry_config_from_env, with_retry
@@ -55,58 +46,12 @@ def _request_openai(payload: Dict[str, Any], timeout: int = 90) -> Dict[str, Any
     except NonRetryableError as e:
         raise RuntimeError(f"OpenAI API request failed: {e}") from e
 
-
-def _request_gemini(prompt: str, user_content: str, model: str, timeout: int = 90) -> Dict[str, Any]:
-    from pipeline.retry_utils import NonRetryableError, retry_config_from_env, with_retry
-
-    def make_request() -> Dict[str, Any]:
-        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise RuntimeError("Missing required environment variable: GEMINI_API_KEY or GOOGLE_API_KEY")
-
-        endpoint = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
-        )
-        payload = {
-            "system_instruction": {"parts": [{"text": prompt}]},
-            "contents": [{"role": "user", "parts": [{"text": user_content}]}],
-            "generationConfig": {"responseMimeType": "application/json"},
-        }
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-    config = retry_config_from_env()
-
-    try:
-        return with_retry(make_request, config=config, operation_name="Gemini API request")
-    except NonRetryableError as e:
-        raise RuntimeError(f"Gemini API request failed: {e}") from e
-
-
 def _extract_openai_text(response: Dict[str, Any]) -> str:
     for output in response.get("output", []):
         for content in output.get("content", []):
             if "text" in content:
                 return content["text"]
     raise ValueError("OpenAI response missing text output.")
-
-
-def _extract_gemini_text(response: Dict[str, Any]) -> str:
-    for candidate in response.get("candidates", []):
-        content = candidate.get("content", {})
-        for part in content.get("parts", []):
-            text = part.get("text")
-            if isinstance(text, str) and text.strip():
-                return text
-    raise ValueError("Gemini response missing text output.")
-
 
 def _base_artifact(
     artifact_type: str,
@@ -138,7 +83,6 @@ def _load_preset_config(preset_id: str) -> Dict[str, Any] | None:
     except Exception as e:
         print(f"[LLM Generation] WARNING: Could not load preset {preset_id}: {e}")
         return None
-
 
 def _build_generation_prompt(preset_id: str, preset_config: Dict[str, Any] | None) -> str:
     """Build a system prompt customized for the preset's generation config."""
@@ -243,7 +187,6 @@ def _build_generation_prompt(preset_id: str, preset_config: Dict[str, Any] | Non
 
     return base_prompt
 
-
 def generate_artifacts_with_llm(
     transcript: str,
     preset_id: str,
@@ -252,7 +195,7 @@ def generate_artifacts_with_llm(
     generated_at: str | None = None,
     model: str = "gemini-1.5-flash",  # Default to Gemini on GCP
     thread_refs: List[str] | None = None,
-    provider: str = "gemini",  # Default to Gemini/Vertex AI for GCP alignment
+    provider: str = "gemini",  # Default to Gemini/Vertex AI
 ) -> Dict[str, Dict[str, Any]]:
     if generated_at is None:
         generated_at = _iso_now()
@@ -266,9 +209,10 @@ def generate_artifacts_with_llm(
 
     # Build customized prompt
     prompt = _build_generation_prompt(preset_id, preset_config)
-
     user_content = f"Preset: {preset_id}\nTranscript:\n{transcript}"
+
     provider_key = provider.strip().lower()
+    raw_text = ""
 
     if provider_key == "openai":
         payload = {
@@ -281,14 +225,22 @@ def generate_artifacts_with_llm(
         }
         response = _request_openai(payload)
         raw_text = _extract_openai_text(response)
+
     elif provider_key in {"gemini", "vertex"}:
-        # Use Vertex AI SDK for GCP-native authentication (no API keys needed)
-        if VERTEX_INITIALIZED:
-            from vertexai.generative_models import GenerativeModel, GenerationConfig
+        # --- FIXED: Use Native Vertex AI SDK ---
+        try:
+            # 1. Initialize Vertex AI (Uses GCP IAM Identity)
+            # You can leave project/location as None if running on Cloud Run in the same project
+            # or force them from environment variables if needed.
+            project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
+            location = os.getenv("GCP_REGION", "us-central1")
+            vertexai.init(project=project_id, location=location)
 
-            print(f"[LLM Generation] Generating artifacts via Vertex AI ({model})...")
+            # 2. Instantiate Model
             generative_model = GenerativeModel(model)
+            print(f"[LLM Generation] Generating via Vertex AI model: {model}")
 
+            # 3. Generate Content
             response = generative_model.generate_content(
                 [prompt, user_content],
                 generation_config=GenerationConfig(
@@ -296,19 +248,19 @@ def generate_artifacts_with_llm(
                     temperature=0.2
                 )
             )
-            # Vertex AI returns the text directly on response.text
             raw_text = response.text
-        else:
-            # Fallback to manual API key mode if Vertex AI SDK not available
-            print(f"[LLM Generation] WARNING: Using fallback API key mode for Gemini")
-            response = _request_gemini(prompt=prompt, user_content=user_content, model=model)
-            raw_text = _extract_gemini_text(response)
+
+        except Exception as e:
+            print(f"[LLM Generation] Vertex AI Error: {e}")
+            raise RuntimeError(f"Vertex AI generation failed: {e}")
+        # ---------------------------------------
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
     try:
         data = json.loads(raw_text)
     except json.JSONDecodeError as e:
+        print(f"[LLM Generation] JSON Decode Error. Raw output:\n{raw_text[:200]}...")
         raise ValueError(f"LLM failed to return valid JSON: {e}")
 
     mapping = {
@@ -322,12 +274,14 @@ def generate_artifacts_with_llm(
     artifacts: Dict[str, Dict[str, Any]] = {}
     for key, artifact_type in mapping.items():
         if key not in data:
-            raise ValueError(f"Missing '{key}' in LLM response.")
-        
+            print(f"[LLM Generation] Warning: Missing '{key}' in LLM response.")
+            continue
+
         artifact = data[key]
         if not isinstance(artifact, dict):
-            raise ValueError(f"Artifact '{key}' must be an object.")
-            
+            print(f"[LLM Generation] Warning: Artifact '{key}' is not an object.")
+            continue
+
         base = _base_artifact(
             artifact_type=artifact_type,
             course_id=course_id,
@@ -335,13 +289,13 @@ def generate_artifacts_with_llm(
             preset_id=preset_id,
             generated_at=generated_at,
         )
-        
+
         base.update(artifact)
         base["artifactType"] = artifact_type
-        
+
         if thread_refs:
             base["threadRefs"] = thread_refs
-            
+
         artifacts[artifact_type] = base
 
     return artifacts
