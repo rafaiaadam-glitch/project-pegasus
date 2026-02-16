@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dice Grid Visualization Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .card-description {
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+
+        /* Dice Grid Styles */
+        .dice-grid {
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 16px;
+            background: white;
+        }
+
+        .dice-grid.collapsed {
+            border-color: #FF3B30;
+            border-width: 2px;
+        }
+
+        .dice-grid.equilibrium {
+            box-shadow: 0 0 8px rgba(52, 199, 89, 0.4);
+        }
+
+        .grid {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        .dice-row {
+            display: flex;
+            gap: 6px;
+            opacity: 0.4;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        .dice-row.active {
+            opacity: 1;
+            transform: scale(1.05);
+        }
+
+        .dice-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            transition: opacity 0.2s ease;
+        }
+
+        /* Legend Styles */
+        .legend {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .legend-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .legend-label {
+            font-size: 12px;
+            font-weight: 600;
+            width: 50px;
+            color: #333;
+        }
+
+        .legend-bar {
+            flex: 1;
+            height: 6px;
+            background: #f0f0f0;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .legend-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .legend-value {
+            font-size: 11px;
+            color: #666;
+            width: 35px;
+            text-align: right;
+        }
+
+        /* Status Badge */
+        .status-badge {
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: #FF3B30;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .status-badge.equilibrium {
+            background: #34C759;
+        }
+
+        .status-text {
+            color: white;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        /* Toggle Buttons */
+        .toggle-buttons {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .toggle-button {
+            flex: 1;
+            padding: 10px;
+            background: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle-button:hover {
+            background: #0051D5;
+        }
+
+        .toggle-button.secondary {
+            background: #8E8E93;
+        }
+
+        .toggle-button.secondary:hover {
+            background: #636366;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎲 Dice Rotation State</h1>
+        <p class="subtitle">Photosynthesis and Cellular Respiration</p>
+
+        <div class="card">
+            <div class="card-title">Cognitive State Monitor</div>
+            <div class="card-description">
+                Each row shows a rotation state. Brighter dots = higher confidence.
+                Active row is highlighted.
+            </div>
+
+            <div class="toggle-buttons">
+                <button class="toggle-button" onclick="showEquilibrium()">Show Equilibrium</button>
+                <button class="toggle-button secondary" onclick="showCollapsed()">Show Collapsed</button>
+                <button class="toggle-button secondary" onclick="showNormal()">Show Normal</button>
+            </div>
+
+            <div id="diceGrid" class="dice-grid">
+                <div class="grid" id="grid">
+                    <!-- Grid rows will be inserted here -->
+                </div>
+
+                <div class="legend">
+                    <div class="legend-row">
+                        <div class="legend-dot" style="background-color: #FF3B30;"></div>
+                        <span class="legend-label">How</span>
+                        <div class="legend-bar">
+                            <div class="legend-bar-fill" id="bar-how" style="background-color: #FF3B30;"></div>
+                        </div>
+                        <span class="legend-value" id="val-how">0%</span>
+                    </div>
+                    <div class="legend-row">
+                        <div class="legend-dot" style="background-color: #FF9500;"></div>
+                        <span class="legend-label">What</span>
+                        <div class="legend-bar">
+                            <div class="legend-bar-fill" id="bar-what" style="background-color: #FF9500;"></div>
+                        </div>
+                        <span class="legend-value" id="val-what">0%</span>
+                    </div>
+                    <div class="legend-row">
+                        <div class="legend-dot" style="background-color: #FFCC00;"></div>
+                        <span class="legend-label">When</span>
+                        <div class="legend-bar">
+                            <div class="legend-bar-fill" id="bar-when" style="background-color: #FFCC00;"></div>
+                        </div>
+                        <span class="legend-value" id="val-when">0%</span>
+                    </div>
+                    <div class="legend-row">
+                        <div class="legend-dot" style="background-color: #34C759;"></div>
+                        <span class="legend-label">Where</span>
+                        <div class="legend-bar">
+                            <div class="legend-bar-fill" id="bar-where" style="background-color: #34C759;"></div>
+                        </div>
+                        <span class="legend-value" id="val-where">0%</span>
+                    </div>
+                    <div class="legend-row">
+                        <div class="legend-dot" style="background-color: #007AFF;"></div>
+                        <span class="legend-label">Who</span>
+                        <div class="legend-bar">
+                            <div class="legend-bar-fill" id="bar-who" style="background-color: #007AFF;"></div>
+                        </div>
+                        <span class="legend-value" id="val-who">0%</span>
+                    </div>
+                    <div class="legend-row">
+                        <div class="legend-dot" style="background-color: #AF52DE;"></div>
+                        <span class="legend-label">Why</span>
+                        <div class="legend-bar">
+                            <div class="legend-bar-fill" id="bar-why" style="background-color: #AF52DE;"></div>
+                        </div>
+                        <span class="legend-value" id="val-why">0%</span>
+                    </div>
+                </div>
+
+                <div id="statusBadge" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const COLORS = {
+            RED: '#FF3B30',
+            ORANGE: '#FF9500',
+            YELLOW: '#FFCC00',
+            GREEN: '#34C759',
+            BLUE: '#007AFF',
+            PURPLE: '#AF52DE'
+        };
+
+        const FACE_MAP = {
+            RED: 'how',
+            ORANGE: 'what',
+            YELLOW: 'when',
+            GREEN: 'where',
+            BLUE: 'who',
+            PURPLE: 'why'
+        };
+
+        // Sample rotation schedule
+        const SCHEDULE = [
+            ['RED', 'ORANGE', 'YELLOW', 'GREEN', 'BLUE', 'PURPLE'],
+            ['BLUE', 'PURPLE', 'RED', 'ORANGE', 'YELLOW', 'GREEN'],
+            ['PURPLE', 'GREEN', 'ORANGE', 'YELLOW', 'BLUE', 'RED'],
+            ['GREEN', 'ORANGE', 'YELLOW', 'BLUE', 'PURPLE', 'RED'],
+            ['ORANGE', 'RED', 'GREEN', 'YELLOW', 'PURPLE', 'BLUE'],
+            ['YELLOW', 'PURPLE', 'ORANGE', 'GREEN', 'RED', 'BLUE']
+        ];
+
+        let currentState = 'normal';
+        let activeIndex = 2;
+
+        function renderGrid(scores, active) {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+
+            SCHEDULE.forEach((row, rowIndex) => {
+                const rowDiv = document.createElement('div');
+                rowDiv.className = 'dice-row' + (rowIndex === active ? ' active' : '');
+
+                row.forEach(face => {
+                    const dot = document.createElement('div');
+                    dot.className = 'dice-dot';
+                    dot.style.backgroundColor = COLORS[face];
+                    dot.style.opacity = scores[face] || 0.3;
+                    rowDiv.appendChild(dot);
+                });
+
+                grid.appendChild(rowDiv);
+            });
+
+            // Update bars
+            Object.keys(FACE_MAP).forEach(face => {
+                const facetName = FACE_MAP[face];
+                const score = scores[face] || 0;
+                const percentage = Math.round(score * 100);
+
+                document.getElementById(`bar-${facetName}`).style.width = percentage + '%';
+                document.getElementById(`val-${facetName}`).textContent = percentage + '%';
+            });
+        }
+
+        function showEquilibrium() {
+            currentState = 'equilibrium';
+            const scores = {
+                RED: 0.72,
+                ORANGE: 0.68,
+                YELLOW: 0.65,
+                GREEN: 0.70,
+                BLUE: 0.67,
+                PURPLE: 0.71
+            };
+
+            renderGrid(scores, activeIndex);
+
+            const grid = document.getElementById('diceGrid');
+            grid.className = 'dice-grid equilibrium';
+
+            const badge = document.getElementById('statusBadge');
+            badge.className = 'status-badge equilibrium';
+            badge.innerHTML = '<div class="status-text">✅ Equilibrium</div>';
+            badge.style.display = 'block';
+        }
+
+        function showCollapsed() {
+            currentState = 'collapsed';
+            const scores = {
+                RED: 0.92,
+                ORANGE: 0.25,
+                YELLOW: 0.15,
+                GREEN: 0.18,
+                BLUE: 0.12,
+                PURPLE: 0.20
+            };
+
+            renderGrid(scores, activeIndex);
+
+            const grid = document.getElementById('diceGrid');
+            grid.className = 'dice-grid collapsed';
+
+            const badge = document.getElementById('statusBadge');
+            badge.className = 'status-badge';
+            badge.innerHTML = '<div class="status-text">⚠️ Collapsed</div>';
+            badge.style.display = 'block';
+        }
+
+        function showNormal() {
+            currentState = 'normal';
+            const scores = {
+                RED: 0.76,
+                ORANGE: 0.62,
+                YELLOW: 0.38,
+                GREEN: 0.45,
+                BLUE: 0.58,
+                PURPLE: 0.68
+            };
+
+            renderGrid(scores, activeIndex);
+
+            const grid = document.getElementById('diceGrid');
+            grid.className = 'dice-grid';
+
+            const badge = document.getElementById('statusBadge');
+            badge.style.display = 'none';
+        }
+
+        // Initialize with normal state
+        showNormal();
+    </script>
+</body>
+</html>
