@@ -736,13 +736,48 @@ def get_preset(preset_id: str) -> dict:
     return preset
 
 
+def _is_cloudevent(request: Request) -> bool:
+    """Check if the request is a CloudEvent from Eventarc."""
+    content_type = request.headers.get("content-type", "")
+    return (
+        "application/cloudevents" in content_type or
+        "ce-source" in request.headers
+    )
+
+
+async def _parse_cloudevent(request: Request) -> Optional[dict]:
+    """Parse CloudEvent payload from Eventarc GCS trigger."""
+    try:
+        body = await request.json()
+        LOGGER.info("CloudEvent received: %s", body)
+
+        # CloudEvent format: https://cloud.google.com/eventarc/docs/cloudevents
+        data = body.get("data", {})
+        bucket = data.get("bucket")
+        name = data.get("name")  # Object path in GCS
+        content_type = data.get("contentType", "")
+
+        if not bucket or not name:
+            LOGGER.warning("CloudEvent missing bucket or name: %s", data)
+            return None
+
+        return {
+            "bucket": bucket,
+            "object_name": name,
+            "content_type": content_type,
+        }
+    except Exception as exc:
+        LOGGER.error("Failed to parse CloudEvent: %s", exc)
+        return None
+
+
 @app.post("/lectures/ingest")
-def ingest_lecture(
+async def ingest_lecture(
     request: Request,
-    course_id: str = Form(...),
-    lecture_id: str = Form(...),
-    preset_id: str = Form(...),
-    title: str = Form(...),
+    course_id: str = Form(None),
+    lecture_id: str = Form(None),
+    preset_id: str = Form(None),
+    title: str = Form(None),
     course_title: Optional[str] = Form(None),
     duration_sec: int = Form(0),
     source_type: str = Form("upload"),
@@ -754,8 +789,98 @@ def ingest_lecture(
     transcribe_model: Optional[str] = Form(None),
     transcribe_language_code: Optional[str] = Form(None),
 ) -> dict:
+    LOGGER.info("INGEST: %s", request.headers)
+
+    # Check if this is a CloudEvent from Eventarc
+    if _is_cloudevent(request):
+        LOGGER.info("Processing CloudEvent from Eventarc")
+        event_data = await _parse_cloudevent(request)
+        if not event_data:
+            raise HTTPException(status_code=400, detail="Invalid CloudEvent payload")
+
+        # For CloudEvents, we acknowledge receipt and return immediately
+        # The actual processing will happen asynchronously
+        object_name = event_data["object_name"]
+        LOGGER.info("File uploaded to GCS: gs://%s/%s", event_data["bucket"], object_name)
+
+        # Extract lecture_id from object name (expected format: documents/{lecture_id}.pdf or audio/{lecture_id}.ext)
+        parts = object_name.split("/")
+        if len(parts) >= 2:
+            filename = parts[-1]
+            extracted_lecture_id = Path(filename).stem
+            LOGGER.info("Extracted lecture_id from CloudEvent: %s", extracted_lecture_id)
+
+            # Trigger transcription job for this lecture if not already processing
+            # The file is already in GCS, so we just need to process it
+            try:
+                db = get_database()
+                lecture = db.fetch_lecture(extracted_lecture_id)
+                if lecture and lecture.get("status") == "uploaded":
+                    # Check if a transcription job already exists
+                    existing_jobs = [
+                        j for j in (db.fetch_jobs_by_lecture(extracted_lecture_id) or [])
+                        if j.get("job_type") == "transcription" and j.get("status") in ("queued", "running")
+                    ]
+
+                    if existing_jobs:
+                        LOGGER.info("Transcription job already exists for lecture %s, skipping", extracted_lecture_id)
+                        return {
+                            "status": "accepted",
+                            "lectureId": extracted_lecture_id,
+                            "message": "Transcription already in progress"
+                        }
+
+                    provider = os.getenv("PLC_INGEST_TRANSCRIBE_PROVIDER", "google")
+                    model = os.getenv("PLC_INGEST_TRANSCRIBE_MODEL", "base")
+                    language_code = os.getenv("PLC_STT_LANGUAGE")
+
+                    job_id = enqueue_job(
+                        "transcription",
+                        extracted_lecture_id,
+                        run_transcription_job,
+                        extracted_lecture_id,
+                        model,
+                        provider,
+                        language_code,
+                    )
+                    LOGGER.info("Enqueued transcription job %s for lecture %s from CloudEvent", job_id, extracted_lecture_id)
+                    return {
+                        "status": "accepted",
+                        "lectureId": extracted_lecture_id,
+                        "jobId": job_id,
+                        "message": "CloudEvent processed, transcription job enqueued"
+                    }
+                else:
+                    LOGGER.warning("Lecture %s not found or not in uploaded status (status=%s)", extracted_lecture_id, lecture.get("status") if lecture else "N/A")
+            except Exception as exc:
+                LOGGER.error("Failed to enqueue transcription job from CloudEvent: %s", exc)
+
+        return {"status": "accepted", "message": "CloudEvent received"}
+
+    # Regular form upload processing
+    form_data = {
+        "course_id": course_id,
+        "lecture_id": lecture_id,
+        "preset_id": preset_id,
+        "title": title,
+        "course_title": course_title,
+        "duration_sec": duration_sec,
+        "source_type": source_type,
+        "lecture_mode": lecture_mode,
+        "audio": audio,
+        "file": file,
+        "auto_transcribe": auto_transcribe,
+        "transcribe_provider": transcribe_provider,
+        "transcribe_model": transcribe_model,
+        "transcribe_language_code": transcribe_language_code,
+    }
+    LOGGER.info("INGEST FORM: %s", form_data)
     _enforce_write_auth(request)
     _enforce_write_rate_limit(request)
+
+    # Validate required fields for form uploads
+    if not all([course_id, lecture_id, preset_id, title]):
+        raise HTTPException(status_code=400, detail="Missing required fields: course_id, lecture_id, preset_id, title")
 
     # Accept either 'audio' or 'file' parameter for backward compatibility
     uploaded_file = audio or file
