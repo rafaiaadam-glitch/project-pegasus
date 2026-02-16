@@ -7,7 +7,13 @@ let Sharing: any = null;
 
 try {
   if (Platform.OS !== 'web') {
-    FileSystem = require('expo-file-system');
+    const fs = require('expo-file-system');
+    FileSystem = {
+      ...fs,
+      EncodingType: fs.EncodingType || { UTF8: 'utf8' },
+      documentDirectory: fs.documentDirectory,
+      writeAsStringAsync: fs.writeAsStringAsync,
+    };
     Sharing = require('expo-sharing');
   }
 } catch (error) {
