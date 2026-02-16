@@ -166,8 +166,12 @@ Your job is to analyse a university lecture transcript and identify academic
 concepts that should be tracked across lectures in this course.
 
 You will be given:
-1. The lecture transcript.
-2. A list of concepts (threads) already tracked for this course.
+1. COURSE CONTEXT (if available): syllabus and notes uploaded by the student
+   - Use this to understand the course structure and expected topics
+   - Prioritize concepts that align with the syllabus
+   - Use terminology consistent with course materials
+2. The lecture transcript.
+3. A list of concepts (threads) already tracked for this course.
 
 Return STRICT JSON only — no markdown, no explanation.
 
@@ -281,6 +285,7 @@ def _call_gemini(
     existing_threads: List[Dict[str, Any]],
     model: str,
     timeout: int = 90,
+    course_context: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
     """Call Gemini with retry logic and return parsed JSON response."""
     from pipeline.retry_utils import NonRetryableError, retry_config_from_env, with_retry
@@ -290,10 +295,25 @@ def _call_gemini(
         raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY is not set.")
 
     existing_summary = [{"title": t["title"], "summary": t["summary"]} for t in existing_threads]
-    user_content = (
-        f"existing_threads: {json.dumps(existing_summary)}\n\n"
-        f"transcript:\n{transcript}"
-    )
+
+    # Build user content with course context if available
+    content_parts = []
+
+    # Add course context (syllabus gets priority)
+    if course_context:
+        if course_context.get("syllabus"):
+            content_parts.append(f"=== COURSE SYLLABUS (use as primary reference) ===\n{course_context['syllabus']}\n")
+        if course_context.get("notes"):
+            # Truncate notes if too long (keep first 5000 chars)
+            notes = course_context['notes']
+            if len(notes) > 5000:
+                notes = notes[:5000] + "\n[... truncated for length ...]"
+            content_parts.append(f"=== COURSE NOTES (supporting context) ===\n{notes}\n")
+
+    content_parts.append(f"existing_threads: {json.dumps(existing_summary)}\n")
+    content_parts.append(f"transcript:\n{transcript}")
+
+    user_content = "\n".join(content_parts)
 
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -606,6 +626,13 @@ def generate_thread_records(
         provider_key in {"gemini", "vertex"} and has_gemini_key
     )
 
+    # Load course context from uploaded files (if available)
+    course_context = _load_course_context(course_id)
+    if course_context and (course_context.get("syllabus") or course_context.get("notes")):
+        print(f"[ThreadEngine] Using course context: "
+              f"syllabus={bool(course_context.get('syllabus'))}, "
+              f"notes={bool(course_context.get('notes'))}")
+
     # Metrics collection
     import time
     detection_method = "fallback"
@@ -621,7 +648,7 @@ def generate_thread_records(
                 llm_result = _call_openai(transcript, existing_list, model_name)
                 detection_method = "openai"
             else:
-                llm_result = _call_gemini(transcript, existing_list, model_name)
+                llm_result = _call_gemini(transcript, existing_list, model_name, course_context=course_context)
                 detection_method = "gemini"
             api_response_time_ms = (time.time() - start_time) * 1000
 
@@ -693,3 +720,28 @@ def get_last_metrics():
         Tuple of (metrics, quality_score) or (None, None) if no metrics available
     """
     return _last_metrics, _last_quality_score
+
+
+def _load_course_context(course_id: str) -> Optional[Dict[str, str]]:
+    """
+    Load course context (syllabus + notes) from database.
+    Returns dict with 'syllabus' and 'notes' keys, or None if no context available.
+    """
+    try:
+        # Import here to avoid circular dependencies
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent / "backend"))
+        import db as db_module
+        from backend.db import get_database
+
+        db = get_database()
+        context = db_module.fetch_context_text_for_course(db.conn, course_id)
+
+        if not context.get("syllabus") and not context.get("notes"):
+            return None
+
+        return context
+
+    except Exception as e:
+        print(f"[ThreadEngine] WARNING: Failed to load course context: {e}")
+        return None

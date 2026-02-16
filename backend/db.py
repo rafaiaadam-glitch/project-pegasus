@@ -838,3 +838,165 @@ def fetch_thread_metrics_summary(conn, course_id: str | None = None):
         "fallbackAvgQuality": float(row[8]) if row[8] else None,
         "successRate": round((row[5] / row[0] * 100) if row[0] > 0 else 0, 1),
     }
+
+
+# Context Files CRUD
+def insert_context_file(
+    conn,
+    file_id: str,
+    course_id: str,
+    filename: str,
+    file_path: str,
+    file_size: int,
+    file_type: str,
+    tag: str,
+    extracted_text: str | None,
+    created_at: str,
+):
+    """Insert a context file record."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO context_files (
+                id, course_id, filename, file_path, file_size, file_type,
+                tag, extracted_text, created_at, updated_at
+            ) VALUES (
+                %(id)s, %(course_id)s, %(filename)s, %(file_path)s, %(file_size)s, %(file_type)s,
+                %(tag)s, %(extracted_text)s, %(created_at)s, %(updated_at)s
+            )
+            """,
+            {
+                "id": file_id,
+                "course_id": course_id,
+                "filename": filename,
+                "file_path": file_path,
+                "file_size": file_size,
+                "file_type": file_type,
+                "tag": tag,
+                "extracted_text": extracted_text,
+                "created_at": created_at,
+                "updated_at": created_at,
+            },
+        )
+    conn.commit()
+
+
+def fetch_context_files(conn, course_id: str | None = None, tag: str | None = None):
+    """Fetch context files, optionally filtered."""
+    with conn.cursor() as cur:
+        where_clauses = []
+        params = {}
+
+        if course_id:
+            where_clauses.append("course_id = %(course_id)s")
+            params["course_id"] = course_id
+
+        if tag:
+            where_clauses.append("tag = %(tag)s")
+            params["tag"] = tag
+
+        where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+        cur.execute(
+            f"""
+            SELECT id, course_id, filename, file_path, file_size, file_type,
+                   tag, created_at, updated_at
+            FROM context_files
+            {where_sql}
+            ORDER BY created_at DESC
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+
+    return [
+        {
+            "id": row[0],
+            "courseId": row[1],
+            "filename": row[2],
+            "filePath": row[3],
+            "fileSize": row[4],
+            "fileType": row[5],
+            "tag": row[6],
+            "createdAt": row[7].isoformat() if row[7] else None,
+            "updatedAt": row[8].isoformat() if row[8] else None,
+        }
+        for row in rows
+    ]
+
+
+def fetch_context_file_by_id(conn, file_id: str):
+    """Fetch a single context file by ID."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, course_id, filename, file_path, file_size, file_type,
+                   tag, extracted_text, created_at, updated_at
+            FROM context_files
+            WHERE id = %(file_id)s
+            """,
+            {"file_id": file_id},
+        )
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "courseId": row[1],
+        "filename": row[2],
+        "filePath": row[3],
+        "fileSize": row[4],
+        "fileType": row[5],
+        "tag": row[6],
+        "extractedText": row[7],
+        "createdAt": row[8].isoformat() if row[8] else None,
+        "updatedAt": row[9].isoformat() if row[9] else None,
+    }
+
+
+def fetch_context_text_for_course(conn, course_id: str):
+    """
+    Fetch all extracted text for a course, organized by tag.
+    Used by Thread Engine for contextual awareness.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT tag, filename, extracted_text
+            FROM context_files
+            WHERE course_id = %(course_id)s
+              AND extracted_text IS NOT NULL
+            ORDER BY
+                CASE WHEN tag = 'SYLLABUS' THEN 0 ELSE 1 END,
+                created_at ASC
+            """,
+            {"course_id": course_id},
+        )
+        rows = cur.fetchall()
+
+    syllabus_texts = []
+    notes_texts = []
+
+    for row in rows:
+        tag, filename, text = row
+        if tag == "SYLLABUS":
+            syllabus_texts.append(f"=== {filename} ===\n{text}")
+        else:
+            notes_texts.append(f"=== {filename} ===\n{text}")
+
+    return {
+        "syllabus": "\n\n".join(syllabus_texts) if syllabus_texts else None,
+        "notes": "\n\n".join(notes_texts) if notes_texts else None,
+    }
+
+
+def delete_context_file(conn, file_id: str):
+    """Delete a context file record."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM context_files WHERE id = %(file_id)s",
+            {"file_id": file_id},
+        )
+    conn.commit()

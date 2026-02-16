@@ -1776,3 +1776,145 @@ def get_global_thread_metrics_summary(request: Request):
     db = get_database()
     summary = db_module.fetch_thread_metrics_summary(db.conn, None)
     return summary if summary else {"error": "No metrics found"}
+
+
+# Context Files Upload Endpoint
+@app.post("/context/upload")
+async def upload_context_files(
+    request: Request,
+    files: List[UploadFile] = File(...),
+    tag: str = Form(...),
+    course_id: str = Form("default"),
+):
+    """
+    Upload syllabus/notes files to be used as context for Thread Engine.
+    
+    Supports: PDF, DOCX, TXT, MD
+    """
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    
+    MAX_SIZE = 30 * 1024 * 1024  # 30MB
+    ALLOWED_TYPES = {
+        "application/pdf",
+        "text/plain",
+        "text/markdown",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
+    
+    uploaded_files = []
+    
+    for file in files:
+        # Validate file size
+        content = await file.read()
+        if len(content) > MAX_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File {file.filename} exceeds 30MB limit"
+            )
+        
+        # Validate file type
+        content_type = file.content_type or ""
+        ext = Path(file.filename).suffix.lower()
+        is_markdown = ext in [".md", ".markdown"]
+        
+        if content_type not in ALLOWED_TYPES and not is_markdown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File type not supported: {file.filename}"
+            )
+        
+        # Generate unique ID and save
+        file_id = str(uuid.uuid4())
+        safe_filename = file.filename.replace(" ", "_")
+        filename = f"{file_id}__{safe_filename}"
+        
+        # Save to storage/context directory
+        context_dir = Path(STORAGE_DIR) / "context"
+        context_dir.mkdir(parents=True, exist_ok=True)
+        file_path = context_dir / filename
+        
+        with open(file_path, "wb") as f:
+            f.write(content)
+        
+        # Extract text (best-effort)
+        extracted_text = None
+        try:
+            if content_type == "application/pdf" or ext == ".pdf":
+                # Use PyMuPDF to extract text
+                import fitz
+                doc = fitz.open(file_path)
+                text_parts = []
+                for page in doc:
+                    text_parts.append(page.get_text())
+                extracted_text = "\n".join(text_parts)
+                doc.close()
+            
+            elif content_type == "text/plain" or ext in [".txt", ".md", ".markdown"]:
+                # Read as text
+                extracted_text = content.decode("utf-8", errors="ignore")
+            
+            elif content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                # DOCX - will need python-docx library
+                # TODO: Add python-docx parsing
+                extracted_text = f"[DOCX file: {file.filename} - text extraction pending]"
+        
+        except Exception as e:
+            print(f"[ContextUpload] WARNING: Failed to extract text from {file.filename}: {e}")
+            extracted_text = f"[Text extraction failed: {str(e)}]"
+        
+        # Store metadata in database
+        db = get_database()
+        now = _iso_now()
+        
+        db_module.insert_context_file(
+            db.conn,
+            file_id=file_id,
+            course_id=course_id,
+            filename=file.filename,
+            file_path=str(file_path),
+            file_size=len(content),
+            file_type=content_type or ext,
+            tag=tag,
+            extracted_text=extracted_text,
+            created_at=now,
+        )
+        
+        uploaded_files.append({
+            "id": file_id,
+            "name": file.filename,
+            "size": len(content),
+            "tag": tag,
+        })
+    
+    return {"uploaded": uploaded_files}
+
+
+@app.get("/context/files")
+def get_context_files(request: Request, course_id: str | None = None, tag: str | None = None):
+    """Get all context files, optionally filtered by course and/or tag."""
+    db = get_database()
+    files = db_module.fetch_context_files(db.conn, course_id, tag)
+    return {"files": files}
+
+
+@app.delete("/context/files/{file_id}")
+def delete_context_file(request: Request, file_id: str):
+    """Delete a context file."""
+    _enforce_write_auth(request)
+    
+    db = get_database()
+    file_record = db_module.fetch_context_file_by_id(db.conn, file_id)
+    
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Delete physical file
+    file_path = Path(file_record["filePath"])
+    if file_path.exists():
+        file_path.unlink()
+    
+    # Delete from database
+    db_module.delete_context_file(db.conn, file_id)
+    
+    return {"message": "File deleted successfully"}
