@@ -824,7 +824,7 @@ async def ingest_lecture(
                 if lecture and lecture.get("status") == "uploaded":
                     # Check if a transcription job already exists
                     existing_jobs = [
-                        j for j in (db.fetch_jobs_by_lecture(extracted_lecture_id) or [])
+                        j for j in (db.fetch_jobs(lecture_id=extracted_lecture_id) or [])
                         if j.get("job_type") == "transcription" and j.get("status") in ("queued", "running")
                     ]
 
