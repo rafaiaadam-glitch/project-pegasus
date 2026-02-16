@@ -495,11 +495,30 @@ def run_generation_job(
     _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="generation")
     _update_job(job_id, "running", job_type="generation")
     try:
-        storage_dir = _storage_dir()
-        transcript_path = storage_dir / "transcripts" / f"{lecture_id}.json"
-        if not transcript_path.exists():
-            raise FileNotFoundError("Transcript not found.")
-        transcript_payload = json.loads(transcript_path.read_text(encoding="utf-8"))
+        from backend.storage import load_json_payload
+
+        storage_mode = os.getenv("STORAGE_MODE", "local").lower()
+        LOGGER.info("Starting generation job for lecture %s (storage_mode=%s)", lecture_id, storage_mode)
+
+        # Load transcript from storage (handles both local and cloud storage)
+        if storage_mode in ("gcs", "s3"):
+            # Get transcript path from database
+            from backend.db import get_database as get_db_instance
+            db = get_db_instance()
+            lecture = db.fetch_lecture(lecture_id)
+            if not lecture or not lecture.get("transcript_path"):
+                raise FileNotFoundError(f"Lecture {lecture_id} not found or has no transcript_path")
+            transcript_path_str = lecture["transcript_path"]
+            LOGGER.info("Loading transcript from cloud storage: %s", transcript_path_str)
+            transcript_payload = load_json_payload(transcript_path_str)
+        else:
+            # Local storage - use file path directly
+            storage_dir = _storage_dir()
+            transcript_path = storage_dir / "transcripts" / f"{lecture_id}.json"
+            if not transcript_path.exists():
+                raise FileNotFoundError("Transcript not found.")
+            transcript_payload = json.loads(transcript_path.read_text(encoding="utf-8"))
+
         transcript_text = transcript_payload.get("text", "")
         if not transcript_text:
             raise ValueError("Transcript text is empty.")
