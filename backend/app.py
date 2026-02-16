@@ -1941,7 +1941,7 @@ def get_lecture_dice_state(request: Request, lecture_id: str):
     db = get_database()
 
     # Verify lecture exists
-    lecture = db_module.fetch_lecture(db.conn, lecture_id)
+    lecture = db.fetch_lecture(lecture_id)
     if not lecture:
         raise HTTPException(status_code=404, detail="Lecture not found")
 
@@ -1972,7 +1972,7 @@ def get_course_dice_states(request: Request, course_id: str):
     db = get_database()
 
     # Verify course exists
-    course = db_module.fetch_course(db.conn, course_id)
+    course = db.fetch_course(course_id)
     if not course:
         raise HTTPException(status_code=404, detail="Course not found")
 
