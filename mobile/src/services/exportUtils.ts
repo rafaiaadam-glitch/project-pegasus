@@ -7,7 +7,7 @@ let Sharing: any = null;
 
 try {
   if (Platform.OS !== 'web') {
-    const fs = require('expo-file-system');
+    const fs = require('expo-file-system/legacy');
     FileSystem = {
       ...fs,
       EncodingType: fs.EncodingType || { UTF8: 'utf8' },

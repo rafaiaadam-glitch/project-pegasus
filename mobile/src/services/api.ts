@@ -229,7 +229,9 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
+      const errorText = await response.text();
+      console.error('UPLOAD FAILED', errorText);
+      const error = JSON.parse(errorText);
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
 

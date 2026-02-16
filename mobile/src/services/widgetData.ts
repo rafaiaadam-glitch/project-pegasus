@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { getStatistics, getDueCards, getStudyStreak } from './statistics';
 
 const WIDGET_DATA_KEY = 'pegasus_widget_data';
