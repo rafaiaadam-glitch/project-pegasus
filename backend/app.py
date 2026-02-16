@@ -1902,19 +1902,179 @@ def get_context_files(request: Request, course_id: str | None = None, tag: str |
 def delete_context_file(request: Request, file_id: str):
     """Delete a context file."""
     _enforce_write_auth(request)
-    
+
     db = get_database()
     file_record = db_module.fetch_context_file_by_id(db.conn, file_id)
-    
+
     if not file_record:
         raise HTTPException(status_code=404, detail="File not found")
-    
+
     # Delete physical file
     file_path = Path(file_record["filePath"])
     if file_path.exists():
         file_path.unlink()
-    
+
     # Delete from database
     db_module.delete_context_file(db.conn, file_id)
-    
+
     return {"message": "File deleted successfully"}
+
+
+# =========================================================================
+# Dice Rotation State Endpoints
+# =========================================================================
+
+
+@app.get("/lectures/{lecture_id}/dice-state")
+def get_lecture_dice_state(request: Request, lecture_id: str):
+    """
+    Get dice rotation state for a specific lecture.
+
+    Returns the complete rotation state including:
+    - Permutation schedule
+    - Active index
+    - Facet scores
+    - Entropy and equilibrium gap
+    - Iteration history
+    """
+    db = get_database()
+
+    # Verify lecture exists
+    lecture = db_module.fetch_lecture(db.conn, lecture_id)
+    if not lecture:
+        raise HTTPException(status_code=404, detail="Lecture not found")
+
+    # Fetch rotation state
+    rotation_state = db_module.fetch_dice_rotation_state_by_lecture(db.conn, lecture_id)
+
+    if not rotation_state:
+        return {
+            "lectureId": lecture_id,
+            "hasRotationState": False,
+            "message": "No dice rotation state available for this lecture"
+        }
+
+    return {
+        "lectureId": lecture_id,
+        "hasRotationState": True,
+        "rotationState": rotation_state
+    }
+
+
+@app.get("/courses/{course_id}/dice-states")
+def get_course_dice_states(request: Request, course_id: str):
+    """
+    Get all dice rotation states for a course.
+
+    Useful for aggregate analysis of rotation patterns across lectures.
+    """
+    db = get_database()
+
+    # Verify course exists
+    course = db_module.fetch_course(db.conn, course_id)
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    # Fetch all rotation states for course
+    rotation_states = db_module.fetch_dice_rotation_states_by_course(db.conn, course_id)
+
+    # Calculate aggregate statistics
+    if rotation_states:
+        total_iterations = sum(s["iterationsCompleted"] for s in rotation_states)
+        avg_entropy = sum(s["entropy"] for s in rotation_states) / len(rotation_states)
+        avg_equilibrium_gap = sum(s["equilibriumGap"] for s in rotation_states) / len(rotation_states)
+
+        # Count by status
+        status_counts = {}
+        for state in rotation_states:
+            status = state["status"]
+            status_counts[status] = status_counts.get(status, 0) + 1
+
+        # Dominant facets distribution
+        facet_counts = {}
+        for state in rotation_states:
+            facet = state.get("dominantFacet")
+            if facet:
+                facet_counts[facet] = facet_counts.get(facet, 0) + 1
+
+        aggregate_stats = {
+            "totalLectures": len(rotation_states),
+            "totalIterations": total_iterations,
+            "avgEntropy": avg_entropy,
+            "avgEquilibriumGap": avg_equilibrium_gap,
+            "statusDistribution": status_counts,
+            "facetDistribution": facet_counts,
+        }
+    else:
+        aggregate_stats = None
+
+    return {
+        "courseId": course_id,
+        "count": len(rotation_states),
+        "rotationStates": rotation_states,
+        "aggregateStats": aggregate_stats,
+    }
+
+
+@app.get("/dice-states/summary")
+def get_dice_states_summary(request: Request):
+    """
+    Get summary statistics across all dice rotation states.
+
+    Global view of rotation patterns and equilibrium trends.
+    """
+    db = get_database()
+
+    with db.conn.cursor() as cur:
+        # Overall statistics
+        cur.execute(
+            """
+            SELECT
+                COUNT(*) as total_states,
+                AVG(iterations_completed) as avg_iterations,
+                AVG(entropy) as avg_entropy,
+                AVG(equilibrium_gap) as avg_equilibrium_gap,
+                SUM(CASE WHEN collapsed THEN 1 ELSE 0 END) as collapsed_count,
+                SUM(CASE WHEN status = 'equilibrium' THEN 1 ELSE 0 END) as equilibrium_count
+            FROM dice_rotation_states
+            """
+        )
+        row = cur.fetchone()
+
+        overall = {
+            "totalStates": row[0] or 0,
+            "avgIterations": float(row[1]) if row[1] else 0.0,
+            "avgEntropy": float(row[2]) if row[2] else 0.0,
+            "avgEquilibriumGap": float(row[3]) if row[3] else 0.0,
+            "collapsedCount": row[4] or 0,
+            "equilibriumCount": row[5] or 0,
+        }
+
+        # Facet distribution
+        cur.execute(
+            """
+            SELECT dominant_facet, COUNT(*) as count
+            FROM dice_rotation_states
+            WHERE dominant_facet IS NOT NULL
+            GROUP BY dominant_facet
+            ORDER BY count DESC
+            """
+        )
+        facet_distribution = {row[0]: row[1] for row in cur.fetchall()}
+
+        # Status distribution
+        cur.execute(
+            """
+            SELECT status, COUNT(*) as count
+            FROM dice_rotation_states
+            GROUP BY status
+            ORDER BY count DESC
+            """
+        )
+        status_distribution = {row[0]: row[1] for row in cur.fetchall()}
+
+    return {
+        "overall": overall,
+        "facetDistribution": facet_distribution,
+        "statusDistribution": status_distribution,
+    }
