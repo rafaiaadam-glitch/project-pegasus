@@ -232,7 +232,7 @@ def generate_artifacts_with_llm(
             # 1. Initialize Vertex AI (Uses GCP IAM Identity)
             # You can leave project/location as None if running on Cloud Run in the same project
             # or force them from environment variables if needed.
-            project_id = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0822836147")
+            project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
             location = os.getenv("GCP_REGION", "us-central1")
             vertexai.init(project=project_id, location=location)
 

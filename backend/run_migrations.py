@@ -20,7 +20,7 @@ def get_database_url() -> str:
         try:
             from google.cloud import secretmanager
 
-            project_id = os.getenv("GCP_PROJECT_ID", "gen-lang-client-0822836147")
+            project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
             client = secretmanager.SecretManagerServiceClient()
             secret_name = f"projects/{project_id}/secrets/pegasus-db-url/versions/latest"
             response = client.access_secret_version(request={"name": secret_name})

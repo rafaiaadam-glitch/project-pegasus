@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-PROJECT_ID="${PROJECT_ID:-gen-lang-client-0822836147}"
+PROJECT_ID="${PROJECT_ID:-delta-student-486911-n5}"
 INSTANCE_CONNECTION_NAME="${PROJECT_ID}:us-central1:planwell-db"
 DATABASE="pegasus_db"
 DB_USER="pegasus_user"
