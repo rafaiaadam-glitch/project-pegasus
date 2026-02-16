@@ -1,8 +1,8 @@
-# Dice Rotation System - Test Results
+# Dice Protocol - Test Results
 
 ## ✅ Test Summary
 
-The dice rotation system has been successfully implemented and tested with a real lecture.
+The Dice Protocol has been successfully implemented and tested with a real lecture.
 
 ### Test Date
 2026-02-16
@@ -129,7 +129,7 @@ Only Permutation 1 was executed before equilibrium was reached.
 
 ## 🎉 Conclusion
 
-The dice rotation system is **fully functional** and successfully demonstrated:
+The Dice Protocol is **fully functional** and successfully demonstrated:
 
 - ✅ Multi-perspective thread detection
 - ✅ Adaptive stopping (equilibrium detection)
