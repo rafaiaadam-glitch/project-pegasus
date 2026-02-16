@@ -1755,6 +1755,9 @@ def lecture_progress(lecture_id: str) -> dict:
 
 @app.get("/exports/{lecture_id}/{export_type}")
 def download_export(lecture_id: str, export_type: str):
+    import io
+    from fastapi.responses import StreamingResponse
+
     db = get_database()
     exports = db.fetch_exports(lecture_id)
     record = next((item for item in exports if item["export_type"] == export_type), None)
@@ -1762,8 +1765,43 @@ def download_export(lecture_id: str, export_type: str):
         raise HTTPException(status_code=404, detail="Export not found.")
     storage_path = record["storage_path"]
 
-    # Handle cloud storage (S3 or GCS)
-    if storage_path.startswith("s3://") or storage_path.startswith("gs://"):
+    # Determine filename and media type
+    filename = f"{lecture_id}.{export_type}"
+    if export_type == "markdown":
+        filename = f"{lecture_id}.md"
+        media_type = "text/markdown"
+    elif export_type == "pdf":
+        filename = f"{lecture_id}.pdf"
+        media_type = "application/pdf"
+    elif export_type == "anki":
+        filename = f"{lecture_id}.csv"
+        media_type = "text/csv"
+    else:
+        media_type = "application/octet-stream"
+
+    # Handle GCS storage - stream file through API
+    if storage_path.startswith("gs://"):
+        from google.cloud import storage as gcs_storage
+
+        # Parse gs://bucket/path format
+        bucket_name, blob_name = storage_path[5:].split("/", 1)
+        client = gcs_storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        if not blob.exists():
+            raise HTTPException(status_code=404, detail="Export file missing.")
+
+        # Download to memory and stream
+        file_content = blob.download_as_bytes()
+        return StreamingResponse(
+            io.BytesIO(file_content),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    # Handle S3 storage - generate presigned URL
+    elif storage_path.startswith("s3://"):
         url = download_url(storage_path)
         if not url:
             raise HTTPException(status_code=404, detail="Export URL unavailable.")
