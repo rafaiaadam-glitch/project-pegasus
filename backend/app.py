@@ -1761,11 +1761,15 @@ def download_export(lecture_id: str, export_type: str):
     if not record:
         raise HTTPException(status_code=404, detail="Export not found.")
     storage_path = record["storage_path"]
-    if storage_path.startswith("s3://"):
+
+    # Handle cloud storage (S3 or GCS)
+    if storage_path.startswith("s3://") or storage_path.startswith("gs://"):
         url = download_url(storage_path)
         if not url:
             raise HTTPException(status_code=404, detail="Export URL unavailable.")
         return JSONResponse({"downloadUrl": url})
+
+    # Handle local storage
     path = Path(storage_path)
     if not path.exists():
         raise HTTPException(status_code=404, detail="Export file missing.")
