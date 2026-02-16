@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from redis import Redis
 
 from backend.db import get_database
+import backend.db as db_module
 from backend.idempotency import (
     InMemoryIdempotencyStore,
     maybe_replay_response,
