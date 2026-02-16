@@ -1,0 +1,89 @@
+{
+  "schedule": [
+    [
+      "RED",
+      "ORANGE",
+      "YELLOW",
+      "GREEN",
+      "BLUE",
+      "PURPLE"
+    ],
+    [
+      "BLUE",
+      "YELLOW",
+      "ORANGE",
+      "RED",
+      "GREEN",
+      "PURPLE"
+    ],
+    [
+      "GREEN",
+      "PURPLE",
+      "RED",
+      "ORANGE",
+      "BLUE",
+      "YELLOW"
+    ],
+    [
+      "ORANGE",
+      "GREEN",
+      "YELLOW",
+      "RED",
+      "BLUE",
+      "PURPLE"
+    ],
+    [
+      "YELLOW",
+      "RED",
+      "ORANGE",
+      "GREEN",
+      "PURPLE",
+      "BLUE"
+    ],
+    [
+      "PURPLE",
+      "ORANGE",
+      "BLUE",
+      "RED",
+      "YELLOW",
+      "GREEN"
+    ]
+  ],
+  "activeIndex": 0,
+  "scores": {
+    "RED": 0.21162790697674444,
+    "ORANGE": 0.7,
+    "YELLOW": 0.130232558139535,
+    "GREEN": 0.130232558139535,
+    "BLUE": 0.130232558139535,
+    "PURPLE": 0.130232558139535
+  },
+  "entropy": 2.1703963824097476,
+  "equilibriumGap": 0.10732323232323222,
+  "collapsed": false,
+  "iterationHistory": [
+    {
+      "index": 0,
+      "permutation": [
+        "RED",
+        "ORANGE",
+        "YELLOW",
+        "GREEN",
+        "BLUE",
+        "PURPLE"
+      ],
+      "primaryFacet": "how",
+      "threadsFound": 8,
+      "facetScores": {
+        "how": 0.21162790697674444,
+        "what": 0.7,
+        "when": 0.130232558139535,
+        "where": 0.130232558139535,
+        "who": 0.130232558139535,
+        "why": 0.130232558139535
+      },
+      "timestamp": "2026-02-16T13:34:40.138893+00:00"
+    }
+  ],
+  "maxIterations": 6
+}
