@@ -14,6 +14,11 @@ class InMemoryMetricsStore:
             lambda: {"count": 0.0, "sum_ms": 0.0, "max_ms": 0.0}
         )
         self._retry_events: dict[str, int] = defaultdict(int)
+        # Thinking model specific metrics
+        self._thinking_latency: dict[str, dict[str, float]] = defaultdict(
+            lambda: {"count": 0.0, "sum_seconds": 0.0, "max_seconds": 0.0}
+        )
+        self._thinking_errors: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     def reset(self) -> None:
         with self._lock:
@@ -21,6 +26,8 @@ class InMemoryMetricsStore:
             self._job_failures.clear()
             self._job_latency.clear()
             self._retry_events.clear()
+            self._thinking_latency.clear()
+            self._thinking_errors.clear()
 
     def increment_job_status(self, job_type: str, status: str) -> None:
         normalized_type = (job_type or "unknown").strip() or "unknown"
@@ -46,6 +53,20 @@ class InMemoryMetricsStore:
         with self._lock:
             self._retry_events[normalized_type] += 1
 
+    def observe_thinking_latency(self, model: str, duration_seconds: float, status: str = "success") -> None:
+        """Track latency specifically for reasoning/thinking models"""
+        key = f"{model}:{status}"
+        with self._lock:
+            metric = self._thinking_latency[key]
+            metric["count"] += 1
+            metric["sum_seconds"] += max(0.0, duration_seconds)
+            metric["max_seconds"] = max(metric["max_seconds"], max(0.0, duration_seconds))
+
+    def increment_thinking_error(self, model: str, error_code: str) -> None:
+        """Track reasoning-specific failures"""
+        with self._lock:
+            self._thinking_errors[model][error_code] += 1
+
     def snapshot(self, queue_depth: dict[str, int] | None = None) -> dict[str, Any]:
         with self._lock:
             latency: dict[str, dict[str, float]] = {}
@@ -58,6 +79,17 @@ class InMemoryMetricsStore:
                     "maxMs": round(metric["max_ms"], 2),
                 }
 
+            # Process thinking latency metrics
+            thinking_latency: dict[str, dict[str, float]] = {}
+            for key, metric in self._thinking_latency.items():
+                count = metric["count"]
+                avg_seconds = (metric["sum_seconds"] / count) if count > 0 else 0.0
+                thinking_latency[key] = {
+                    "count": int(count),
+                    "avgSeconds": round(avg_seconds, 2),
+                    "maxSeconds": round(metric["max_seconds"], 2),
+                }
+
             return {
                 "queueDepth": queue_depth or {},
                 "jobStatusEvents": {
@@ -66,6 +98,8 @@ class InMemoryMetricsStore:
                 "jobFailures": dict(self._job_failures),
                 "jobLatencyMs": latency,
                 "jobRetries": dict(self._retry_events),
+                "thinkingLatency": thinking_latency,
+                "thinkingErrors": {key: dict(value) for key, value in self._thinking_errors.items()},
             }
 
 

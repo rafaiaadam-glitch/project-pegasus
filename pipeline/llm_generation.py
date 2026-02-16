@@ -193,7 +193,7 @@ def generate_artifacts_with_llm(
     course_id: str,
     lecture_id: str,
     generated_at: str | None = None,
-    model: str = "gemini-3.0-pro-thinking",  # Gemini 3.0 Pro with extended thinking
+    model: str = "gemini-2.5-pro",  # Gemini 2.5 Pro with enhanced reasoning
     thread_refs: List[str] | None = None,
     provider: str = "gemini",  # Default to Gemini/Vertex AI
 ) -> Dict[str, Dict[str, Any]]:
@@ -228,6 +228,8 @@ def generate_artifacts_with_llm(
 
     elif provider_key in {"gemini", "vertex"}:
         # --- FIXED: Use Native Vertex AI SDK ---
+        import time
+        start_time = time.time()
         try:
             # 1. Initialize Vertex AI (Uses GCP IAM Identity)
             # You can leave project/location as None if running on Cloud Run in the same project
@@ -241,19 +243,39 @@ def generate_artifacts_with_llm(
             print(f"[LLM Generation] Generating via Vertex AI model: {model}")
 
             # 3. Generate Content
+            # Note: For reasoning models, Google recommends temperature >= 0.8 or default 1.0
+            # to prevent the model from getting "stuck" in its reasoning
             response = generative_model.generate_content(
                 [prompt, user_content],
                 generation_config=GenerationConfig(
                     response_mime_type="application/json",
-                    temperature=0.2,
+                    temperature=1.0,  # Higher temp for better reasoning performance
                     max_output_tokens=8192,  # Increased for longer transcripts
                 )
             )
             raw_text = response.text
-            print(f"[LLM Generation] Generated {len(raw_text)} characters of JSON")
+            duration = time.time() - start_time
+            print(f"[LLM Generation] Generated {len(raw_text)} characters of JSON in {duration:.2f}s")
+
+            # Track thinking model metrics
+            try:
+                from backend.observability import METRICS
+                METRICS.observe_thinking_latency(model, duration, status="success")
+            except Exception:
+                pass  # Don't fail generation if metrics fail
 
         except Exception as e:
+            duration = time.time() - start_time
+            error_code = getattr(e, 'code', 'unknown')
             print(f"[LLM Generation] Vertex AI Error: {e}")
+
+            # Track error metrics
+            try:
+                from backend.observability import METRICS
+                METRICS.increment_thinking_error(model, str(error_code))
+            except Exception:
+                pass
+
             raise RuntimeError(f"Vertex AI generation failed: {e}")
         # ---------------------------------------
     else:
