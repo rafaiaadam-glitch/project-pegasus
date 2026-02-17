@@ -1,0 +1,116 @@
+{
+  "alertPolicies": [
+    {
+      "displayName": "Gemini 3 Pro - Success Rate Below 98% (SLO Violation)",
+      "documentation": {
+        "content": "## Alert: Gemini 3 Pro Success Rate Below SLO\n\n**Severity**: Critical\n**SLO Target**: 98% success rate\n\n### Immediate Actions:\n1. Check Cloud Logging for error patterns: `resource.type=\"cloud_run_revision\" AND textPayload=~\"Vertex AI Error\"`\n2. Verify Gemini API quota and rate limits in GCP Console\n3. Check Cloud Run service health and error rates\n4. Review recent deployments or configuration changes\n\n### Escalation:\nIf success rate remains below 98% for >15 minutes, page on-call engineer.\n\n### Runbook:\nSee `docs/runbooks/gemini-failure-recovery.md`",
+        "mimeType": "text/markdown"
+      },
+      "conditions": [
+        {
+          "displayName": "Success rate below 98%",
+          "conditionThreshold": {
+            "filter": "resource.type = \"prometheus_target\" AND metric.type = \"prometheus.googleapis.com/pegasus_thinking_requests_total/counter\"",
+            "aggregations": [
+              {
+                "alignmentPeriod": "300s",
+                "perSeriesAligner": "ALIGN_RATE",
+                "crossSeriesReducer": "REDUCE_SUM",
+                "groupByFields": ["metric.label.status"]
+              }
+            ],
+            "comparison": "COMPARISON_LT",
+            "thresholdValue": 0.98,
+            "duration": "300s",
+            "trigger": {
+              "count": 1
+            }
+          }
+        }
+      ],
+      "combiner": "OR",
+      "enabled": true,
+      "notificationChannels": [],
+      "alertStrategy": {
+        "autoClose": "1800s",
+        "notificationRateLimit": {
+          "period": "300s"
+        }
+      },
+      "severity": "CRITICAL"
+    },
+    {
+      "displayName": "Gemini 3 Pro - P95 Latency Above 45s (Performance SLO)",
+      "documentation": {
+        "content": "## Alert: Gemini 3 Pro Latency Exceeds Target\n\n**Severity**: Warning\n**SLO Target**: p95 latency < 45 seconds\n\n### Context:\nGemini 3 Pro uses extended reasoning, so some variance is expected. However, sustained high latency indicates:\n- Network issues to Vertex AI global endpoint\n- Model capacity constraints\n- Unusually complex input prompts\n\n### Immediate Actions:\n1. Check current p95 latency trend in monitoring dashboard\n2. Review recent transcript sizes (unusually long transcripts increase reasoning time)\n3. Verify network latency to global Vertex AI endpoint\n4. Check for Vertex AI service incidents: https://status.cloud.google.com/\n\n### Mitigation:\nIf latency is consistently >60s, consider:\n- Splitting large transcripts into chunks\n- Adjusting max_output_tokens to reduce generation time\n- Reviewing prompt complexity\n\n### Runbook:\nSee `docs/runbooks/latency-investigation.md`",
+        "mimeType": "text/markdown"
+      },
+      "conditions": [
+        {
+          "displayName": "P95 latency > 45 seconds",
+          "conditionThreshold": {
+            "filter": "resource.type = \"prometheus_target\" AND metric.type = \"prometheus.googleapis.com/pegasus_thinking_duration_seconds_avg/gauge\" AND metric.label.model = \"gemini-3-pro-preview\" AND metric.label.status = \"success\"",
+            "aggregations": [
+              {
+                "alignmentPeriod": "300s",
+                "perSeriesAligner": "ALIGN_MEAN",
+                "crossSeriesReducer": "REDUCE_PERCENTILE_95"
+              }
+            ],
+            "comparison": "COMPARISON_GT",
+            "thresholdValue": 45.0,
+            "duration": "600s",
+            "trigger": {
+              "count": 1
+            }
+          }
+        }
+      ],
+      "combiner": "OR",
+      "enabled": true,
+      "notificationChannels": [],
+      "alertStrategy": {
+        "autoClose": "1800s",
+        "notificationRateLimit": {
+          "period": "600s"
+        }
+      },
+      "severity": "WARNING"
+    },
+    {
+      "displayName": "Gemini 3 Pro - High Error Rate (>2% errors)",
+      "documentation": {
+        "content": "## Alert: Gemini 3 Pro Error Rate Elevated\n\n**Severity**: Warning\n**Threshold**: >2% error rate over 10 minutes\n\n### Common Error Types:\n- **ResourceExhausted**: Quota or rate limit exceeded\n- **DeadlineExceeded**: Request timeout (>300s)\n- **InvalidArgument**: Malformed prompt or generation config\n- **PermissionDenied**: API key or service account issue\n\n### Immediate Actions:\n1. Check error breakdown in monitoring dashboard\n2. Review Cloud Logging for specific error messages\n3. Verify Vertex AI quotas: `gcloud alpha services quota list --service=aiplatform.googleapis.com`\n4. Check service account permissions for Cloud Run\n\n### Recovery:\nSee error-specific recovery steps in `docs/runbooks/gemini-failure-recovery.md`",
+        "mimeType": "text/markdown"
+      },
+      "conditions": [
+        {
+          "displayName": "Error rate > 2%",
+          "conditionThreshold": {
+            "filter": "resource.type = \"prometheus_target\" AND metric.type = \"prometheus.googleapis.com/pegasus_thinking_requests_total/counter\" AND metric.label.status = \"error\"",
+            "aggregations": [
+              {
+                "alignmentPeriod": "300s",
+                "perSeriesAligner": "ALIGN_RATE",
+                "crossSeriesReducer": "REDUCE_SUM"
+              }
+            ],
+            "comparison": "COMPARISON_GT",
+            "thresholdValue": 0.02,
+            "duration": "600s",
+            "trigger": {
+              "count": 1
+            }
+          }
+        }
+      ],
+      "combiner": "OR",
+      "enabled": true,
+      "notificationChannels": [],
+      "alertStrategy": {
+        "autoClose": "1800s"
+      },
+      "severity": "WARNING"
+    }
+  ]
+}

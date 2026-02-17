@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 import urllib.parse
 import urllib.request
@@ -11,6 +12,9 @@ from typing import Any, Dict, List
 # Google Vertex AI Imports
 import vertexai
 from vertexai.generative_models import GenerativeModel, GenerationConfig
+
+# Observability
+from backend.observability import METRICS
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -165,11 +169,13 @@ def generate_artifacts_with_llm(
         raw_text = _extract_openai_text(response)
 
     elif provider_key in {"gemini", "vertex"}:
+        start_time = time.perf_counter()
+        generation_status = "success"
         try:
             # 1. Initialize Vertex AI
             # FORCE location='global' for Gemini 3 preview models
             project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
-            vertexai.init(project=project_id, location="global") 
+            vertexai.init(project=project_id, location="global")
 
             # 2. Instantiate Model
             generative_model = GenerativeModel(model)
@@ -186,10 +192,23 @@ def generate_artifacts_with_llm(
                 )
             )
             raw_text = response.text
-            print(f"[LLM Generation] Generated {len(raw_text)} characters of JSON")
+
+            # Track successful generation latency
+            duration_seconds = time.perf_counter() - start_time
+            METRICS.observe_thinking_latency(model, duration_seconds, status="success")
+            print(f"[LLM Generation] Generated {len(raw_text)} characters of JSON in {duration_seconds:.2f}s")
 
         except Exception as e:
-            print(f"[LLM Generation] Vertex AI Error: {e}")
+            # Track failure and latency
+            generation_status = "error"
+            duration_seconds = time.perf_counter() - start_time
+            METRICS.observe_thinking_latency(model, duration_seconds, status="error")
+
+            # Categorize error type for detailed tracking
+            error_code = type(e).__name__
+            METRICS.increment_thinking_error(model, error_code)
+
+            print(f"[LLM Generation] Vertex AI Error after {duration_seconds:.2f}s: {e}")
             raise RuntimeError(f"Vertex AI generation failed: {e}")
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")

@@ -144,6 +144,38 @@ def render_prometheus_metrics(snapshot: dict[str, Any]) -> str:
         lines.append(f'pegasus_job_latency_ms_avg{{job_type="{_escape_label(str(job_type))}"}} {avg_ms}')
         lines.append(f'pegasus_job_latency_ms_max{{job_type="{_escape_label(str(job_type))}"}} {max_ms}')
 
+    # Thinking model metrics (Gemini 3 Pro reasoning tracking)
+    lines.append("# HELP pegasus_thinking_duration_seconds_avg Average reasoning model latency in seconds.")
+    lines.append("# TYPE pegasus_thinking_duration_seconds_avg gauge")
+    lines.append("# HELP pegasus_thinking_duration_seconds_max Maximum reasoning model latency in seconds.")
+    lines.append("# TYPE pegasus_thinking_duration_seconds_max gauge")
+    lines.append("# HELP pegasus_thinking_requests_total Total reasoning model requests by status.")
+    lines.append("# TYPE pegasus_thinking_requests_total counter")
+    for key, values in sorted((snapshot.get("thinkingLatency") or {}).items()):
+        # key format: "model:status" (e.g., "gemini-3-pro-preview:success")
+        avg_seconds = float((values or {}).get("avgSeconds") or 0.0)
+        max_seconds = float((values or {}).get("maxSeconds") or 0.0)
+        count = int((values or {}).get("count") or 0)
+
+        # Parse model and status from key
+        parts = key.split(":", 1)
+        model_label = _escape_label(parts[0]) if parts else "unknown"
+        status_label = _escape_label(parts[1]) if len(parts) > 1 else "unknown"
+
+        labels = f'model="{model_label}",status="{status_label}"'
+        lines.append(f'pegasus_thinking_duration_seconds_avg{{{labels}}} {avg_seconds}')
+        lines.append(f'pegasus_thinking_duration_seconds_max{{{labels}}} {max_seconds}')
+        lines.append(f'pegasus_thinking_requests_total{{{labels}}} {count}')
+
+    lines.append("# HELP pegasus_thinking_errors_total Total reasoning model errors by type.")
+    lines.append("# TYPE pegasus_thinking_errors_total counter")
+    for model, error_codes in sorted((snapshot.get("thinkingErrors") or {}).items()):
+        for error_code, count in sorted((error_codes or {}).items()):
+            lines.append(
+                f'pegasus_thinking_errors_total{{model="{_escape_label(str(model))}",'
+                f'error_code="{_escape_label(str(error_code))}"}} {int(count)}'
+            )
+
     return "\n".join(lines) + "\n"
 
 
