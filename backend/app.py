@@ -13,7 +13,7 @@ from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
@@ -120,6 +120,38 @@ class GenerateRequest(BaseModel):
     openai_model: Optional[str] = None
     llm_provider: Optional[str] = None
     llm_model: Optional[str] = None
+
+
+class IngestRequest(BaseModel):
+    text: str
+    preset: Optional[str] = None
+
+
+class ContractPreset(BaseModel):
+    id: str
+    name: str
+    weights: dict[str, float]
+
+
+class ContractThread(BaseModel):
+    id: str
+    title: str
+    depth: int
+    facets: list[str]
+    itemsCount: int
+    lastUpdated: str
+
+
+class ChangeLogEvent(BaseModel):
+    event: str
+    detail: str
+
+
+class ThreadIngestResponse(BaseModel):
+    preset: ContractPreset
+    summary: str
+    threads: list[ContractThread]
+    changeLog: list[ChangeLogEvent]
 
 
 def _iso_now() -> str:
@@ -253,6 +285,52 @@ def _sha256(path: Path) -> str:
 def _ensure_valid_preset_id(preset_id: str) -> None:
     if preset_id not in PRESETS_BY_ID:
         raise HTTPException(status_code=400, detail="Invalid preset_id.")
+
+
+def _normalize_preset_name(value: str) -> str:
+    return "".join(char.lower() for char in value if char.isalnum())
+
+
+def _resolve_preset_from_input(raw_preset: Optional[str]) -> dict[str, Any]:
+    if not raw_preset:
+        return PRESETS_BY_ID["exam-mode"]
+
+    if raw_preset in PRESETS_BY_ID:
+        return PRESETS_BY_ID[raw_preset]
+
+    normalized_input = _normalize_preset_name(raw_preset)
+    for preset in PRESETS:
+        name_variants = {
+            _normalize_preset_name(preset["name"]),
+            _normalize_preset_name(preset["id"]),
+            _normalize_preset_name(preset["name"].replace("📝", "").replace("🗺️", "").replace("👶", "").replace("🧩", "").replace("🔬", "")),
+        }
+        if normalized_input in name_variants:
+            return preset
+
+    raise HTTPException(status_code=400, detail="Unknown preset. Use GET /presets for valid names.")
+
+
+def _build_ingest_summary(text: str, preset_name: str) -> str:
+    sentence = text.strip().split(".")[0].strip()
+    if not sentence:
+        return f"{preset_name} received an empty transcript excerpt."
+    return f"{preset_name}: {sentence}."
+
+
+def _build_threads(text: str, weights: dict[str, float]) -> list[ContractThread]:
+    top_facets = [facet for facet, _ in sorted(weights.items(), key=lambda item: item[1], reverse=True)[:2]]
+    items_count = max(1, min(5, len([token for token in text.split() if token.strip()]) // 6))
+    return [
+        ContractThread(
+            id=f"thread-{uuid4().hex[:8]}",
+            title="Primary lecture thread",
+            depth=1,
+            facets=top_facets,
+            itemsCount=items_count,
+            lastUpdated=_iso_now(),
+        )
+    ]
 
 
 def _ensure_course_exists(db, course_id: str) -> None:
@@ -723,9 +801,52 @@ def readiness() -> JSONResponse:
     )
 
 
+@app.get("/")
+def root() -> dict:
+    return {"status": "ok", "service": "pegasus-api"}
+
+
+@app.get("/healthz")
+def healthz() -> dict:
+    return {"status": "ok", "time": _iso_now()}
+
+
 @app.get("/presets")
 def list_presets() -> dict:
-    return {"presets": PRESETS}
+    return {
+        "presets": [
+            {
+                "id": preset["id"],
+                "name": preset["name"],
+                "description": preset["description"],
+            }
+            for preset in PRESETS
+        ]
+    }
+
+
+@app.post("/thread/ingest", response_model=ThreadIngestResponse)
+def ingest_thread(payload: IngestRequest) -> ThreadIngestResponse:
+    if not payload.text.strip():
+        raise HTTPException(status_code=400, detail="text is required.")
+
+    preset = _resolve_preset_from_input(payload.preset)
+    weights = preset["diceWeights"]
+    summary = _build_ingest_summary(payload.text, preset["name"])
+    threads = _build_threads(payload.text, weights)
+
+    change_log = [
+        ChangeLogEvent(event="preset_resolved", detail=f"Applied preset '{preset['name']}' ({preset['id']})."),
+        ChangeLogEvent(event="weights_applied", detail=f"Applied weights: {weights}."),
+        ChangeLogEvent(event="threads_generated", detail=f"Generated {len(threads)} thread(s) from payload text."),
+    ]
+
+    return ThreadIngestResponse(
+        preset=ContractPreset(id=preset["id"], name=preset["name"], weights=weights),
+        summary=summary,
+        threads=threads,
+        changeLog=change_log,
+    )
 
 
 @app.get("/presets/{preset_id}")
