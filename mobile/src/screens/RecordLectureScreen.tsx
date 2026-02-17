@@ -49,7 +49,7 @@ export const RecordLectureScreen = () => {
 
       setStage('COMPLETE');
       // Navigate to review once final artifacts exist
-      setTimeout(() => navigation.navigate('LectureDetail', { lectureId }), 1500);
+      setTimeout(() => (navigation as any).navigate('LectureDetail', { lectureId }), 1500);
 
     } catch (err: any) {
       setStage('ERROR');
@@ -93,3 +93,5 @@ const styles = StyleSheet.create({
   buttonDisabled: { backgroundColor: '#A2A2A2' },
   buttonText: { color: '#FFF', fontSize: 18, fontWeight: '600' }
 });
+
+export default RecordLectureScreen;
