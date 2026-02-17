@@ -204,7 +204,11 @@ def generate_artifacts_with_llm(
     artifacts: Dict[str, Dict[str, Any]] = {}
 
     for key, artifact_type in mapping.items():
-        if key not in data or not isinstance(data[key], dict):
+        if key not in data:
+            print(f"[LLM Generation] Warning: Missing '{key}' in LLM response.")
+            continue
+        if not isinstance(data[key], dict):
+            print(f"[LLM Generation] Warning: Artifact '{key}' is not an object.")
             continue
 
         base = _base_artifact(artifact_type=artifact_type, course_id=course_id, lecture_id=lecture_id, preset_id=preset_id, generated_at=generated_at)
