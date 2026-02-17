@@ -8,5 +8,5 @@ google-cloud-speech==2.27.0
 rq==1.16.2
 redis==5.0.7
 jsonschema>=4.20.0
-google-cloud-aiplatform==1.70.0
+google-cloud-aiplatform>=1.79.0
 PyMuPDF>=1.24.0

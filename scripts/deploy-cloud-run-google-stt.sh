@@ -5,9 +5,9 @@
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-delta-student-486911-n5}"
-REGION="${REGION:-REGION=us-central1}"
+REGION="${REGION:-us-central1}"
 SERVICE_NAME="${SERVICE_NAME:-pegasus-api}"
-IMAGE_NAME="us-west1-docker.pkg.dev/${PROJECT_ID}/pegasus/api:latest"
+IMAGE_NAME="us-central1-docker.pkg.dev/${PROJECT_ID}/pegasus/api:latest"
 
 echo "🚀 Deploying Pegasus with Google Speech-to-Text support"
 echo "Project: ${PROJECT_ID}"
@@ -22,6 +22,7 @@ echo "📦 Building Docker image with ffmpeg..."
 gcloud builds submit \
   --tag="${IMAGE_NAME}" \
   --project="${PROJECT_ID}" \
+  --region="${REGION}" \
   --timeout=15m
 
 echo ""
@@ -34,7 +35,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --allow-unauthenticated \
   --set-env-vars="PLC_LLM_PROVIDER=gemini,GCP_PROJECT_ID=${PROJECT_ID},GCP_REGION=${REGION},STORAGE_MODE=gcs,GCS_BUCKET=${PROJECT_ID}-pegasus-storage,GCS_PREFIX=pegasus,PLC_INLINE_JOBS=1,PLC_GCP_STT_MODEL=latest_long,PLC_STT_LANGUAGE=en-US" \
   --set-secrets="GEMINI_API_KEY=gemini-api-key:latest,DATABASE_URL=pegasus-db-url:latest" \
-  --add-cloudsql-instances="${PROJECT_ID}:${REGION}:planwell-db" \
+  --set-cloudsql-instances="${PROJECT_ID}:${REGION}:pegasus-db" \
   --memory=1Gi \
   --cpu=1 \
   --max-instances=10 \

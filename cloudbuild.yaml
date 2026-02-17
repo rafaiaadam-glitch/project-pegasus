@@ -31,7 +31,7 @@ steps:
       - '--allow-unauthenticated'
       - '--set-secrets=DATABASE_URL=pegasus-db-url:latest'
       - '--set-env-vars=STORAGE_MODE=gcs,GCS_BUCKET=$PROJECT_ID-pegasus-storage,GCS_PREFIX=pegasus,PLC_LLM_PROVIDER=gemini,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=us-central1,PLC_INLINE_JOBS=1'
-      - '--add-cloudsql-instances=$PROJECT_ID:us-central1:planwell-db'
+      - '--set-cloudsql-instances=$PROJECT_ID:us-central1:pegasus-db'
 
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
