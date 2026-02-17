@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import secrets
+import re
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -125,19 +126,125 @@ class GenerateRequest(BaseModel):
 
 
 class ThreadIngestRequest(BaseModel):
-    preset: str
     text: str
+    preset: Optional[str] = None
 
 
-class ThreadIngestResponse(BaseModel):
-    session_id: str
-    preset: str
-    summary: str
-    threads: list[dict]
-    changeLog: list[str]
+def _resolve_preset_for_thread_ingest(preset: Optional[str]) -> dict:
+    if not preset or not preset.strip():
+        return PRESETS_BY_ID["exam-mode"]
+
+    token = preset.strip().lower()
+    by_id = PRESETS_BY_ID.get(token)
+    if by_id:
+        return by_id
+
+    for candidate in PRESETS:
+        if candidate.get("name", "").strip().lower() == token:
+            return candidate
+
+    raise HTTPException(status_code=404, detail="Preset not found.")
 
 
-DEMO_PAGE_PATH = Path(__file__).resolve().parent / "static" / "demo.html"
+def _normalize_dice_weights(weights: dict | None) -> dict[str, float]:
+    facets = ("what", "how", "when", "where", "who", "why")
+    if not weights:
+        return {facet: round(1 / len(facets), 6) for facet in facets}
+
+    filtered = {facet: float(weights.get(facet, 0.0)) for facet in facets}
+    total = sum(max(value, 0.0) for value in filtered.values())
+    if total <= 0:
+        return {facet: round(1 / len(facets), 6) for facet in facets}
+    return {facet: round(max(filtered[facet], 0.0) / total, 6) for facet in facets}
+
+
+def _split_thread_ingest_segments(text: str) -> list[str]:
+    normalized = " ".join(text.strip().split())
+    if not normalized:
+        return []
+
+    segments = [segment.strip() for segment in re.split(r"(?<=[.!?])\s+", normalized) if segment.strip()]
+    if len(segments) > 1:
+        return segments
+
+    fallback_segments = [segment.strip() for segment in re.split(r"[,;]\s+", normalized) if segment.strip()]
+    return fallback_segments or [normalized]
+
+
+def _keyword_map() -> dict[str, tuple[str, ...]]:
+    return {
+        "what": ("is", "are", "means", "defined", "definition", "concept"),
+        "how": ("how", "process", "mechanism", "steps", "works", "through"),
+        "when": ("when", "before", "after", "during", "timeline", "schedule"),
+        "where": ("where", "context", "environment", "setting", "scope", "across"),
+        "who": ("who", "student", "teacher", "group", "stakeholder", "participant"),
+        "why": ("why", "because", "reason", "cause", "evidence", "therefore"),
+    }
+
+
+def _build_threads_from_text(text: str, weights: dict[str, float]) -> tuple[list[dict], dict, dict]:
+    facets = ("what", "how", "when", "where", "who", "why")
+    segments = _split_thread_ingest_segments(text)
+    keywords = _keyword_map()
+    facet_scores: dict[str, float] = {facet: 0.0 for facet in facets}
+
+    threads: list[dict] = []
+    for index, segment in enumerate(segments):
+        lowered = segment.lower()
+        raw_hits: dict[str, int] = {
+            facet: sum(1 for token in keywords[facet] if token in lowered)
+            for facet in facets
+        }
+        weighted_hits = {
+            facet: round(raw_hits[facet] * weights[facet], 6)
+            for facet in facets
+        }
+        best_facet = max(
+            facets,
+            key=lambda facet: (weighted_hits[facet], raw_hits[facet], weights[facet], facet),
+        )
+
+        facet_scores[best_facet] += weighted_hits[best_facet]
+        threads.append(
+            {
+                "id": f"thread-{index + 1}",
+                "facet": best_facet,
+                "segmentIndex": index,
+                "text": segment,
+                "score": round(weighted_hits[best_facet], 6),
+            }
+        )
+
+    sorted_scores = sorted(facet_scores.items(), key=lambda item: (item[1], item[0]), reverse=True)
+    top_facet, top_score = sorted_scores[0] if sorted_scores else ("what", 0.0)
+    second_score = sorted_scores[1][1] if len(sorted_scores) > 1 else 0.0
+
+    merge_threshold = 0.2
+    split_merge_behavior = "merge" if (top_score - second_score) <= merge_threshold else "split"
+    if split_merge_behavior == "merge" and len(threads) > 1:
+        merged_text = " ".join(thread["text"] for thread in threads)
+        threads = [{
+            "id": "thread-1",
+            "facet": top_facet,
+            "segmentIndex": 0,
+            "text": merged_text,
+            "score": round(top_score, 6),
+            "mergedCount": len(segments),
+        }]
+
+    summary = {
+        "segments": len(segments),
+        "threadCount": len(threads),
+        "collapsePriority": top_facet,
+        "topFacetScore": round(top_score, 6),
+        "secondFacetScore": round(second_score, 6),
+    }
+    change_log = {
+        "appliedWeights": weights,
+        "facetScores": {key: round(value, 6) for key, value in facet_scores.items()},
+        "splitMergeBehavior": split_merge_behavior,
+    }
+    return threads, change_log, summary
 
 
 def _iso_now() -> str:
@@ -753,16 +860,14 @@ def health() -> dict:
     return {"status": "ok", "time": _iso_now()}
 
 
+@app.get("/")
+def root_status() -> dict:
+    return {"status": "ok", "service": "pegasus-api", "time": _iso_now()}
+
+
 @app.get("/healthz")
 def healthz() -> dict:
-    return {"status": "ok", "time": _iso_now()}
-
-
-@app.get("/")
-def demo_page() -> FileResponse:
-    if not DEMO_PAGE_PATH.exists():
-        raise HTTPException(status_code=404, detail="Demo page not found.")
-    return FileResponse(DEMO_PAGE_PATH)
+    return health()
 
 
 @app.get("/health/ready")
@@ -826,46 +931,23 @@ def get_preset(preset_id: str) -> dict:
 
 
 @app.post("/thread/ingest")
-def ingest_thread(request: ThreadIngestRequest) -> dict:
-    normalized_preset = _normalize_preset_name(request.preset)
-    if not normalized_preset:
-        raise HTTPException(status_code=400, detail="Invalid preset.")
+def ingest_thread(payload: ThreadIngestRequest) -> dict:
+    if not payload.text or not payload.text.strip():
+        raise HTTPException(status_code=400, detail="text must not be empty.")
 
-    summary = _build_demo_summary(request.text)
-    threads = _build_demo_threads(request.text)
-    session_id = f"session-{uuid4().hex[:12]}"
-    response_payload = ThreadIngestResponse(
-        session_id=session_id,
-        preset=normalized_preset,
-        summary=summary,
-        threads=threads,
-        changeLog=[
-            "Accepted transcript snippet.",
-            f"Generated {len(threads)} thread candidates.",
-            "Persisted ingest session.",
-        ],
-    ).model_dump()
+    preset = _resolve_preset_for_thread_ingest(payload.preset)
+    weights = _normalize_dice_weights(preset.get("diceWeights"))
+    threads, change_log, summary = _build_threads_from_text(payload.text, weights)
 
-    storage_path = _write_session_payload(
-        session_id,
-        {
-            "request": request.model_dump(),
-            "response": response_payload,
-            "storedAt": _iso_now(),
+    return {
+        "preset": {
+            "id": preset.get("id"),
+            "name": preset.get("name"),
         },
-    )
-    response_payload["storage_path"] = storage_path
-    return response_payload
-
-
-@app.get("/sessions/{session_id}")
-def get_session(session_id: str) -> dict:
-    storage_path = _session_storage_path(session_id)
-    if not storage_path_exists(storage_path):
-        raise HTTPException(status_code=404, detail="Session not found.")
-    payload = load_json_payload(storage_path)
-    payload["session_id"] = session_id
-    return payload
+        "threads": threads,
+        "changeLog": change_log,
+        "summary": summary,
+    }
 
 
 def _is_cloudevent(request: Request) -> bool:

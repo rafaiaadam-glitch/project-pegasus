@@ -149,7 +149,7 @@ if [ $? -eq 0 ]; then
     echo "🎉 Your database is ready to use!"
     echo ""
     echo "🔍 Test it:"
-    echo "  curl https://pegasus-api-988514135894.us-west1.run.app/courses"
+    echo "  curl https://pegasus-api-988514135894.us-central1.run.app/courses"
 else
     echo ""
     echo "❌ Failed to initialize database schema"
