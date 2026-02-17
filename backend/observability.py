@@ -1,79 +1,150 @@
-import os
-import time
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
-from flask import Response
+from __future__ import annotations
 
-# ---------------------------------------------------------
-# 1. CORE PIPELINE METRICS
-# ---------------------------------------------------------
+import threading
+from collections import defaultdict
+from typing import Any
 
-# Total count of generations, labeled by preset and success
-ARTIFACT_GENERATION_TOTAL = Counter(
-    'pegasus_artifact_generation_total',
-    'Total number of artifact generation attempts',
-    ['preset_id', 'status', 'provider']
-)
 
-# ---------------------------------------------------------
-# 2. GEMINI 3 "THINKING" METRICS
-# ---------------------------------------------------------
+class InMemoryMetricsStore:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._job_status_events: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        self._job_failures: dict[str, int] = defaultdict(int)
+        self._job_latency: dict[str, dict[str, float]] = defaultdict(
+            lambda: {"count": 0.0, "sum_ms": 0.0, "max_ms": 0.0}
+        )
+        self._retry_events: dict[str, int] = defaultdict(int)
+        # Thinking model specific metrics
+        self._thinking_latency: dict[str, dict[str, float]] = defaultdict(
+            lambda: {"count": 0.0, "sum_seconds": 0.0, "max_seconds": 0.0}
+        )
+        self._thinking_errors: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
-# Reasoning models have high latency (10s - 60s+). 
-# Custom buckets help track the long-tail behavior of "Thinking"
-THINKING_LATENCY = Histogram(
-    'pegasus_llm_thinking_duration_seconds',
-    'Time spent in the "Thinking" reasoning chain',
-    ['preset_id', 'model'],
-    buckets=[1.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 120.0, 300.0]
-)
+    def reset(self) -> None:
+        with self._lock:
+            self._job_status_events.clear()
+            self._job_failures.clear()
+            self._job_latency.clear()
+            self._retry_events.clear()
+            self._thinking_latency.clear()
+            self._thinking_errors.clear()
 
-# Track specific failures related to reasoning (e.g., Thought Signature loss)
-THINKING_ERRORS = Counter(
-    'pegasus_llm_thinking_errors_total',
-    'Failures specifically occurring during reasoning-enabled calls',
-    ['error_type', 'model']
-)
+    def increment_job_status(self, job_type: str, status: str) -> None:
+        normalized_type = (job_type or "unknown").strip() or "unknown"
+        normalized_status = (status or "unknown").strip() or "unknown"
+        with self._lock:
+            self._job_status_events[normalized_type][normalized_status] += 1
 
-# ---------------------------------------------------------
-# 3. HELPER FUNCTIONS & EXPOSURE
-# ---------------------------------------------------------
+    def increment_job_failure(self, job_type: str) -> None:
+        normalized_type = (job_type or "unknown").strip() or "unknown"
+        with self._lock:
+            self._job_failures[normalized_type] += 1
 
-def setup_observability(app):
-    """
-    Attaches the /metrics endpoint for Prometheus scraping.
-    Ensure this is called in your main backend app initialization.
-    """
-    @app.route('/metrics')
-    def metrics():
-        return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+    def observe_job_latency(self, job_type: str, duration_ms: float) -> None:
+        normalized_type = (job_type or "unknown").strip() or "unknown"
+        with self._lock:
+            metric = self._job_latency[normalized_type]
+            metric["count"] += 1
+            metric["sum_ms"] += max(0.0, duration_ms)
+            metric["max_ms"] = max(metric["max_ms"], max(0.0, duration_ms))
 
-def track_thinking_time(preset_id: str, model: str):
-    """
-    Context manager or decorator to wrap LLM calls.
-    Usage:
-        with track_thinking_time(preset_id, model):
-            response = generative_model.generate_content(...)
-    """
-    class ThinkingTimer:
-        def __enter__(self):
-            self.start = time.perf_counter()
-            return self
+    def increment_retry(self, job_type: str) -> None:
+        normalized_type = (job_type or "unknown").strip() or "unknown"
+        with self._lock:
+            self._retry_events[normalized_type] += 1
 
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            duration = time.perf_counter() - self.start
-            status = "success" if exc_type is None else "error"
-            
-            THINKING_LATENCY.labels(preset_id=preset_id, model=model).observe(duration)
-            ARTIFACT_GENERATION_TOTAL.labels(
-                preset_id=preset_id, 
-                status=status, 
-                provider="vertex"
-            ).inc()
-            
-            if exc_type is not None:
-                THINKING_ERRORS.labels(
-                    error_type=exc_type.__name__, 
-                    model=model
-                ).inc()
+    def observe_thinking_latency(self, model: str, duration_seconds: float, status: str = "success") -> None:
+        """Track latency specifically for reasoning/thinking models"""
+        key = f"{model}:{status}"
+        with self._lock:
+            metric = self._thinking_latency[key]
+            metric["count"] += 1
+            metric["sum_seconds"] += max(0.0, duration_seconds)
+            metric["max_seconds"] = max(metric["max_seconds"], max(0.0, duration_seconds))
 
-    return ThinkingTimer()
+    def increment_thinking_error(self, model: str, error_code: str) -> None:
+        """Track reasoning-specific failures"""
+        with self._lock:
+            self._thinking_errors[model][error_code] += 1
+
+    def snapshot(self, queue_depth: dict[str, int] | None = None) -> dict[str, Any]:
+        with self._lock:
+            latency: dict[str, dict[str, float]] = {}
+            for job_type, metric in self._job_latency.items():
+                count = metric["count"]
+                avg_ms = (metric["sum_ms"] / count) if count > 0 else 0.0
+                latency[job_type] = {
+                    "count": int(count),
+                    "avgMs": round(avg_ms, 2),
+                    "maxMs": round(metric["max_ms"], 2),
+                }
+
+            # Process thinking latency metrics
+            thinking_latency: dict[str, dict[str, float]] = {}
+            for key, metric in self._thinking_latency.items():
+                count = metric["count"]
+                avg_seconds = (metric["sum_seconds"] / count) if count > 0 else 0.0
+                thinking_latency[key] = {
+                    "count": int(count),
+                    "avgSeconds": round(avg_seconds, 2),
+                    "maxSeconds": round(metric["max_seconds"], 2),
+                }
+
+            return {
+                "queueDepth": queue_depth or {},
+                "jobStatusEvents": {
+                    key: dict(value) for key, value in self._job_status_events.items()
+                },
+                "jobFailures": dict(self._job_failures),
+                "jobLatencyMs": latency,
+                "jobRetries": dict(self._retry_events),
+                "thinkingLatency": thinking_latency,
+                "thinkingErrors": {key: dict(value) for key, value in self._thinking_errors.items()},
+            }
+
+
+def _escape_label(value: str) -> str:
+    return value.replace("\\", r"\\").replace('"', r'\"')
+
+
+def render_prometheus_metrics(snapshot: dict[str, Any]) -> str:
+    lines: list[str] = []
+
+    lines.append("# HELP pegasus_queue_depth Number of jobs currently in each queue status.")
+    lines.append("# TYPE pegasus_queue_depth gauge")
+    for status, count in sorted((snapshot.get("queueDepth") or {}).items()):
+        lines.append(f'pegasus_queue_depth{{status="{_escape_label(str(status))}"}} {int(count)}')
+
+    lines.append("# HELP pegasus_job_status_events_total Total observed job status events.")
+    lines.append("# TYPE pegasus_job_status_events_total counter")
+    for job_type, statuses in sorted((snapshot.get("jobStatusEvents") or {}).items()):
+        for status, count in sorted((statuses or {}).items()):
+            lines.append(
+                "pegasus_job_status_events_total"
+                f'{{job_type="{_escape_label(str(job_type))}",status="{_escape_label(str(status))}"}} {int(count)}'
+            )
+
+    lines.append("# HELP pegasus_job_failures_total Total observed failed jobs by type.")
+    lines.append("# TYPE pegasus_job_failures_total counter")
+    for job_type, count in sorted((snapshot.get("jobFailures") or {}).items()):
+        lines.append(f'pegasus_job_failures_total{{job_type="{_escape_label(str(job_type))}"}} {int(count)}')
+
+    lines.append("# HELP pegasus_job_retries_total Total replay retry requests by job type.")
+    lines.append("# TYPE pegasus_job_retries_total counter")
+    for job_type, count in sorted((snapshot.get("jobRetries") or {}).items()):
+        lines.append(f'pegasus_job_retries_total{{job_type="{_escape_label(str(job_type))}"}} {int(count)}')
+
+    lines.append("# HELP pegasus_job_latency_ms_avg Average observed job latency in milliseconds.")
+    lines.append("# TYPE pegasus_job_latency_ms_avg gauge")
+    lines.append("# HELP pegasus_job_latency_ms_max Maximum observed job latency in milliseconds.")
+    lines.append("# TYPE pegasus_job_latency_ms_max gauge")
+    for job_type, values in sorted((snapshot.get("jobLatencyMs") or {}).items()):
+        avg_ms = float((values or {}).get("avgMs") or 0.0)
+        max_ms = float((values or {}).get("maxMs") or 0.0)
+        lines.append(f'pegasus_job_latency_ms_avg{{job_type="{_escape_label(str(job_type))}"}} {avg_ms}')
+        lines.append(f'pegasus_job_latency_ms_max{{job_type="{_escape_label(str(job_type))}"}} {max_ms}')
+
+    return "\n".join(lines) + "\n"
+
+
+METRICS = InMemoryMetricsStore()
