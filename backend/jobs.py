@@ -660,6 +660,28 @@ def run_export_job(job_id: str, lecture_id: str) -> Dict[str, Any]:
     try:
         _ensure_dirs()
         artifact_dir = Path("pipeline/output") / lecture_id
+        storage_mode = os.getenv("STORAGE_MODE", "local").lower()
+
+        # If local artifact dir missing and using cloud storage, restore from GCS/S3
+        if not artifact_dir.exists() and storage_mode in ("gcs", "s3"):
+            db_temp = get_database()
+            artifact_records = db_temp.fetch_artifacts(lecture_id)
+            if not artifact_records:
+                raise FileNotFoundError("Artifacts not found.")
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            from backend.storage import load_json_payload
+            for record in artifact_records:
+                artifact_path = record.get("storage_path", "")
+                if artifact_path.startswith(("gs://", "s3://")):
+                    artifact_filename = Path(artifact_path).name
+                    local_path = artifact_dir / artifact_filename
+                    try:
+                        content = load_json_payload(artifact_path)
+                        local_path.write_text(json.dumps(content, indent=2), encoding="utf-8")
+                        LOGGER.info("Restored artifact from cloud: %s -> %s", artifact_path, local_path)
+                    except Exception as restore_exc:
+                        LOGGER.warning("Failed to restore artifact %s: %s", artifact_path, restore_exc)
+
         if not artifact_dir.exists():
             raise FileNotFoundError("Artifacts not found.")
         storage_dir = _storage_dir()

@@ -1871,6 +1871,13 @@ def review_artifacts(
                 artifact_downloads[artifact_type_key] = url
             payload[artifact_type_key] = None
             continue
+        if storage_path.startswith("gs://"):
+            try:
+                from backend.storage import load_json_payload
+                payload[artifact_type_key] = load_json_payload(storage_path)
+            except Exception:
+                payload[artifact_type_key] = None
+            continue
         path = Path(storage_path)
         if path.exists():
             payload[artifact_type_key] = json.loads(path.read_text(encoding="utf-8"))
