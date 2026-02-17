@@ -1304,10 +1304,20 @@ def transcribe_lecture(
     if replay is not None:
         return replay
     _ensure_dirs()
-    audio_files = list((STORAGE_DIR / "audio").glob(f"{lecture_id}.*"))
-    if not audio_files:
-        raise HTTPException(status_code=404, detail="Audio not found for lecture.")
-    db = get_database()
+    storage_mode = os.getenv("STORAGE_MODE", "local").lower()
+    if storage_mode in ("gcs", "s3"):
+        # For cloud storage, check the database for an audio_path instead of local disk
+        db = get_database()
+        lecture = db.fetch_lecture(lecture_id)
+        if not lecture or not lecture.get("audio_path"):
+            raise HTTPException(status_code=404, detail="Audio not found for lecture.")
+    else:
+        # For local storage, check both audio and documents directories
+        audio_files = list((STORAGE_DIR / "audio").glob(f"{lecture_id}.*"))
+        pdf_files = list((STORAGE_DIR / "documents").glob(f"{lecture_id}.*"))
+        if not audio_files and not pdf_files:
+            raise HTTPException(status_code=404, detail="Audio not found for lecture.")
+        db = get_database()
     active_job = _find_active_job_for_lecture(db, lecture_id, "transcription")
     if active_job:
         response_payload = {
