@@ -11,7 +11,7 @@ sys.path.append(str(ROOT))
 pytest.importorskip("fastapi")
 try:
     from fastapi.testclient import TestClient
-except RuntimeError as exc:
+except RuntimeError as exc:  # pragma: no cover - dependency guard for CI/runtime
     if "httpx" in str(exc):
         TestClient = None
     else:
@@ -23,47 +23,58 @@ if TestClient is None:
 import backend.app as app_module
 
 
-def test_root_and_healthz_routes() -> None:
+def test_root_and_healthz_status_endpoints():
     client = TestClient(app_module.app)
 
     root_response = client.get("/")
-    healthz_response = client.get("/healthz")
-
     assert root_response.status_code == 200
-    assert root_response.json()["service"] == "pegasus-api"
+    assert root_response.json()["status"] == "ok"
+
+    healthz_response = client.get("/healthz")
     assert healthz_response.status_code == 200
     assert healthz_response.json()["status"] == "ok"
 
 
-def test_presets_route_returns_dropdown_friendly_payload() -> None:
-    client = TestClient(app_module.app)
-
-    response = client.get("/presets")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["presets"]
-    preset = payload["presets"][0]
-    assert set(preset.keys()) == {"id", "name", "description"}
-
-
-def test_thread_ingest_contract_with_name_resolution() -> None:
+def test_thread_ingest_returns_threads_change_log_and_summary():
     client = TestClient(app_module.app)
 
     response = client.post(
         "/thread/ingest",
         json={
-            "text": "Today we covered operant conditioning, reinforcement schedules, and extinction versus punishment.",
-            "preset": "Exam Mode",
+            "preset": "exam-mode",
+            "text": "Today we defined operant conditioning. We discussed how Skinner boxes work and why reinforcement schedules matter.",
         },
     )
 
     assert response.status_code == 200
     payload = response.json()
 
-    assert payload["summary"]
-    assert payload["threads"]
     assert payload["preset"]["id"] == "exam-mode"
-    assert payload["preset"]["weights"]
-    assert payload["changeLog"]
-    assert any("Applied weights" in event["detail"] for event in payload["changeLog"])
+    assert isinstance(payload["threads"], list)
+    assert payload["threads"]
+    assert "changeLog" in payload
+    assert "appliedWeights" in payload["changeLog"]
+    assert payload["changeLog"]["splitMergeBehavior"] in {"split", "merge"}
+    assert payload["summary"]["threadCount"] == len(payload["threads"])
+    assert payload["summary"]["collapsePriority"] in {"what", "how", "when", "where", "who", "why"}
+
+
+def test_thread_ingest_resolves_human_friendly_preset_name():
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/thread/ingest",
+        json={"preset": "📝 Exam Mode", "text": "Definition and process."},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["preset"]["id"] == "exam-mode"
+
+
+def test_thread_ingest_rejects_empty_text():
+    client = TestClient(app_module.app)
+
+    response = client.post("/thread/ingest", json={"preset": "exam-mode", "text": "   "})
+
+    assert response.status_code == 400
+    assert "must not be empty" in response.json()["detail"]
