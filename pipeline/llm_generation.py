@@ -175,13 +175,14 @@ def generate_artifacts_with_llm(
             generative_model = GenerativeModel(model)
             print(f"[LLM Generation] Generating via global Vertex AI model: {model}")
 
-            # 3. Generate Content with Thinking Mode enabled
+            # 3. Generate Content
+            # Note: gemini-3-pro-preview has built-in reasoning capabilities
             response = generative_model.generate_content(
                 [prompt, user_content],
                 generation_config=GenerationConfig(
                     response_mime_type="application/json",
-                    thinking_budget=32000,  # Maps to "HIGH" reasoning level
-                    temperature=1.0         # Recommended for reasoning tasks
+                    temperature=1.0,
+                    max_output_tokens=8192
                 )
             )
             raw_text = response.text
