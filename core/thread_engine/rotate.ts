@@ -9,22 +9,6 @@ export type LectureMode =
   | "HUMANITIES"
   | "INTERDISCIPLINARY"
   | "OPEN"
-import permutations from "../dice/permutations.json"
-
-export type DiceFace =
-  | "RED"
-  | "ORANGE"
-  | "YELLOW"
-  | "GREEN"
-  | "BLUE"
-  | "PURPLE"
-
-export type LectureMode =
-  | "MATHEMATICS"
-  | "NATURAL_SCIENCE"
-  | "SOCIAL_SCIENCE"
-  | "HUMANITIES"
-  | "OPEN"
 
 export interface FacetScores {
   RED: number
@@ -45,7 +29,7 @@ export interface RotateOptions {
   empiricalMix?: number
 }
 
-const GROUNDING_FACES: DiceFace[] = ["ORANGE", "RED"] // What + How
+const GROUNDING_FACES: DiceFace[] = ["ORANGE", "RED"]
 const COLLAPSE_GAP = 0.3
 
 const FACE_TO_DIRECTION: Record<DiceFace, { label: string; number: number; direction: string }> = {
@@ -77,7 +61,6 @@ export const MODE_FACE_WEIGHTS: Record<LectureMode, FacetScores> = {
 
 export const DICE_FACE_DEFINITIONS = FACE_TO_DIRECTION
 
-/** Deterministic hash function (stable across sessions). */
 function simpleHash(str: string): number {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
@@ -87,9 +70,6 @@ function simpleHash(str: string): number {
   return Math.abs(hash)
 }
 
-/**
- * The only ordering decision point for the Thread Engine.
- */
 function selectPermutation(threadId: string, segmentIndex: number): DiceFace[] {
   const schedule = permutations.schedule as DiceFace[][]
   const key = `${threadId}-${segmentIndex}`
@@ -168,12 +148,6 @@ function collapsePriorityFace(scores: FacetScores, weights: FacetScores): DiceFa
 
 export function rotatePerspective(options: RotateOptions): DiceFace[] {
   const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
-export function rotatePerspective(options: RotateOptions): DiceFace[] {
-  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
-export function rotatePerspective(options: RotateOptions): DiceFace[] {
-  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
-export function rotatePerspective(options: RotateOptions): DiceFace[] {
-  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights } = options
 
   let permutation = selectPermutation(threadId, segmentIndex)
 
@@ -181,8 +155,6 @@ export function rotatePerspective(options: RotateOptions): DiceFace[] {
     const weights = resolveWeights(mode, modeWeights, empiricalMix)
     const prioritizedFace = collapsePriorityFace(facetScores, weights)
     permutation = [prioritizedFace, ...permutation.filter((face) => face !== prioritizedFace)]
-    const weakest = weakestFacet(facetScores)
-    permutation = [weakest, ...permutation.filter((face) => face !== weakest)]
     return permutation
   }
 

@@ -80,6 +80,7 @@ Presets are selected **before recording** and must materially affect output stru
 Available presets:
 - 📝 **Exam Mode** – definitions, examinable points, likely questions
 - 🗺️ **Concept Map Mode** – hierarchies and relationships
+- 📚 **Thread Hierarchy Design** – internal-first parent/child thread architecture (`docs/THREAD_HIERARCHY_DESIGN.md`)
 - 👶 **Beginner Mode** – plain language and analogies
 - 🧩 **Neurodivergent-Friendly Mode** – short chunks, low clutter
 - 🔬 **Research Mode** – claims, arguments, evidence placeholders (methodological depth)
