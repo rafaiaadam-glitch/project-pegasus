@@ -35,6 +35,10 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+// Debug: Log the API URL being used
+console.log('🔗 API_BASE_URL:', API_BASE_URL);
+console.log('📋 EXPO_PUBLIC_API_URL env var:', process.env.EXPO_PUBLIC_API_URL || '(not set)');
+
 // Set to true to use mock data (no backend required)
 const USE_MOCK_DATA = false;
 
