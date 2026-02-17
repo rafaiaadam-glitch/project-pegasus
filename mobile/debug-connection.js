@@ -2,7 +2,7 @@
 // Debug script to check mobile app API connection
 // Run with: node debug-connection.js
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://pegasus-api-988514135894.us-central1.run.app';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://pegasus-api-ui64fwvjyq-uc.a.run.app';
 
 console.log('🔍 Debugging Mobile App API Connection\n');
 console.log(`API URL from env: ${process.env.EXPO_PUBLIC_API_URL || '(not set)'}`);

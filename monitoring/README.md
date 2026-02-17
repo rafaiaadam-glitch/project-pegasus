@@ -163,10 +163,10 @@ gcloud alpha monitoring policies list --format=json
 ### 1. Verify Metrics Export
 ```bash
 # Check if metrics endpoint is accessible
-curl https://pegasus-api-988514135894.us-central1.run.app/metrics
+curl https://pegasus-api-ui64fwvjyq-uc.a.run.app/metrics
 
 # Verify thinking metrics are present
-curl -s https://pegasus-api-988514135894.us-central1.run.app/metrics | grep "pegasus_thinking"
+curl -s https://pegasus-api-ui64fwvjyq-uc.a.run.app/metrics | grep "pegasus_thinking"
 ```
 
 ### 2. Trigger Test Requests
@@ -197,7 +197,7 @@ gcloud monitoring time-series list \
 **Fix**:
 ```bash
 # Check if metrics endpoint returns data
-curl https://pegasus-api-988514135894.us-central1.run.app/metrics
+curl https://pegasus-api-ui64fwvjyq-uc.a.run.app/metrics
 
 # Verify Cloud Run is configured for Prometheus scraping
 gcloud run services describe pegasus-api --region=us-central1 --format=json | jq '.spec.template.metadata.annotations'

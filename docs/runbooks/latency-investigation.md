@@ -34,7 +34,7 @@ Gemini 3 Pro Preview uses extended reasoning ("thinking time"), so latency is in
 
 ```bash
 # View latency metrics
-curl -s https://pegasus-api-988514135894.us-central1.run.app/metrics \
+curl -s https://pegasus-api-ui64fwvjyq-uc.a.run.app/metrics \
   | grep "pegasus_thinking_duration_seconds"
 
 # Output example:

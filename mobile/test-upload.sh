@@ -3,7 +3,7 @@
 
 set -e
 
-API_URL="${EXPO_PUBLIC_API_URL:-https://pegasus-api-988514135894.us-central1.run.app}"
+API_URL="${EXPO_PUBLIC_API_URL:-https://pegasus-api-ui64fwvjyq-uc.a.run.app}"
 
 echo "🧪 Testing Pegasus Mobile Upload Flow"
 echo "API URL: $API_URL"

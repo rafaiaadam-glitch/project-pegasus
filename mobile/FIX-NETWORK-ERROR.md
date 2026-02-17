@@ -21,7 +21,7 @@ cd /Users/rafaiaadam/project-pegasus/temp-repo/mobile
 cat .env
 
 # Should show:
-# EXPO_PUBLIC_API_URL=https://pegasus-api-988514135894.us-central1.run.app
+# EXPO_PUBLIC_API_URL=https://pegasus-api-ui64fwvjyq-uc.a.run.app
 
 # 4. Start Expo with cache clear
 npx expo start --clear
@@ -50,7 +50,7 @@ Edit `mobile/src/services/api.ts`:
 ```typescript
 const getApiBaseUrl = () => {
   // TEMPORARY: Hardcode production URL
-  return 'https://pegasus-api-988514135894.us-central1.run.app';
+  return 'https://pegasus-api-ui64fwvjyq-uc.a.run.app';
 
   // Original code (comment out for now):
   // const productionUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -82,7 +82,7 @@ node debug-connection.js
 
 Then in the mobile app, check console for:
 ```
-API_BASE_URL: https://pegasus-api-988514135894.us-central1.run.app
+API_BASE_URL: https://pegasus-api-ui64fwvjyq-uc.a.run.app
 ```
 
 If you see `localhost` or `10.0.2.2`, the env var isn't loaded.
@@ -102,7 +102,7 @@ console.log('🔗 API_BASE_URL:', API_BASE_URL);
 
 Restart app and check Expo terminal. You should see:
 ```
-🔗 API_BASE_URL: https://pegasus-api-988514135894.us-central1.run.app
+🔗 API_BASE_URL: https://pegasus-api-ui64fwvjyq-uc.a.run.app
 ```
 
 If you see:
@@ -132,7 +132,7 @@ Expo SDK 50+ auto-loads `.env` files if they use the `EXPO_PUBLIC_` prefix.
 ## ✅ Final Checklist
 
 - [ ] `.env` file exists in `mobile/` directory
-- [ ] Contains `EXPO_PUBLIC_API_URL=https://pegasus-api-988514135894.us-central1.run.app`
+- [ ] Contains `EXPO_PUBLIC_API_URL=https://pegasus-api-ui64fwvjyq-uc.a.run.app`
 - [ ] Killed all node processes (`killall -9 node`)
 - [ ] Started Expo with `npx expo start --clear`
 - [ ] Reloaded app (press 'r' or shake device)
@@ -204,7 +204,7 @@ No extra config needed for `.env` to work.
 
 1. **Expo Terminal** should show:
    ```
-   🔗 API_BASE_URL: https://pegasus-api-988514135894.us-central1.run.app
+   🔗 API_BASE_URL: https://pegasus-api-ui64fwvjyq-uc.a.run.app
    ```
 
 2. **Mobile App** should:
@@ -232,7 +232,7 @@ EXPO_PUBLIC_API_URL=http://localhost:8000
 
 # Production (Cloud Run)
 .env.production
-EXPO_PUBLIC_API_URL=https://pegasus-api-988514135894.us-central1.run.app
+EXPO_PUBLIC_API_URL=https://pegasus-api-ui64fwvjyq-uc.a.run.app
 ```
 
 Then copy the right one:

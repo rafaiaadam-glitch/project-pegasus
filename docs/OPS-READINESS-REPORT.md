@@ -63,7 +63,7 @@ curl -s http://localhost:8000/metrics | grep "pegasus_thinking"
 
 **Production endpoint**:
 ```
-https://pegasus-api-988514135894.us-central1.run.app/metrics
+https://pegasus-api-ui64fwvjyq-uc.a.run.app/metrics
 ```
 
 ---
@@ -256,7 +256,7 @@ PLC_INLINE_JOBS=1
 | `/lectures/{id}/transcribe` | Start transcription | ✅ Active |
 | `/lectures/{id}/generate` | Generate artifacts | ✅ Active |
 
-**Base URL**: `https://pegasus-api-988514135894.us-central1.run.app`
+**Base URL**: `https://pegasus-api-ui64fwvjyq-uc.a.run.app`
 
 ---
 
@@ -456,7 +456,7 @@ gcloud alpha monitoring policies list --format=json | jq '.[] | .displayName'
 
 ```bash
 # 1. Trigger test generation request
-curl -X POST https://pegasus-api-988514135894.us-central1.run.app/lectures/test-123/generate \
+curl -X POST https://pegasus-api-ui64fwvjyq-uc.a.run.app/lectures/test-123/generate \
   -H "Authorization: Bearer $(gcloud auth print-identity-token)"
 
 # 2. Wait 2-3 minutes for metrics to propagate

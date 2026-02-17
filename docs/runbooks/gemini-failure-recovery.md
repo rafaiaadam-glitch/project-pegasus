@@ -29,7 +29,7 @@ gcloud logging read 'resource.type="cloud_run_revision"
   | jq -r '.[] | .textPayload'
 
 # Get current error rate
-curl -s https://pegasus-api-988514135894.us-central1.run.app/metrics \
+curl -s https://pegasus-api-ui64fwvjyq-uc.a.run.app/metrics \
   | grep "pegasus_thinking_errors_total"
 ```
 
@@ -85,7 +85,7 @@ gcloud monitoring time-series list \
 3. **Verify recovery**:
    ```bash
    # Check if new requests succeed
-   curl -X POST https://pegasus-api-988514135894.us-central1.run.app/lectures/test-123/generate \
+   curl -X POST https://pegasus-api-ui64fwvjyq-uc.a.run.app/lectures/test-123/generate \
      -H "Authorization: Bearer $(gcloud auth print-identity-token)"
    ```
 
@@ -96,7 +96,7 @@ gcloud monitoring time-series list \
 **Diagnosis**:
 ```bash
 # Check p95 latency trend
-curl -s https://pegasus-api-988514135894.us-central1.run.app/metrics \
+curl -s https://pegasus-api-ui64fwvjyq-uc.a.run.app/metrics \
   | grep "pegasus_thinking_duration_seconds"
 
 # Find slow requests in logs
