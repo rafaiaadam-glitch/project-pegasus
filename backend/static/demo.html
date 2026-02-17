@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pegasus Demo</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; max-width: 900px; }
+      textarea { width: 100%; min-height: 120px; }
+      pre { background: #f6f8fa; padding: 0.75rem; white-space: pre-wrap; }
+      .grid { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+    </style>
+  </head>
+  <body>
+    <h1>Pegasus Ingest Demo</h1>
+    <label for="preset">Preset</label>
+    <select id="preset"></select>
+    <br /><br />
+    <label for="text">Lecture snippet</label>
+    <textarea id="text" placeholder="Paste lecture text"></textarea>
+    <br />
+    <button id="ingest">Ingest</button>
+    <p id="session"></p>
+
+    <div class="grid">
+      <section>
+        <h3>Summary</h3>
+        <pre id="summary"></pre>
+      </section>
+      <section>
+        <h3>Threads</h3>
+        <pre id="threads"></pre>
+      </section>
+    </div>
+
+    <section>
+      <h3>changeLog</h3>
+      <pre id="changelog"></pre>
+    </section>
+
+    <script>
+      async function loadPresets() {
+        const response = await fetch('/presets');
+        const payload = await response.json();
+        const select = document.getElementById('preset');
+        payload.presets.forEach((preset) => {
+          const option = document.createElement('option');
+          option.value = preset.name.replace(/^[^\w]+/, '').trim();
+          option.textContent = preset.name;
+          select.appendChild(option);
+        });
+      }
+
+      async function ingest() {
+        const preset = document.getElementById('preset').value;
+        const text = document.getElementById('text').value;
+        const response = await fetch('/thread/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ preset, text }),
+        });
+        const payload = await response.json();
+        document.getElementById('summary').textContent = payload.summary || '';
+        document.getElementById('threads').textContent = JSON.stringify(payload.threads || [], null, 2);
+        document.getElementById('changelog').textContent = JSON.stringify(payload.changeLog || [], null, 2);
+        document.getElementById('session').textContent = `session_id: ${payload.session_id}`;
+      }
+
+      document.getElementById('ingest').addEventListener('click', ingest);
+      loadPresets();
+    </script>
+  </body>
+</html>

@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
+import re
 
 from typing import Callable, List, Optional
 import threading
@@ -44,6 +45,7 @@ from backend.storage import (
     load_json_payload,
     save_audio,
     save_document,
+    save_export,
     storage_path_exists,
 )
 
@@ -122,8 +124,83 @@ class GenerateRequest(BaseModel):
     llm_model: Optional[str] = None
 
 
+class ThreadIngestRequest(BaseModel):
+    preset: str
+    text: str
+
+
+class ThreadIngestResponse(BaseModel):
+    session_id: str
+    preset: str
+    summary: str
+    threads: list[dict]
+    changeLog: list[str]
+
+
+DEMO_PAGE_PATH = Path(__file__).resolve().parent / "static" / "demo.html"
+
+
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _normalize_preset_name(preset_name: str) -> Optional[str]:
+    candidate = preset_name.strip().lower()
+    for preset in PRESETS:
+        normalized_name = re.sub(r"^[^\w]+", "", preset["name"]).strip().lower()
+        if candidate in {normalized_name, preset["id"].lower()}:
+            return preset["name"]
+    return None
+
+
+def _build_demo_summary(text: str) -> str:
+    cleaned = " ".join(text.strip().split())
+    if not cleaned:
+        return "No transcript text was provided."
+    chunks = re.split(r"(?<=[.!?])\s+", cleaned)
+    return " ".join(chunks[:2])[:420]
+
+
+def _build_demo_threads(text: str) -> list[dict]:
+    tokens = [word.strip(".,;:!?()[]\"'").lower() for word in text.split()]
+    seen: list[str] = []
+    for token in tokens:
+        if len(token) < 5 or not token.isalpha() or token in seen:
+            continue
+        seen.append(token)
+        if len(seen) == 4:
+            break
+    return [
+        {
+            "id": f"thread-{index + 1}",
+            "title": token.replace("-", " ").title(),
+            "status": "active",
+            "evidence": f"Mentioned in input text ({token}).",
+        }
+        for index, token in enumerate(seen)
+    ]
+
+
+def _session_storage_path(session_id: str) -> str:
+    filename = f"sessions/{session_id}.json"
+    storage_mode = os.getenv("STORAGE_MODE", "local")
+    if storage_mode == "s3":
+        bucket = os.getenv("S3_BUCKET", "")
+        prefix = os.getenv("S3_PREFIX", "pegasus")
+        return f"s3://{bucket}/{prefix}/exports/{filename}"
+    if storage_mode == "gcs":
+        bucket = os.getenv("GCS_BUCKET", "")
+        prefix = os.getenv("GCS_PREFIX", "pegasus")
+        return f"gs://{bucket}/{prefix}/exports/{filename}"
+    storage_root = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
+    return str(storage_root / "exports" / filename)
+
+
+def _write_session_payload(session_id: str, payload: dict) -> str:
+    return save_export(
+        payload=json.dumps(payload, indent=2).encode("utf-8"),
+        filename=f"sessions/{session_id}.json",
+    )
 
 
 def _enforce_write_auth(request: Request) -> None:
@@ -676,6 +753,18 @@ def health() -> dict:
     return {"status": "ok", "time": _iso_now()}
 
 
+@app.get("/healthz")
+def healthz() -> dict:
+    return {"status": "ok", "time": _iso_now()}
+
+
+@app.get("/")
+def demo_page() -> FileResponse:
+    if not DEMO_PAGE_PATH.exists():
+        raise HTTPException(status_code=404, detail="Demo page not found.")
+    return FileResponse(DEMO_PAGE_PATH)
+
+
 @app.get("/health/ready")
 def readiness() -> JSONResponse:
     checks: dict[str, dict[str, str]] = {}
@@ -734,6 +823,49 @@ def get_preset(preset_id: str) -> dict:
     if not preset:
         raise HTTPException(status_code=404, detail="Preset not found.")
     return preset
+
+
+@app.post("/thread/ingest")
+def ingest_thread(request: ThreadIngestRequest) -> dict:
+    normalized_preset = _normalize_preset_name(request.preset)
+    if not normalized_preset:
+        raise HTTPException(status_code=400, detail="Invalid preset.")
+
+    summary = _build_demo_summary(request.text)
+    threads = _build_demo_threads(request.text)
+    session_id = f"session-{uuid4().hex[:12]}"
+    response_payload = ThreadIngestResponse(
+        session_id=session_id,
+        preset=normalized_preset,
+        summary=summary,
+        threads=threads,
+        changeLog=[
+            "Accepted transcript snippet.",
+            f"Generated {len(threads)} thread candidates.",
+            "Persisted ingest session.",
+        ],
+    ).model_dump()
+
+    storage_path = _write_session_payload(
+        session_id,
+        {
+            "request": request.model_dump(),
+            "response": response_payload,
+            "storedAt": _iso_now(),
+        },
+    )
+    response_payload["storage_path"] = storage_path
+    return response_payload
+
+
+@app.get("/sessions/{session_id}")
+def get_session(session_id: str) -> dict:
+    storage_path = _session_storage_path(session_id)
+    if not storage_path_exists(storage_path):
+        raise HTTPException(status_code=404, detail="Session not found.")
+    payload = load_json_payload(storage_path)
+    payload["session_id"] = session_id
+    return payload
 
 
 def _is_cloudevent(request: Request) -> bool:
