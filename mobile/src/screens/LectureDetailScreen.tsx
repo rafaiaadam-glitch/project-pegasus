@@ -33,6 +33,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const [progress, setProgress] = useState<any>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({ title: lectureTitle || 'Lecture Details' });
@@ -61,6 +62,20 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
+  };
+
+  const handleGenerate = async () => {
+    try {
+      setGenerating(true);
+      const courseId = summary?.lecture?.course_id || route.params.courseId;
+      const presetId = summary?.lecture?.preset_id || 'exam-mode';
+      await api.generateArtifacts(lectureId, { course_id: courseId, preset_id: presetId });
+      await loadData();
+    } catch (error: any) {
+      Alert.alert('Generation Failed', error.message || 'Could not generate artifacts');
+    } finally {
+      setGenerating(false);
+    }
   };
 
   const handleExport = async (type: 'all' | 'summary' | 'flashcards' | 'questions') => {
@@ -351,8 +366,19 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
 
   return (
     <View style={styles.container}>
-      {/* Export Button */}
+      {/* Action Buttons */}
       <View style={styles.exportButtonContainer}>
+        {summary?.lecture?.status === 'transcribed' && !artifacts?.artifactRecords?.length && (
+          <TouchableOpacity
+            style={[styles.exportButton, { backgroundColor: theme.primary, marginRight: 8 }]}
+            onPress={handleGenerate}
+            disabled={generating}
+          >
+            <Text style={styles.exportButtonText}>
+              {generating ? '⏳' : '🧠'} {generating ? 'Generating...' : 'Generate'}
+            </Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.exportButton}
           onPress={() => setShowExportMenu(true)}
@@ -633,6 +659,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   emptyIcon: { fontSize: 48, marginBottom: 12 },
   emptyText: { fontSize: 15, color: theme.textTertiary },
   exportButtonContainer: {
+    flexDirection: 'row',
     padding: 16,
     paddingBottom: 8,
     backgroundColor: theme.background,
@@ -640,20 +667,19 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderBottomColor: theme.border,
   },
   exportButton: {
-    backgroundColor: theme.primary,
+    flex: 1,
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     borderRadius: 10,
     alignItems: 'center',
-    shadowColor: theme.shadowColor,
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
   },
   exportButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-    color: '#FFF',
+    color: theme.text,
   },
   modalOverlay: {
     flex: 1,
