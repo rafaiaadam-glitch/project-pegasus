@@ -366,13 +366,14 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       formData.append('auto_transcribe', 'true');
 
       const result = await api.ingestLecture(formData);
+      const returnedId = result?.lectureId || lectureId;
 
-      Alert.alert('Success', 'Lecture uploaded successfully!', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      // Navigate directly to the lecture so the user can watch transcription progress
+      navigation.replace('LectureDetail', {
+        lectureId: returnedId,
+        lectureTitle: title,
+        courseId,
+      });
     } catch (error: any) {
       if (error.message?.includes('Mock')) {
         Alert.alert(

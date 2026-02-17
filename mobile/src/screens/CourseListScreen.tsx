@@ -16,9 +16,10 @@ import { useTheme } from '../theme';
 
 interface Props {
   navigation: any;
+  route: any;
 }
 
-export default function CourseListScreen({ navigation }: Props) {
+export default function CourseListScreen({ navigation, route }: Props) {
   const { theme, isDark, toggleTheme } = useTheme();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,8 +64,15 @@ export default function CourseListScreen({ navigation }: Props) {
     loadCourses();
   };
 
+  const selectForRecording = route.params?.selectForRecording;
+
   const handleCoursePress = (course: Course) => {
-    navigation.navigate('LectureList', { courseId: course.id, courseTitle: course.title });
+    if (selectForRecording) {
+      // User tapped a course to record into — go straight to mode/preset selection
+      navigation.navigate('LectureMode', { courseId: course.id, courseTitle: course.title });
+    } else {
+      navigation.navigate('LectureList', { courseId: course.id, courseTitle: course.title });
+    }
   };
 
   const handleBackPress = () => {

@@ -34,11 +34,21 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [generatingStage, setGeneratingStage] = useState('');
 
+  // Auto-poll while transcribing or generating
   useEffect(() => {
     navigation.setOptions({ title: lectureTitle || 'Lecture Details' });
     loadData();
   }, [lectureId]);
+
+  useEffect(() => {
+    const status = summary?.lecture?.status;
+    if (status === 'uploaded' || status === 'transcribing') {
+      const timer = setInterval(() => loadData(), 3000);
+      return () => clearInterval(timer);
+    }
+  }, [summary?.lecture?.status]);
 
   const loadData = async () => {
     try {
@@ -67,14 +77,32 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const handleGenerate = async () => {
     try {
       setGenerating(true);
-      const courseId = summary?.lecture?.course_id || route.params.courseId;
+      setGeneratingStage('Sending to AI...');
+      const courseId = summary?.lecture?.course_id || route.params?.courseId;
       const presetId = summary?.lecture?.preset_id || 'exam-mode';
+
+      // Show thinking-mode messages while the reasoning model works (30s–60s+)
+      const stages = [
+        { delay: 2000,  msg: 'AI is thinking deeply...' },
+        { delay: 10000, msg: 'Reasoning through concepts...' },
+        { delay: 25000, msg: 'Building flashcards & exam questions...' },
+        { delay: 45000, msg: 'Almost done — finalizing study guide...' },
+      ];
+      const timers = stages.map(({ delay, msg }) =>
+        setTimeout(() => setGeneratingStage(msg), delay)
+      );
+
       await api.generateArtifacts(lectureId, { course_id: courseId, preset_id: presetId });
+      timers.forEach(clearTimeout);
+
+      setGeneratingStage('Done!');
       await loadData();
+      setActiveTab('artifacts');
     } catch (error: any) {
       Alert.alert('Generation Failed', error.message || 'Could not generate artifacts');
     } finally {
       setGenerating(false);
+      setGeneratingStage('');
     }
   };
 
@@ -374,8 +402,11 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             onPress={handleGenerate}
             disabled={generating}
           >
-            <Text style={styles.exportButtonText}>
-              {generating ? '⏳' : '🧠'} {generating ? 'Generating...' : 'Generate'}
+            {generating
+              ? <ActivityIndicator size="small" color="#FFF" style={{ marginBottom: 2 }} />
+              : null}
+            <Text style={[styles.exportButtonText, { color: '#FFF' }]}>
+              {generating ? (generatingStage || 'Starting...') : '🧠 Generate'}
             </Text>
           </TouchableOpacity>
         )}
@@ -389,6 +420,16 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Transcription-in-progress banner */}
+      {(summary?.lecture?.status === 'uploaded' || summary?.lecture?.status === 'transcribing') && (
+        <View style={{ backgroundColor: '#FF9500', paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <ActivityIndicator size="small" color="#FFF" />
+          <Text style={{ color: '#FFF', fontWeight: '600', fontSize: 13 }}>
+            Transcribing your lecture... this takes a few seconds
+          </Text>
+        </View>
+      )}
 
       {/* Tab Switcher */}
       <View style={styles.tabContainer}>

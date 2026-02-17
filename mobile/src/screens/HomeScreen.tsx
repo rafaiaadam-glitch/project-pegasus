@@ -46,15 +46,8 @@ export default function HomeScreen({ navigation }: Props) {
   };
 
   const handleRecord = () => {
-    const params = { courseId: 'course-bio-101' };
-
-    if (navigation?.navigate) {
-      navigation.navigate('LectureMode', params);
-      return;
-    }
-
-    // Defensive fallback for unexpected navigator wiring.
-    navigation?.push?.('LectureMode', params);
+    // Go to CourseList so the user picks which course to add the lecture to
+    navigation.navigate('CourseList', { selectForRecording: true });
   };
 
   const handleLecturePress = (lecture: Lecture) => {
