@@ -1,0 +1,22 @@
+{
+  "artifactType": "summary",
+  "presetId": "neurodivergent-friendly-mode",
+  "overview": "Short, low-clutter recap with quick checkpoints.",
+  "sections": [
+    {
+      "title": "Key checkpoints",
+      "bullets": [
+        "Main concept = simple definition.",
+        "Key process: input → transformation → output.",
+        "Important factor affects result."
+      ]
+    },
+    {
+      "title": "Remember",
+      "bullets": [
+        "Essential relationship between components.",
+        "Practice reinforces understanding."
+      ]
+    }
+  ]
+}
