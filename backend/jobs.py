@@ -378,7 +378,6 @@ def run_transcription_job(
 
         # For GCS/S3 storage, get the file path from the database
         if storage_mode in ("gcs", "s3"):
-            from backend.db import get_database
             from backend.storage import load_json_payload
             import tempfile
 
