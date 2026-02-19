@@ -3,6 +3,8 @@ dockerfilePath = "backend/Dockerfile"
 
 [deploy]
 startCommand = "uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000}"
+healthcheckPath = "/health/ready"
+healthcheckTimeout = 180
 
 [variables]
 OPENAI_MODEL = "gpt-4o-mini"

@@ -80,7 +80,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 - [x] Add secrets management guidance for each deploy target
 - [x] Add PII handling policy for transcripts and generated artifacts
 - [x] Add data deletion endpoint/workflow per lecture/course
-- [ ] Add dependency and container vulnerability scanning in CI
+- [x] Add dependency and container vulnerability scanning in CI
 
 **Definition of done:**
 - documented deletion flow and auditability for destructive operations
@@ -89,10 +89,10 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 7) Deployment readiness
 
-- [ ] Publish one canonical deployment guide for API + worker + storage
-- [ ] Add health/readiness checks to platform configs with sane thresholds
-- [ ] Add staging environment parity checklist
-- [ ] Add release checklist with rollback procedure
+- [x] Publish one canonical deployment guide for API + worker + storage
+- [x] Add health/readiness checks to platform configs with sane thresholds
+- [x] Add staging environment parity checklist
+- [x] Add release checklist with rollback procedure
 
 **Definition of done:**
 - staged release and rollback completed successfully at least once
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **18**
-- Items remaining: **18**
-- Completion: **50%**
+- Items marked complete: **23**
+- Items remaining: **13**
+- Completion: **64%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -169,6 +169,12 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Secrets management guidance per deploy target (Render/Railway/Fly/GCP/local) → `docs/runbooks/secrets-management.md`
 - Deletion workflow with auditability (`DELETE /lectures/{lecture_id}`, `DELETE /courses/{course_id}`, `GET /ops/deletion-audit`) → `backend/app.py`, `backend/db.py`, `backend/migrations/002_deletion_audit.sql`, `backend/tests/test_delete_workflow.py`
 - PII handling policy for transcript/artifact data → `docs/PII_HANDLING_POLICY.md`
+- Dependency + container vulnerability scanning in CI (pip-audit + Trivy SARIF upload) → `.github/workflows/ci.yml`
+- Platform health/readiness checks configured for Render, Railway, and Fly (`/health/ready`) → `render.yaml`, `railway.toml`, `fly.toml`, `backend/tests/test_platform_health_checks.py`
+- Canonical deployment guide for API + worker + storage → `docs/runbooks/deployment-guide.md`
+- Staging environment parity checklist → `docs/runbooks/staging-environment-parity-checklist.md`
+- Release checklist with rollback procedure → `docs/runbooks/release-checklist.md`
+- Runbook coverage tests for deployment docs → `backend/tests/test_deployment_runbook_docs.py`
 
 ## Progress notes
 
@@ -186,4 +192,4 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Complete backup/restore and rollback drills in staging (runbooks are documented; drill evidence still needed).
 - Mobile UX completion for a no-terminal first-time flow.
 - Dashboards and alerting.
-- Security/compliance baseline work and final launch gate rehearsal.
+- Final launch gate rehearsal.
