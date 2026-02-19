@@ -1,0 +1,47 @@
+groups:
+  - name: pegasus-pipeline-alerts
+    interval: 30s
+    rules:
+      - alert: PegasusQueueBacklogSustained
+        expr: sum(pegasus_queue_depth) > 25
+        for: 15m
+        labels:
+          severity: page
+          service: pegasus-worker
+          category: backlog
+        annotations:
+          summary: "Pegasus queue backlog is sustained above threshold"
+          description: "Queue depth has been above 25 jobs for at least 15 minutes. Investigate worker throughput, Redis health, and stuck jobs."
+          runbook: "docs/runbooks/incident-response.md#queue-outage-or-severe-backlog"
+
+      - alert: PegasusFailureRateSpike
+        expr: |
+          (
+            sum(increase(pegasus_job_status_events_total{status="failed"}[15m]))
+            /
+            clamp_min(
+              sum(increase(pegasus_job_status_events_total{status=~"failed|completed"}[15m])),
+              1
+            )
+          ) > 0.10
+        for: 10m
+        labels:
+          severity: page
+          service: pegasus-worker
+          category: failures
+        annotations:
+          summary: "Pegasus failure rate spike"
+          description: "Job failure ratio has exceeded 10% for at least 10 minutes. Check recent deploys, upstream model/storage dependencies, and dead-letter volume."
+          runbook: "docs/runbooks/incident-response.md#openai-or-model-provider-outage"
+
+      - alert: PegasusGenerationFailureBurst
+        expr: increase(pegasus_job_failures_total{job_type="generate"}[10m]) >= 5
+        for: 5m
+        labels:
+          severity: warning
+          service: pegasus-worker
+          category: failures
+        annotations:
+          summary: "Generation jobs are failing in bursts"
+          description: "At least 5 generation jobs failed in the last 10 minutes. Review model provider status and inspect failed payloads."
+          runbook: "docs/runbooks/dead-letter-queue.md"
