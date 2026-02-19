@@ -77,7 +77,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 6) Security, privacy, and compliance baseline
 
-- [ ] Add secrets management guidance for each deploy target
+- [x] Add secrets management guidance for each deploy target
 - [x] Add PII handling policy for transcripts and generated artifacts
 - [x] Add data deletion endpoint/workflow per lecture/course
 - [ ] Add dependency and container vulnerability scanning in CI
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **17**
-- Items remaining: **19**
-- Completion: **47%**
+- Items marked complete: **18**
+- Items remaining: **18**
+- Completion: **50%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -164,6 +164,9 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Incident response runbook (queue/OpenAI/storage) → `docs/runbooks/incident-response.md`
 - SLO definitions (ingest success, generation success, p95 processing time) → `docs/runbooks/observability-slos.md`
 - Metrics endpoints + instrumentation (JSON + Prometheus for queue depth, latency/failures/retries) → `backend/observability.py`, `backend/app.py`, `backend/jobs.py`, `backend/tests/test_observability_metrics.py`
+- Alert policy baseline for sustained queue backlog + failure spikes → `ops/monitoring/prometheus-alert-rules.yml`, `docs/runbooks/alerting-verification.md`, `backend/tests/test_alert_rules_config.py`
+- Dashboard baseline for per-stage pipeline timings → `ops/monitoring/grafana-pipeline-dashboard.json`, `docs/runbooks/pipeline-dashboard.md`, `backend/tests/test_monitoring_assets.py`
+- Secrets management guidance per deploy target (Render/Railway/Fly/GCP/local) → `docs/runbooks/secrets-management.md`
 - Deletion workflow with auditability (`DELETE /lectures/{lecture_id}`, `DELETE /courses/{course_id}`, `GET /ops/deletion-audit`) → `backend/app.py`, `backend/db.py`, `backend/migrations/002_deletion_audit.sql`, `backend/tests/test_delete_workflow.py`
 - PII handling policy for transcript/artifact data → `docs/PII_HANDLING_POLICY.md`
 

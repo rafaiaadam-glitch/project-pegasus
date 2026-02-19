@@ -1,0 +1,66 @@
+{
+  "title": "Pegasus Pipeline Operations",
+  "uid": "pegasus-pipeline-ops",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["pegasus", "pipeline", "mvp"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Queue depth (all statuses)",
+      "targets": [
+        {
+          "expr": "sum(pegasus_queue_depth)",
+          "legendFormat": "queue depth"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Per-stage average latency (ms)",
+      "targets": [
+        {
+          "expr": "pegasus_job_latency_ms_avg{job_type=~\"ingest|transcribe|generate|export\"}",
+          "legendFormat": "{{job_type}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Per-stage max latency (ms)",
+      "targets": [
+        {
+          "expr": "pegasus_job_latency_ms_max{job_type=~\"ingest|transcribe|generate|export\"}",
+          "legendFormat": "{{job_type}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Failure rate by stage (15m)",
+      "targets": [
+        {
+          "expr": "sum by(job_type) (increase(pegasus_job_status_events_total{status=\"failed\"}[15m])) / clamp_min(sum by(job_type) (increase(pegasus_job_status_events_total{status=~\"failed|completed\"}[15m])), 1)",
+          "legendFormat": "{{job_type}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Retries by stage (15m)",
+      "targets": [
+        {
+          "expr": "sum by(job_type) (increase(pegasus_job_retries_total[15m]))",
+          "legendFormat": "{{job_type}}"
+        }
+      ]
+    }
+  ]
+}
