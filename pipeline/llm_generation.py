@@ -177,7 +177,9 @@ def generate_artifacts_with_llm(
 
         try:
             project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
-            location = os.getenv("GCP_REGION", "europe-west1")
+            location = os.getenv("GCP_REGION", "global")
+            if "gemini-3" in model:
+                location = "global"
 
             vertexai.init(project=project_id, location=location)
             generative_model = GenerativeModel(model)
