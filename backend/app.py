@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 import logging
 import os
@@ -68,6 +69,9 @@ app.add_middleware(
 
 LOGGER = logging.getLogger("pegasus.api")
 STORAGE_DIR = Path(os.getenv("PLC_STORAGE_DIR", "storage")).resolve()
+DOCX_AVAILABLE = importlib.util.find_spec("docx") is not None
+if DOCX_AVAILABLE:
+    from docx import Document
 
 @app.middleware("http")
 async def request_context_middleware(request: Request, call_next):
@@ -124,6 +128,32 @@ class GenerateRequest(BaseModel):
 
 def _iso_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _extract_context_text(file_path: Path, content: bytes, content_type: str) -> str | None:
+    """Best-effort text extraction for uploaded context files."""
+    ext = file_path.suffix.lower()
+
+    if content_type == "application/pdf" or ext == ".pdf":
+        import fitz
+
+        doc = fitz.open(file_path)
+        text_parts = [page.get_text() for page in doc]
+        doc.close()
+        return "\n".join(text_parts)
+
+    if content_type == "text/plain" or ext in [".txt", ".md", ".markdown"]:
+        return content.decode("utf-8", errors="ignore")
+
+    if content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or ext == ".docx":
+        if not DOCX_AVAILABLE:
+            return f"[DOCX file: {file_path.name} - install python-docx for text extraction]"
+
+        document = Document(file_path)
+        paragraph_text = [paragraph.text for paragraph in document.paragraphs if paragraph.text]
+        return "\n".join(paragraph_text).strip()
+
+    return None
 
 
 def _enforce_write_auth(request: Request) -> None:
@@ -1991,8 +2021,9 @@ async def upload_context_files(
         content_type = file.content_type or ""
         ext = Path(file.filename).suffix.lower()
         is_markdown = ext in [".md", ".markdown"]
+        is_docx = ext == ".docx"
         
-        if content_type not in ALLOWED_TYPES and not is_markdown:
+        if content_type not in ALLOWED_TYPES and not is_markdown and not is_docx:
             raise HTTPException(
                 status_code=400,
                 detail=f"File type not supported: {file.filename}"
@@ -2014,25 +2045,12 @@ async def upload_context_files(
         # Extract text (best-effort)
         extracted_text = None
         try:
-            if content_type == "application/pdf" or ext == ".pdf":
-                # Use PyMuPDF to extract text
-                import fitz
-                doc = fitz.open(file_path)
-                text_parts = []
-                for page in doc:
-                    text_parts.append(page.get_text())
-                extracted_text = "\n".join(text_parts)
-                doc.close()
-            
-            elif content_type == "text/plain" or ext in [".txt", ".md", ".markdown"]:
-                # Read as text
-                extracted_text = content.decode("utf-8", errors="ignore")
-            
-            elif content_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                # DOCX - will need python-docx library
-                # TODO: Add python-docx parsing
-                extracted_text = f"[DOCX file: {file.filename} - text extraction pending]"
-        
+            extracted_text = _extract_context_text(
+                file_path=file_path,
+                content=content,
+                content_type=content_type,
+            )
+
         except Exception as e:
             print(f"[ContextUpload] WARNING: Failed to extract text from {file.filename}: {e}")
             extracted_text = f"[Text extraction failed: {str(e)}]"
