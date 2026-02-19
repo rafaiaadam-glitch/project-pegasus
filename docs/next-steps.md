@@ -10,6 +10,10 @@ There is a mismatch between:
 
 To de-risk launch, we should treat the checklist as the source of truth for next actions.
 
+## Execution artifact
+
+- 10-day execution board to move 17/36 → 22/36: `docs/ten-day-execution-board.md`
+
 ## Priority order (next 2 weeks)
 
 1. **Close observability and SLO gaps first**
