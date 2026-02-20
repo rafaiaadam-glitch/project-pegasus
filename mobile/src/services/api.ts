@@ -28,12 +28,16 @@ class ApiClient {
     return headers;
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(endpoint: string, options: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    const { timeoutMs, ...fetchOptions } = options;
+    const controller = new AbortController();
+    const timer = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
     try {
       const response = await fetch(url, {
-        ...options,
-        headers: { ...this.getAuthHeaders(), ...options.headers },
+        ...fetchOptions,
+        headers: { ...this.getAuthHeaders(), ...fetchOptions.headers },
+        signal: controller.signal,
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -43,6 +47,8 @@ class ApiClient {
     } catch (error) {
       console.error(`API Error (${endpoint}):`, error);
       throw error;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -233,6 +239,7 @@ class ApiClient {
     return this.request(`/lectures/${lectureId}/generate`, {
       method: 'POST',
       body: JSON.stringify(data),
+      timeoutMs: 300000, // 5 min — generation can take a while for long transcripts
     });
   }
 

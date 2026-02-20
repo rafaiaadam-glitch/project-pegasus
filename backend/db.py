@@ -510,6 +510,16 @@ class Database:
             with conn.cursor() as cur:
                 cur.execute("delete from threads where id = %s;", (thread_id,))
 
+    def delete_threads_for_lecture(self, lecture_id: str) -> int:
+        """Delete all threads that reference the given lecture. Returns count deleted."""
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "delete from threads where lecture_refs @> %s returning id;",
+                    (Jsonb([lecture_id]),),
+                )
+                return len(cur.fetchall())
+
     def update_lecture_storage_paths(
         self,
         lecture_id: str,
