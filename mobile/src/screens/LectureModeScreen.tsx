@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View } from 'react-native';
 import { Card, Text, Button } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from '../theme';
 import { LECTURE_MODE_OPTIONS, LectureMode } from '../types/lectureModes';
 
@@ -42,8 +43,18 @@ export default function LectureModeScreen({ navigation, route }: Props) {
               accessibilityLabel={`Select ${mode.title}`}
             >
               <Card.Content>
-                <Text variant="titleMedium">{mode.emoji} {mode.title}</Text>
-                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                  <MaterialCommunityIcons 
+                    name={mode.icon as any} 
+                    size={24} 
+                    color={isSelected ? theme.colors.primary : theme.colors.onSurface} 
+                    style={{ marginRight: 12 }} 
+                  />
+                  <Text variant="titleMedium" style={{ fontWeight: isSelected ? '700' : '400' }}>
+                    {mode.title}
+                  </Text>
+                </View>
+                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, paddingLeft: 36 }}>
                   {mode.description}
                 </Text>
               </Card.Content>

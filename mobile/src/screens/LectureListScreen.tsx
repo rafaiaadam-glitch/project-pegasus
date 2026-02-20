@@ -11,6 +11,7 @@ import {
 import { Lecture } from '../types';
 import api from '../services/api';
 import { useTheme } from '../theme';
+import NetworkErrorView from '../components/NetworkErrorView';
 
 interface Props {
   navigation: any;
@@ -25,6 +26,7 @@ export default function LectureListScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({ title: courseTitle || 'Lectures' });
@@ -51,11 +53,21 @@ export default function LectureListScreen({ navigation, route }: Props) {
   const loadLectures = async () => {
     try {
       setLoading(true);
-      const response = await api.getCourseLectures(courseId);
+      setLoadError(false);
+      let response;
+      if (courseId === 'all') {
+        response = await api.getLectures();
+      } else {
+        response = await api.getCourseLectures(courseId);
+      }
       setLectures(response.lectures);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to load lectures');
-      console.error(error);
+    } catch (err) {
+      console.error('Failed to load lectures:', err);
+      if (lectures.length === 0) {
+        setLoadError(true);
+      } else {
+        Alert.alert('Error', 'Failed to load lectures');
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -225,6 +237,14 @@ export default function LectureListScreen({ navigation, route }: Props) {
     { label: 'Uploaded', value: 'uploaded' },
     { label: 'Failed', value: 'failed' },
   ];
+
+  if (loadError && lectures.length === 0) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <NetworkErrorView onRetry={loadLectures} />
+      </View>
+    );
+  }
 
   if (loading && !refreshing) {
     return (

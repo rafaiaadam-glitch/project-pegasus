@@ -7,7 +7,7 @@ import logging
 import os
 import secrets
 from collections import defaultdict, deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +19,7 @@ import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 from redis import Redis
 
@@ -37,6 +37,8 @@ from backend.jobs import (
     run_generation_job,
     run_transcription_job,
 )
+from backend.chat import get_chat_response  # Import chat logic
+
 from backend.presets import PRESETS, PRESETS_BY_ID
 from backend.runtime_config import validate_runtime_environment
 from backend.storage import (
@@ -46,9 +48,8 @@ from backend.storage import (
     save_audio,
     save_document,
     storage_path_exists,
+    generate_upload_signed_url,
 )
-
-
 
 @asynccontextmanager
 async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -96,8 +97,6 @@ async def request_context_middleware(request: Request, call_next):
     return response
 
 
-
-
 class _InMemoryRateLimiter:
     def __init__(self) -> None:
         self._events_by_key: dict[str, deque[float]] = defaultdict(deque)
@@ -121,7 +120,6 @@ _IDEMPOTENCY_STORE = InMemoryIdempotencyStore()
 class GenerateRequest(BaseModel):
     course_id: Optional[str] = None
     preset_id: Optional[str] = None
-    openai_model: Optional[str] = None
     llm_provider: Optional[str] = None
     llm_model: Optional[str] = None
 
@@ -766,6 +764,28 @@ def get_preset(preset_id: str) -> dict:
     return preset
 
 
+class SignedUrlRequest(BaseModel):
+    filename: str
+    content_type: str
+    prefix: str = "audio"
+
+@app.post("/upload/signed-url")
+def create_upload_url(request: Request, payload: SignedUrlRequest) -> dict:
+    _enforce_write_auth(request)
+    _enforce_write_rate_limit(request)
+    
+    safe_filename = Path(payload.filename).name
+    
+    try:
+        return generate_upload_signed_url(
+            filename=safe_filename,
+            content_type=payload.content_type,
+            prefix=payload.prefix
+        )
+    except NotImplementedError:
+        raise HTTPException(status_code=501, detail="Direct uploads not supported in this environment.")
+
+
 def _is_cloudevent(request: Request) -> bool:
     """Check if the request is a CloudEvent from Eventarc."""
     content_type = request.headers.get("content-type", "")
@@ -824,7 +844,9 @@ async def ingest_lecture(
     transcribe_provider: Optional[str] = Form(None),
     transcribe_model: Optional[str] = Form(None),
     transcribe_language_code: Optional[str] = Form(None),
+    storage_path: Optional[str] = Form(None),
 ) -> dict:
+    print(f"DEBUG INGEST: auto_transcribe={auto_transcribe} type={type(auto_transcribe)} storage_path={storage_path}")
     LOGGER.info("INGEST: %s", request.headers)
 
     # Check if this is a CloudEvent from Eventarc
@@ -920,12 +942,20 @@ async def ingest_lecture(
 
     # Accept either 'audio' or 'file' parameter for backward compatibility
     uploaded_file = audio or file
-    if not uploaded_file:
-        raise HTTPException(status_code=400, detail="Either 'audio' or 'file' parameter is required")
+    if not uploaded_file and not storage_path:
+        raise HTTPException(status_code=400, detail="Either 'audio', 'file', or 'storage_path' parameter is required")
 
     # Detect file type from content-type or extension
-    content_type = uploaded_file.content_type or ""
-    ext = Path(uploaded_file.filename or "").suffix.lower() or ".bin"
+    if uploaded_file:
+        content_type = uploaded_file.content_type or ""
+        ext = Path(uploaded_file.filename or "").suffix.lower() or ".bin"
+        filename_for_meta = uploaded_file.filename
+    else:
+        # Infer from storage path
+        content_type = "application/octet-stream" # Fallback
+        ext = Path(storage_path).suffix.lower() if storage_path else ".bin"
+        filename_for_meta = Path(storage_path).name if storage_path else "uploaded_file"
+
     is_pdf = content_type == "application/pdf" or ext == ".pdf"
     file_type = "pdf" if is_pdf else "audio"
 
@@ -937,7 +967,7 @@ async def ingest_lecture(
         "duration_sec": duration_sec,
         "source_type": source_type,
         "lecture_mode": lecture_mode or "",
-        "audio_filename": uploaded_file.filename or "",
+        "audio_filename": filename_for_meta or "",
         "file_type": file_type,
     }
     replay = _replay_or_none(request, "lectures.ingest", idempotency_payload)
@@ -947,21 +977,25 @@ async def ingest_lecture(
     _ensure_dirs()
 
     # Route to appropriate storage function based on file type
-    try:
-        if is_pdf:
-            stored_path = save_document(
-                uploaded_file.file,
-                f"{lecture_id}.pdf",
-                max_bytes=_max_pdf_upload_bytes(),
-            )
-        else:
-            stored_path = save_audio(
-                uploaded_file.file,
-                f"{lecture_id}{ext}",
-                max_bytes=_max_audio_upload_bytes(),
-            )
-    except ValueError as exc:
-        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    if storage_path:
+        stored_path = storage_path
+        LOGGER.info(f"Using provided storage path: {stored_path}")
+    else:
+        try:
+            if is_pdf:
+                stored_path = save_document(
+                    uploaded_file.file,
+                    f"{lecture_id}.pdf",
+                    max_bytes=_max_pdf_upload_bytes(),
+                )
+            else:
+                stored_path = save_audio(
+                    uploaded_file.file,
+                    f"{lecture_id}{ext}",
+                    max_bytes=_max_audio_upload_bytes(),
+                )
+        except ValueError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
 
     metadata = {
         "id": lecture_id,
@@ -973,10 +1007,10 @@ async def ingest_lecture(
         "durationSec": duration_sec,
         "audioSource": {
             "sourceType": source_type,
-            "originalFilename": uploaded_file.filename,
+            "originalFilename": filename_for_meta,
             "storagePath": stored_path,
-            "sizeBytes": Path(stored_path).stat().st_size if not stored_path.startswith(("s3://", "gs://")) else 0,
-            "checksumSha256": _sha256(Path(stored_path)) if not stored_path.startswith(("s3://", "gs://")) else "",
+            # Size and checksum logic skipped for remote path for now or fetched
+            "sizeBytes": 0, 
             "fileType": file_type,
         },
         "status": "uploaded",
@@ -1012,25 +1046,29 @@ async def ingest_lecture(
 
     transcription_job: Optional[dict] = None
     if auto_transcribe:
-        provider = transcribe_provider or os.getenv("PLC_INGEST_TRANSCRIBE_PROVIDER", "google")
-        model = transcribe_model or os.getenv("PLC_INGEST_TRANSCRIBE_MODEL", "base")
-        language_code = transcribe_language_code or os.getenv("PLC_STT_LANGUAGE")
+        provider = transcribe_provider or os.getenv("PLC_INGEST_TRANSCRIBE_PROVIDER", "openai")
+        model = transcribe_model or os.getenv("PLC_LLM_MODEL", "whisper-1")
+        
+        # Use Google STT for transcription
+        from backend.jobs import run_transcription_job
 
+        language_code = os.getenv("PLC_STT_LANGUAGE", "en-US")
         job_id = enqueue_job(
             "transcription",
             lecture_id,
             run_transcription_job,
             lecture_id,
             model,
-            provider,
+            provider or "openai",
             language_code,
         )
+
         job = db.fetch_job(job_id)
         transcription_job = {
             "jobId": job_id,
             "status": job["status"] if job else "queued",
-            "jobType": job.get("job_type") if job else "transcription",
-            "provider": provider,
+            "jobType": "transcription",
+            "provider": provider or "openai",
             "model": model,
         }
 
@@ -1376,7 +1414,6 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         "lecture_id": lecture_id,
         "course_id": payload.course_id,
         "preset_id": payload.preset_id,
-        "openai_model": payload.openai_model,
         "llm_provider": payload.llm_provider,
         "llm_model": payload.llm_model,
     }
@@ -1408,8 +1445,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         lecture_id,
         course_id,
         preset_id,
-        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "gemini"),
-        payload.llm_model or payload.openai_model or os.getenv("PLC_LLM_MODEL") or os.getenv("OPENAI_MODEL", "gemini-3-pro-preview"),
+        payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "openai"),
+        payload.llm_model or os.getenv("PLC_LLM_MODEL", "gpt-4o-mini"),
     )
     job = db.fetch_job(job_id)
     response_payload = {
@@ -1489,7 +1526,8 @@ def _enqueue_replay_job(db, job: dict) -> dict:
             lecture_id,
             course_id,
             preset_id,
-            os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            os.getenv("PLC_LLM_PROVIDER", "openai"),
+            os.getenv("PLC_LLM_MODEL", "gpt-4o-mini"),
         )
     elif job_type == "export":
         new_job_id = enqueue_job("export", lecture_id, run_export_job, lecture_id)
@@ -1885,17 +1923,16 @@ def review_artifacts(
         artifact_type_key = record["artifact_type"]
         storage_path = record["storage_path"]
         artifact_paths[artifact_type_key] = storage_path
+        
+        try:
+            payload[artifact_type_key] = load_json_payload(storage_path)
+        except Exception:
+            payload[artifact_type_key] = None
+
         if storage_path.startswith("s3://"):
             url = download_url(storage_path)
             if url:
                 artifact_downloads[artifact_type_key] = url
-            payload[artifact_type_key] = None
-            continue
-        path = Path(storage_path)
-        if path.exists():
-            payload[artifact_type_key] = json.loads(path.read_text(encoding="utf-8"))
-        else:
-            payload[artifact_type_key] = None
     threads = db.fetch_threads(lecture_id)
     if threads:
         payload.setdefault("threads", threads)
@@ -1947,6 +1984,45 @@ def lecture_summary(lecture_id: str) -> dict:
             "exports": f"/exports/{lecture_id}/{{export_type}}",
         },
     }
+
+
+@app.get("/action-items")
+def list_action_items(
+    limit: Optional[int] = Query(default=20, ge=1, le=50),
+    offset: Optional[int] = Query(default=0, ge=0),
+) -> dict:
+    """Fetch aggregated action items from recent lectures."""
+    db = get_database()
+    artifacts = db.fetch_action_items(limit=limit, offset=offset)
+    
+    items = []
+    for artifact in artifacts:
+        storage_path = artifact.get("storage_path")
+        if not storage_path:
+            continue
+            
+        try:
+            content = load_json_payload(storage_path)
+            # Support both list directly or wrapped in dict
+            action_list = content.get("action_items", []) if isinstance(content, dict) else content
+            if not isinstance(action_list, list):
+                continue
+
+            for action in action_list:
+                if not isinstance(action, dict): continue
+                items.append({
+                    **action,
+                    "lectureId": artifact["lecture_id"],
+                    "lectureTitle": artifact["lecture_title"],
+                    "courseId": artifact["course_id"],
+                    "courseTitle": artifact["course_title"],
+                    "createdAt": artifact["created_at"],
+                })
+        except Exception as e:
+            LOGGER.warning(f"Failed to load action items from {storage_path}: {e}")
+            continue
+            
+    return {"actionItems": items}
 
 
 # Thread Metrics Endpoints
@@ -2110,6 +2186,34 @@ def delete_context_file(request: Request, file_id: str):
     db_module.delete_context_file(db.conn, file_id)
 
     return {"message": "File deleted successfully"}
+
+
+# =========================================================================
+# Chat Endpoints
+# =========================================================================
+class SimpleChatRequest(BaseModel):
+    message: str
+    history: List[dict] = []
+    context: Optional[dict] = None
+
+
+@app.post("/chat")
+def chat_endpoint(payload: SimpleChatRequest):
+    """Simple chat endpoint using Vertex AI Gemini."""
+    from backend.chat import get_chat_response
+
+    context_str = ""
+    if payload.context:
+        course_id = payload.context.get("courseId", "")
+        if course_id and course_id != "default-course":
+            context_str = f"Course ID: {course_id}"
+
+    response_text = get_chat_response(
+        message=payload.message,
+        history=payload.history,
+        context=context_str,
+    )
+    return {"response": response_text}
 
 
 # =========================================================================

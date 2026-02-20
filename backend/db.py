@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import psycopg2
-from psycopg2.extras import Json, RealDictCursor
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 
 
 @dataclass(frozen=True)
@@ -14,7 +15,7 @@ class Database:
     dsn: str
 
     def connect(self):
-        return psycopg2.connect(self.dsn)
+        return psycopg.connect(self.dsn, row_factory=dict_row, autocommit=True)
 
     def healthcheck(self) -> None:
         with self.connect() as conn:
@@ -38,7 +39,7 @@ class Database:
                     """
                 )
                 cur.execute("select id from schema_migrations order by id;")
-                applied = {row[0] for row in cur.fetchall()}
+                applied = {row["id"] for row in cur.fetchall()}
                 for migration in migrations:
                     migration_id = migration.name
                     if migration_id in applied:
@@ -77,10 +78,9 @@ class Database:
 
     def fetch_lecture(self, lecture_id: str) -> Optional[Dict[str, Any]]:
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute("select * from lectures where id = %s;", (lecture_id,))
-                row = cur.fetchone()
-                return dict(row) if row else None
+                return cur.fetchone()
 
     def fetch_lectures(
         self,
@@ -110,13 +110,12 @@ class Database:
             limit_clause += " offset %(offset)s"
             params["offset"] = offset
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     f"select * from lectures{where_clause} order by created_at desc{limit_clause};",
                     params,
                 )
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
+                return cur.fetchall()
 
     def count_lectures(
         self,
@@ -140,7 +139,7 @@ class Database:
             with conn.cursor() as cur:
                 cur.execute(f"select count(*) from lectures{where_clause};", params)
                 row = cur.fetchone()
-                return int(row[0]) if row else 0
+                return int(list(row.values())[0]) if row else 0
 
     def upsert_course(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
@@ -161,10 +160,9 @@ class Database:
 
     def fetch_course(self, course_id: str) -> Optional[Dict[str, Any]]:
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute("select * from courses where id = %s;", (course_id,))
-                row = cur.fetchone()
-                return dict(row) if row else None
+                return cur.fetchone()
 
     def fetch_courses(
         self,
@@ -180,20 +178,19 @@ class Database:
             limit_clause += " offset %(offset)s"
             params["offset"] = offset
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     f"select * from courses order by created_at desc{limit_clause};",
                     params,
                 )
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
+                return cur.fetchall()
 
     def count_courses(self) -> int:
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("select count(*) from courses;")
                 row = cur.fetchone()
-                return int(row[0]) if row else 0
+                return int(list(row.values())[0]) if row else 0
 
     def create_job(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
@@ -210,7 +207,7 @@ class Database:
                     """,
                     {
                         **payload,
-                        "result": Json(payload.get("result")),
+                        "result": Jsonb(payload.get("result")),
                     },
                 )
 
@@ -229,7 +226,7 @@ class Database:
             params["status"] = status
         if result is not None:
             updates.append("result = %(result)s")
-            params["result"] = Json(result)
+            params["result"] = Jsonb(result)
         if error is not None:
             updates.append("error = %(error)s")
             params["error"] = error
@@ -245,10 +242,9 @@ class Database:
 
     def fetch_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute("select * from jobs where id = %s;", (job_id,))
-                row = cur.fetchone()
-                return dict(row) if row else None
+                return cur.fetchone()
 
     def fetch_jobs(
         self,
@@ -270,13 +266,12 @@ class Database:
             limit_clause += " offset %(offset)s"
             params["offset"] = offset
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     f"select * from jobs{where_clause} order by created_at desc{limit_clause};",
                     params,
                 )
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
+                return cur.fetchall()
 
     def count_jobs(self, lecture_id: Optional[str] = None) -> int:
         clauses = []
@@ -289,7 +284,7 @@ class Database:
             with conn.cursor() as cur:
                 cur.execute(f"select count(*) from jobs{where_clause};", params)
                 row = cur.fetchone()
-                return int(row[0]) if row else 0
+                return int(list(row.values())[0]) if row else 0
 
     def upsert_artifact(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
@@ -337,13 +332,12 @@ class Database:
             limit_clause += " offset %(offset)s"
             params["offset"] = offset
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     f"select * from artifacts where {where_clause} order by artifact_type{limit_clause};",
                     params,
                 )
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
+                return cur.fetchall()
 
     def count_artifacts(
         self,
@@ -364,7 +358,35 @@ class Database:
             with conn.cursor() as cur:
                 cur.execute(f"select count(*) from artifacts where {where_clause};", params)
                 row = cur.fetchone()
-                return int(row[0]) if row else 0
+                return int(list(row.values())[0]) if row else 0
+
+    def fetch_action_items(
+        self,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> list[Dict[str, Any]]:
+        limit_clause = ""
+        params: Dict[str, Any] = {"artifact_type": "action-items"}
+        if limit is not None:
+            limit_clause += " limit %(limit)s"
+            params["limit"] = limit
+        if offset is not None:
+            limit_clause += " offset %(offset)s"
+            params["offset"] = offset
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    select a.*, l.title as lecture_title, c.title as course_title
+                    from artifacts a
+                    join lectures l on a.lecture_id = l.id
+                    left join courses c on a.course_id = c.id
+                    where a.artifact_type = %(artifact_type)s
+                    order by a.created_at desc{limit_clause};
+                    """,
+                    params,
+                )
+                return cur.fetchall()
 
     def upsert_thread(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
@@ -387,23 +409,22 @@ class Database:
                     """,
                     {
                         **payload,
-                        "lecture_refs": Json(payload.get("lecture_refs")),
+                        "lecture_refs": Jsonb(payload.get("lecture_refs")),
                     },
                 )
 
     def fetch_threads(self, lecture_id: str) -> list[Dict[str, Any]]:
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     """
                     select * from threads
                     where lecture_refs @> %s
                     order by created_at desc;
                     """,
-                    (Json([lecture_id]),),
+                    (Jsonb([lecture_id]),),
                 )
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
+                return cur.fetchall()
 
     def fetch_threads_for_course(
         self,
@@ -420,7 +441,7 @@ class Database:
             limit_clause += " offset %(offset)s"
             params["offset"] = offset
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     f"""
                     select * from threads
@@ -429,8 +450,7 @@ class Database:
                     """,
                     params,
                 )
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
+                return cur.fetchall()
 
     def count_threads_for_course(self, course_id: str) -> int:
         with self.connect() as conn:
@@ -443,7 +463,7 @@ class Database:
                     (course_id,),
                 )
                 row = cur.fetchone()
-                return int(row[0]) if row else 0
+                return int(list(row.values())[0]) if row else 0
 
     def upsert_export(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:
@@ -464,13 +484,12 @@ class Database:
 
     def fetch_exports(self, lecture_id: str) -> list[Dict[str, Any]]:
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     "select * from exports where lecture_id = %s order by export_type;",
                     (lecture_id,),
                 )
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
+                return cur.fetchall()
 
     def update_thread_lecture_refs(self, thread_id: str, lecture_refs: list[str]) -> None:
         with self.connect() as conn:
@@ -481,7 +500,7 @@ class Database:
                     set lecture_refs = %s
                     where id = %s;
                     """,
-                    (Json(lecture_refs), thread_id),
+                    (Jsonb(lecture_refs), thread_id),
                 )
 
     def delete_thread(self, thread_id: str) -> None:
@@ -551,7 +570,7 @@ class Database:
                     """,
                     {
                         **payload,
-                        "result": Json(payload.get("result") or {}),
+                        "result": Jsonb(payload.get("result") or {}),
                     },
                 )
 
@@ -581,7 +600,7 @@ class Database:
             params["offset"] = offset
 
         with self.connect() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            with conn.cursor() as cur:
                 cur.execute(
                     f"""
                     select * from deletion_audit_events
@@ -590,8 +609,7 @@ class Database:
                     """,
                     params,
                 )
-                rows = cur.fetchall()
-                return [dict(row) for row in rows]
+                return cur.fetchall()
 
     def count_deletion_audit_events(
         self,
@@ -611,7 +629,7 @@ class Database:
             with conn.cursor() as cur:
                 cur.execute(f"select count(*) from deletion_audit_events{where_clause};", params)
                 row = cur.fetchone()
-                return int(row[0]) if row else 0
+                return int(list(row.values())[0]) if row else 0
 
 def get_database() -> Database:
     dsn = os.getenv("DATABASE_URL")
@@ -692,14 +710,14 @@ def insert_thread_metrics(
                 "quality_score": quality_score,
             },
         )
-    conn.commit()
+    # conn.commit()
 
 
 def fetch_thread_metrics_by_lecture(conn, lecture_id: str):
     """Fetch thread metrics for a specific lecture."""
     import json
 
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT
@@ -720,28 +738,28 @@ def fetch_thread_metrics_by_lecture(conn, lecture_id: str):
 
     return [
         {
-            "id": row[0],
-            "lectureId": row[1],
-            "courseId": row[2],
-            "detectedAt": row[3].isoformat() if row[3] else None,
-            "newThreadsDetected": row[4],
-            "existingThreadsUpdated": row[5],
-            "totalThreadsAfter": row[6],
-            "avgComplexityLevel": float(row[7]) if row[7] else None,
-            "complexityDistribution": json.loads(row[8]) if row[8] else {},
-            "changeTypeDistribution": json.loads(row[9]) if row[9] else {},
-            "avgEvidenceLength": float(row[10]) if row[10] else None,
-            "threadsWithEvidence": row[11],
-            "detectionMethod": row[12],
-            "apiResponseTimeMs": float(row[13]) if row[13] else None,
-            "tokenUsage": json.loads(row[14]) if row[14] else None,
-            "retryCount": row[15],
-            "modelName": row[16],
-            "llmProvider": row[17],
-            "success": row[18],
-            "errorMessage": row[19],
-            "qualityScore": float(row[20]) if row[20] else None,
-            "createdAt": row[21].isoformat() if row[21] else None,
+            "id": row["id"],
+            "lectureId": row["lecture_id"],
+            "courseId": row["course_id"],
+            "detectedAt": row["detected_at"].isoformat() if row["detected_at"] else None,
+            "newThreadsDetected": row["new_threads_detected"],
+            "existingThreadsUpdated": row["existing_threads_updated"],
+            "totalThreadsAfter": row["total_threads_after"],
+            "avgComplexityLevel": float(row["avg_complexity_level"]) if row["avg_complexity_level"] else None,
+            "complexityDistribution": json.loads(row["complexity_distribution"]) if row["complexity_distribution"] else {},
+            "changeTypeDistribution": json.loads(row["change_type_distribution"]) if row["change_type_distribution"] else {},
+            "avgEvidenceLength": float(row["avg_evidence_length"]) if row["avg_evidence_length"] else None,
+            "threadsWithEvidence": row["threads_with_evidence"],
+            "detectionMethod": row["detection_method"],
+            "apiResponseTimeMs": float(row["api_response_time_ms"]) if row["api_response_time_ms"] else None,
+            "tokenUsage": json.loads(row["token_usage"]) if row["token_usage"] else None,
+            "retryCount": row["retry_count"],
+            "modelName": row["model_name"],
+            "llmProvider": row["llm_provider"],
+            "success": row["success"],
+            "errorMessage": row["error_message"],
+            "qualityScore": float(row["quality_score"]) if row["quality_score"] else None,
+            "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
         }
         for row in rows
     ]
@@ -751,7 +769,7 @@ def fetch_thread_metrics_by_course(conn, course_id: str, limit: int = 50):
     """Fetch thread metrics for all lectures in a course."""
     import json
 
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT
@@ -773,28 +791,28 @@ def fetch_thread_metrics_by_course(conn, course_id: str, limit: int = 50):
 
     return [
         {
-            "id": row[0],
-            "lectureId": row[1],
-            "courseId": row[2],
-            "detectedAt": row[3].isoformat() if row[3] else None,
-            "newThreadsDetected": row[4],
-            "existingThreadsUpdated": row[5],
-            "totalThreadsAfter": row[6],
-            "avgComplexityLevel": float(row[7]) if row[7] else None,
-            "complexityDistribution": json.loads(row[8]) if row[8] else {},
-            "changeTypeDistribution": json.loads(row[9]) if row[9] else {},
-            "avgEvidenceLength": float(row[10]) if row[10] else None,
-            "threadsWithEvidence": row[11],
-            "detectionMethod": row[12],
-            "apiResponseTimeMs": float(row[13]) if row[13] else None,
-            "tokenUsage": json.loads(row[14]) if row[14] else None,
-            "retryCount": row[15],
-            "modelName": row[16],
-            "llmProvider": row[17],
-            "success": row[18],
-            "errorMessage": row[19],
-            "qualityScore": float(row[20]) if row[20] else None,
-            "createdAt": row[21].isoformat() if row[21] else None,
+            "id": row["id"],
+            "lectureId": row["lecture_id"],
+            "courseId": row["course_id"],
+            "detectedAt": row["detected_at"].isoformat() if row["detected_at"] else None,
+            "newThreadsDetected": row["new_threads_detected"],
+            "existingThreadsUpdated": row["existing_threads_updated"],
+            "totalThreadsAfter": row["total_threads_after"],
+            "avgComplexityLevel": float(row["avg_complexity_level"]) if row["avg_complexity_level"] else None,
+            "complexityDistribution": json.loads(row["complexity_distribution"]) if row["complexity_distribution"] else {},
+            "changeTypeDistribution": json.loads(row["change_type_distribution"]) if row["change_type_distribution"] else {},
+            "avgEvidenceLength": float(row["avg_evidence_length"]) if row["avg_evidence_length"] else None,
+            "threadsWithEvidence": row["threads_with_evidence"],
+            "detectionMethod": row["detection_method"],
+            "apiResponseTimeMs": float(row["api_response_time_ms"]) if row["api_response_time_ms"] else None,
+            "tokenUsage": json.loads(row["token_usage"]) if row["token_usage"] else None,
+            "retryCount": row["retry_count"],
+            "modelName": row["model_name"],
+            "llmProvider": row["llm_provider"],
+            "success": row["success"],
+            "errorMessage": row["error_message"],
+            "qualityScore": float(row["quality_score"]) if row["quality_score"] else None,
+            "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
         }
         for row in rows
     ]
@@ -802,7 +820,7 @@ def fetch_thread_metrics_by_course(conn, course_id: str, limit: int = 50):
 
 def fetch_thread_metrics_summary(conn, course_id: str | None = None):
     """Fetch aggregated thread metrics summary."""
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         where_clause = "WHERE course_id = %(course_id)s" if course_id else ""
         cur.execute(
             f"""
@@ -827,16 +845,16 @@ def fetch_thread_metrics_summary(conn, course_id: str | None = None):
         return None
 
     return {
-        "totalDetections": row[0],
-        "avgNewThreads": float(row[1]) if row[1] else 0,
-        "avgUpdates": float(row[2]) if row[2] else 0,
-        "avgQualityScore": float(row[3]) if row[3] else 0,
-        "avgResponseTimeMs": float(row[4]) if row[4] else 0,
-        "successfulDetections": row[5],
-        "methodsUsed": row[6],
-        "geminiAvgQuality": float(row[7]) if row[7] else None,
-        "fallbackAvgQuality": float(row[8]) if row[8] else None,
-        "successRate": round((row[5] / row[0] * 100) if row[0] > 0 else 0, 1),
+        "totalDetections": row["total_detections"],
+        "avgNewThreads": float(row["avg_new_threads"]) if row["avg_new_threads"] else 0,
+        "avgUpdates": float(row["avg_updates"]) if row["avg_updates"] else 0,
+        "avgQualityScore": float(row["avg_quality_score"]) if row["avg_quality_score"] else 0,
+        "avgResponseTimeMs": float(row["avg_response_time"]) if row["avg_response_time"] else 0,
+        "successfulDetections": row["successful_detections"],
+        "methodsUsed": row["methods_used"],
+        "geminiAvgQuality": float(row["gemini_avg_quality"]) if row["gemini_avg_quality"] else None,
+        "fallbackAvgQuality": float(row["fallback_avg_quality"]) if row["fallback_avg_quality"] else None,
+        "successRate": round((row["successful_detections"] / row["total_detections"] * 100) if row["total_detections"] > 0 else 0, 1),
     }
 
 
@@ -878,12 +896,12 @@ def insert_context_file(
                 "updated_at": created_at,
             },
         )
-    conn.commit()
+    # conn.commit()
 
 
 def fetch_context_files(conn, course_id: str | None = None, tag: str | None = None):
     """Fetch context files, optionally filtered."""
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         where_clauses = []
         params = {}
 
@@ -911,15 +929,15 @@ def fetch_context_files(conn, course_id: str | None = None, tag: str | None = No
 
     return [
         {
-            "id": row[0],
-            "courseId": row[1],
-            "filename": row[2],
-            "filePath": row[3],
-            "fileSize": row[4],
-            "fileType": row[5],
-            "tag": row[6],
-            "createdAt": row[7].isoformat() if row[7] else None,
-            "updatedAt": row[8].isoformat() if row[8] else None,
+            "id": row["id"],
+            "courseId": row["course_id"],
+            "filename": row["filename"],
+            "filePath": row["file_path"],
+            "fileSize": row["file_size"],
+            "fileType": row["file_type"],
+            "tag": row["tag"],
+            "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+            "updatedAt": row["updated_at"].isoformat() if row["updated_at"] else None,
         }
         for row in rows
     ]
@@ -927,7 +945,7 @@ def fetch_context_files(conn, course_id: str | None = None, tag: str | None = No
 
 def fetch_context_file_by_id(conn, file_id: str):
     """Fetch a single context file by ID."""
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT id, course_id, filename, file_path, file_size, file_type,
@@ -943,16 +961,16 @@ def fetch_context_file_by_id(conn, file_id: str):
         return None
 
     return {
-        "id": row[0],
-        "courseId": row[1],
-        "filename": row[2],
-        "filePath": row[3],
-        "fileSize": row[4],
-        "fileType": row[5],
-        "tag": row[6],
-        "extractedText": row[7],
-        "createdAt": row[8].isoformat() if row[8] else None,
-        "updatedAt": row[9].isoformat() if row[9] else None,
+        "id": row["id"],
+        "courseId": row["course_id"],
+        "filename": row["filename"],
+        "filePath": row["file_path"],
+        "fileSize": row["file_size"],
+        "fileType": row["file_type"],
+        "tag": row["tag"],
+        "extractedText": row["extracted_text"],
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+        "updatedAt": row["updated_at"].isoformat() if row["updated_at"] else None,
     }
 
 
@@ -980,7 +998,7 @@ def fetch_context_text_for_course(conn, course_id: str):
     notes_texts = []
 
     for row in rows:
-        tag, filename, text = row
+        tag, filename, text = row # tuple unpacking works on default cursor too
         if tag == "SYLLABUS":
             syllabus_texts.append(f"=== {filename} ===\n{text}")
         else:
@@ -999,7 +1017,7 @@ def delete_context_file(conn, file_id: str):
             "DELETE FROM context_files WHERE id = %(file_id)s",
             {"file_id": file_id},
         )
-    conn.commit()
+    # conn.commit()
 
 
 # =========================================================================
@@ -1010,21 +1028,6 @@ def delete_context_file(conn, file_id: str):
 def upsert_dice_rotation_state(conn, rotation_state: Dict[str, Any]):
     """
     Insert or update dice rotation state for a lecture.
-
-    Args:
-        conn: Database connection
-        rotation_state: Rotation state dictionary with structure:
-            - id: rotation state ID
-            - lectureId: lecture ID
-            - courseId: course ID
-            - iterationsCompleted: number of iterations
-            - maxIterations: max allowed iterations
-            - status: 'in_progress', 'equilibrium', 'collapsed', or 'max_iterations'
-            - scores: dict of facet scores
-            - entropy: Shannon entropy
-            - equilibriumGap: gap to equilibrium
-            - collapsed: boolean
-            - fullState: complete state (JSONB)
     """
     with conn.cursor() as cur:
         # Extract facet scores
@@ -1101,24 +1104,17 @@ def upsert_dice_rotation_state(conn, rotation_state: Dict[str, Any]):
                 "collapsed": rotation_state.get("collapsed", False),
                 "dominant_facet": dominant_facet,
                 "dominant_score": dominant_score,
-                "full_state": Json(rotation_state.get("fullState", rotation_state)),
+                "full_state": Jsonb(rotation_state.get("fullState", rotation_state)),
             },
         )
-    conn.commit()
+    # conn.commit()
 
 
 def fetch_dice_rotation_state_by_lecture(conn, lecture_id: str) -> Optional[Dict[str, Any]]:
     """
     Fetch dice rotation state for a lecture.
-
-    Args:
-        conn: Database connection
-        lecture_id: Lecture ID
-
-    Returns:
-        Rotation state dict or None if not found
     """
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT id, lecture_id, course_id,
@@ -1139,43 +1135,36 @@ def fetch_dice_rotation_state_by_lecture(conn, lecture_id: str) -> Optional[Dict
         return None
 
     return {
-        "id": row[0],
-        "lectureId": row[1],
-        "courseId": row[2],
-        "iterationsCompleted": row[3],
-        "maxIterations": row[4],
-        "status": row[5],
+        "id": row["id"],
+        "lectureId": row["lecture_id"],
+        "courseId": row["course_id"],
+        "iterationsCompleted": row["iterations_completed"],
+        "maxIterations": row["max_iterations"],
+        "status": row["status"],
         "scores": {
-            "RED": row[6],    # how
-            "ORANGE": row[7],  # what
-            "YELLOW": row[8],  # when
-            "GREEN": row[9],   # where
-            "BLUE": row[10],   # who
-            "PURPLE": row[11], # why
+            "RED": row["score_how"],
+            "ORANGE": row["score_what"],
+            "YELLOW": row["score_when"],
+            "GREEN": row["score_where"],
+            "BLUE": row["score_who"],
+            "PURPLE": row["score_why"],
         },
-        "entropy": row[12],
-        "equilibriumGap": row[13],
-        "collapsed": row[14],
-        "dominantFacet": row[15],
-        "dominantScore": row[16],
-        "fullState": row[17],
-        "createdAt": row[18].isoformat() if row[18] else None,
-        "updatedAt": row[19].isoformat() if row[19] else None,
+        "entropy": row["entropy"],
+        "equilibriumGap": row["equilibrium_gap"],
+        "collapsed": row["collapsed"],
+        "dominantFacet": row["dominant_facet"],
+        "dominantScore": row["dominant_score"],
+        "fullState": row["full_state"],
+        "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+        "updatedAt": row["updated_at"].isoformat() if row["updated_at"] else None,
     }
 
 
 def fetch_dice_rotation_states_by_course(conn, course_id: str) -> list[Dict[str, Any]]:
     """
     Fetch all dice rotation states for a course.
-
-    Args:
-        conn: Database connection
-        course_id: Course ID
-
-    Returns:
-        List of rotation state dicts
     """
-    with conn.cursor() as cur:
+    with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
             """
             SELECT id, lecture_id, course_id,
@@ -1194,27 +1183,27 @@ def fetch_dice_rotation_states_by_course(conn, course_id: str) -> list[Dict[str,
 
     return [
         {
-            "id": row[0],
-            "lectureId": row[1],
-            "courseId": row[2],
-            "iterationsCompleted": row[3],
-            "maxIterations": row[4],
-            "status": row[5],
+            "id": row["id"],
+            "lectureId": row["lecture_id"],
+            "courseId": row["course_id"],
+            "iterationsCompleted": row["iterations_completed"],
+            "maxIterations": row["max_iterations"],
+            "status": row["status"],
             "scores": {
-                "RED": row[6],
-                "ORANGE": row[7],
-                "YELLOW": row[8],
-                "GREEN": row[9],
-                "BLUE": row[10],
-                "PURPLE": row[11],
+                "RED": row["score_how"],
+                "ORANGE": row["score_what"],
+                "YELLOW": row["score_when"],
+                "GREEN": row["score_where"],
+                "BLUE": row["score_who"],
+                "PURPLE": row["score_why"],
             },
-            "entropy": row[12],
-            "equilibriumGap": row[13],
-            "collapsed": row[14],
-            "dominantFacet": row[15],
-            "dominantScore": row[16],
-            "createdAt": row[17].isoformat() if row[17] else None,
-            "updatedAt": row[18].isoformat() if row[18] else None,
+            "entropy": row["entropy"],
+            "equilibriumGap": row["equilibrium_gap"],
+            "collapsed": row["collapsed"],
+            "dominantFacet": row["dominant_facet"],
+            "dominantScore": row["dominant_score"],
+            "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+            "updatedAt": row["updated_at"].isoformat() if row["updated_at"] else None,
         }
         for row in rows
     ]

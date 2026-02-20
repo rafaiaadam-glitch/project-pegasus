@@ -46,6 +46,101 @@ class ApiClient {
     }
   }
 
+  // --- Signed URL & Upload ---
+
+  async getUploadUrl(filename: string, contentType: string): Promise<{ url: string; storagePath: string }> {
+    return this.request('/upload/signed-url', {
+      method: 'POST',
+      body: JSON.stringify({ filename, content_type: contentType }),
+    });
+  }
+
+  async uploadToSignedUrl(url: string, fileUri: string, contentType: string, onProgress?: (progress: number) => void): Promise<void> {
+    // 1. Create a Blob from the URI
+    const response = await fetch(fileUri);
+    const blob = await response.blob();
+
+    // 2. Upload using XHR
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', url);
+      xhr.setRequestHeader('Content-Type', contentType);
+
+      if (onProgress) {
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable) {
+            onProgress(event.loaded / event.total);
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.send(blob);
+    });
+  }
+
+  async ingestLecture(formData: FormData): Promise<any> {
+    const url = `${this.baseUrl}/lectures/ingest`;
+    const headers: Record<string, string> = {};
+    const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
+    if (writeToken) headers['Authorization'] = `Bearer ${writeToken}`;
+
+    const response = await fetch(url, { method: 'POST', headers, body: formData });
+    if (!response.ok) {
+      const errorText = await response.text();
+      let detail = `HTTP ${response.status}`;
+      try { detail = JSON.parse(errorText).detail || detail; } catch {}
+      throw new Error(detail);
+    }
+    return response.json();
+  }
+
+  async ingestLectureWithProgress(formData: FormData, onProgress: (progress: number) => void): Promise<any> {
+    // Legacy XHR method for multipart uploads (subject to 32MB limit)
+    const url = `${this.baseUrl}/lectures/ingest`;
+    const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      if (writeToken) xhr.setRequestHeader('Authorization', `Bearer ${writeToken}`);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          onProgress(event.loaded / event.total);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            resolve({});
+          }
+        } else {
+          let detail = `HTTP ${xhr.status}`;
+          try { detail = JSON.parse(xhr.responseText).detail || detail; } catch {}
+          reject(new Error(detail));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error('Network error during upload'));
+      xhr.ontimeout = () => reject(new Error('Upload timed out'));
+      xhr.timeout = 300000; // 5 min timeout
+
+      xhr.send(formData);
+    });
+  }
+
   // Health
   async healthCheck(): Promise<{ status: string }> {
     return this.request('/health');
@@ -114,21 +209,12 @@ class ApiClient {
     return this.request(`/jobs/${jobId}`);
   }
 
-  // Processing Actions
-  async ingestLecture(formData: FormData): Promise<any> {
-    const url = `${this.baseUrl}/lectures/ingest`;
-    const headers: Record<string, string> = {};
-    const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
-    if (writeToken) headers['Authorization'] = `Bearer ${writeToken}`;
+  async replayJob(jobId: string): Promise<any> {
+    return this.request(`/jobs/${jobId}/replay`, { method: 'POST' });
+  }
 
-    const response = await fetch(url, { method: 'POST', headers, body: formData });
-    if (!response.ok) {
-      const errorText = await response.text();
-      let detail = `HTTP ${response.status}`;
-      try { detail = JSON.parse(errorText).detail || detail; } catch {}
-      throw new Error(detail);
-    }
-    return response.json();
+  async deleteLecture(lectureId: string): Promise<any> {
+    return this.request(`/lectures/${lectureId}`, { method: 'DELETE' });
   }
 
   async transcribeLecture(lectureId: string): Promise<any> {
@@ -164,6 +250,19 @@ class ApiClient {
 
   async getThreadChildren(threadId: string): Promise<any> {
     return this.request(`/threads/${threadId}/children`);
+  }
+
+  // Chat
+  async sendChatMessage(message: string, history: any[], context?: any): Promise<{ response: string }> {
+    return this.request('/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, history, context }),
+    });
+  }
+
+  // Action Items
+  async getActionItems(limit = 20, offset = 0): Promise<{ actionItems: any[] }> {
+    return this.request(`/action-items?limit=${limit}&offset=${offset}`);
   }
 }
 

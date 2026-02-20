@@ -44,15 +44,15 @@ export const lightColors: ThemeColors = {
   textSecondary: '#3A3A3C',
   textTertiary: '#8E8E93',
 
-  // Primary
-  primary: '#007AFF',
-  primaryLight: '#007AFF20',
+  // Primary - Gray/Monochrome Theme
+  primary: '#636366', // System Gray
+  primaryLight: '#63636620',
 
   // Status colors
   success: '#34C759',
   warning: '#FF9500',
   error: '#FF3B30',
-  info: '#007AFF',
+  info: '#8E8E93',
 
   // Borders
   border: '#E5E5EA',
@@ -77,15 +77,15 @@ export const darkColors: ThemeColors = {
   textSecondary: '#EBEBF5',
   textTertiary: '#8E8E93',
 
-  // Primary
-  primary: '#0A84FF',
-  primaryLight: '#0A84FF20',
+  // Primary - Gray/Monochrome Theme (Lighter for Dark Mode)
+  primary: '#AEAEB2', // System Gray 2
+  primaryLight: '#AEAEB220',
 
   // Status colors
   success: '#30D158',
   warning: '#FF9F0A',
   error: '#FF453A',
-  info: '#0A84FF',
+  info: '#8E8E93',
 
   // Borders
   border: '#38383A',

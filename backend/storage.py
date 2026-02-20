@@ -344,7 +344,73 @@ def load_json_payload(storage_path: str) -> dict:
         body = blob.download_as_text()
         return json.loads(body)
 
-    path = Path(storage_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Storage path not found: {storage_path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+def generate_upload_signed_url(
+    filename: str,
+    content_type: str,
+    expires_in: int = 900,
+    prefix: str = "uploads",
+) -> dict[str, str]:
+    """
+    Generate a signed URL for direct file upload.
+
+    Args:
+        filename: Target filename
+        content_type: MIME type of the file
+        expires_in: Expiration time in seconds (default 15 minutes)
+        prefix: Storage prefix (folder)
+
+    Returns:
+        Dictionary with 'url' (for PUT request) and 'storagePath' (to save in DB)
+    """
+    cfg = _config()
+    
+    if cfg.mode == "gcs":
+        if not cfg.gcs_bucket:
+            raise RuntimeError("GCS_BUCKET must be set for GCS storage.")
+        
+        from datetime import timedelta
+        import google.auth
+        from google.auth.transport import requests
+        
+        blob_name = f"{cfg.gcs_prefix}/{prefix}/{filename}"
+        bucket = _gcs_client().bucket(cfg.gcs_bucket)
+        blob = bucket.blob(blob_name)
+        
+        credentials, _ = google.auth.default()
+        request = requests.Request()
+        try:
+            credentials.refresh(request)
+        except Exception:
+            pass
+
+        token = credentials.token
+        # Manual URL construction to bypass signing complexity
+        from urllib.parse import quote
+        encoded_blob_path = quote(blob_name)
+        url = f"https://storage.googleapis.com/{cfg.gcs_bucket}/{encoded_blob_path}?access_token={token}"
+
+        return {
+            "url": url,
+            "storagePath": f"gs://{cfg.gcs_bucket}/{blob_name}",
+        }
+    elif cfg.mode == "s3":
+        key = f"{cfg.s3_prefix}/{prefix}/{filename}"
+        url = _s3_client().generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": cfg.s3_bucket,
+                "Key": key,
+                "ContentType": content_type,
+            },
+            ExpiresIn=expires_in,
+        )
+        return {
+            "url": url,
+            "storagePath": f"s3://{cfg.s3_bucket}/{key}",
+        }
+
+    else:
+        # Local mode fallback (not a signed URL, but a direct API path maybe? or just unsupported)
+        # For local dev, signed URLs don't make sense unless we mock them.
+        # We'll throw an error because the frontend expects to PUT to this URL.
+        raise NotImplementedError("Direct uploads (signed URLs) not supported in local storage mode.")

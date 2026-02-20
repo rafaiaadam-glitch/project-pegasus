@@ -167,12 +167,31 @@ export const exportAllArtifactsAsMarkdown = (
   return markdown;
 };
 
+// Web fallback: download via Blob + anchor click
+const downloadViaBlob = (content: string, filename: string, mimeType: string) => {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+};
+
 // Save and Share File
 export const saveAndShareFile = async (
   content: string,
   filename: string,
   mimeType: string = 'text/plain'
 ): Promise<void> => {
+  // Web platform: use blob download
+  if (Platform.OS === 'web') {
+    downloadViaBlob(content, filename, mimeType);
+    return;
+  }
+
   try {
     const fileUri = `${FileSystem.documentDirectory}${filename}`;
 

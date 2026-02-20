@@ -12,6 +12,7 @@ import {
   RadioButton,
   Chip,
   TouchableRipple,
+  Divider,
 } from 'react-native-paper';
 import { useTheme } from '../theme';
 
@@ -269,20 +270,29 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
 
             {(currentQuestion.type === 'short-answer' ||
               currentQuestion.type === 'essay') && (
-              <View style={{ padding: 20, backgroundColor: theme.colors.surfaceVariant, borderRadius: 12, alignItems: 'center' }}>
-                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center', marginBottom: 16 }}>
+              <View style={{ padding: 20, backgroundColor: theme.colors.surfaceVariant, borderRadius: 12 }}>
+                <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 16, fontStyle: 'italic' }}>
                   {currentQuestion.type === 'essay'
-                    ? 'In an actual exam, you would write your essay answer here.'
-                    : 'In an actual exam, you would write your short answer here.'}
+                    ? 'Draft your essay answer here (mental or written notes).'
+                    : 'Draft your short answer here.'}
                 </Text>
+                
                 <Button
                   mode={answers[currentIndex] ? 'contained' : 'outlined'}
                   onPress={() =>
                     handleAnswer(answers[currentIndex] ? '' : 'answered')
                   }
+                  style={{ marginBottom: 16 }}
                 >
                   {answers[currentIndex] ? '✓ Marked as Answered' : 'Mark as Answered'}
                 </Button>
+
+                <Divider style={{ marginBottom: 16 }} />
+                
+                <Text variant="labelLarge" style={{ marginBottom: 8 }}>Ideal Answer Key:</Text>
+                <View style={{ backgroundColor: theme.colors.surface, padding: 12, borderRadius: 8 }}>
+                   <Text variant="bodyMedium">{currentQuestion.answer}</Text>
+                </View>
               </View>
             )}
           </Card.Content>

@@ -3,7 +3,7 @@ from __future__ import annotations
 PRESETS: list[dict] = [
     {
         "id": "exam-mode",
-        "name": "📝 Exam Mode",
+        "name": "Exam Mode",
         "kind": "exam",
         "description": "Optimized for structured answers, mark schemes, and clarity under assessment pressure. Prioritizes definitions and explanation marks.",
         "diceWeights": {
@@ -51,7 +51,7 @@ PRESETS: list[dict] = [
     },
     {
         "id": "concept-map-mode",
-        "name": "🗺️ Concept Map Mode",
+        "name": "Concept Map Mode",
         "kind": "concept-map",
         "description": "Shows relationships and system structure. Emphasizes connections, mechanisms, and system boundaries over deep meaning.",
         "diceWeights": {
@@ -99,7 +99,7 @@ PRESETS: list[dict] = [
     },
     {
         "id": "beginner-mode",
-        "name": "👶 Beginner Mode",
+        "name": "Beginner Mode",
         "kind": "beginner",
         "description": "Reduces overwhelm with clear definitions and simple explanations. Minimal debate, abstraction, or complex theoretical stakes.",
         "diceWeights": {
@@ -148,7 +148,7 @@ PRESETS: list[dict] = [
     },
     {
         "id": "neurodivergent-friendly-mode",
-        "name": "🧩 Neurodivergent-Friendly Mode",
+        "name": "Neurodivergent-Friendly Mode",
         "kind": "neurodivergent",
         "description": "Reduces cognitive overload with clear structure, step-by-step logic, and temporal anchoring. Minimizes abstraction spirals.",
         "diceWeights": {
@@ -198,7 +198,7 @@ PRESETS: list[dict] = [
     },
     {
         "id": "research-mode",
-        "name": "🔬 Research Mode",
+        "name": "Research Mode",
         "kind": "research",
         "description": "Emphasizes methodological depth, critical evaluation, and theoretical framing. Strong focus on mechanisms and context.",
         "diceWeights": {
@@ -248,7 +248,7 @@ PRESETS: list[dict] = [
     },
     {
         "id": "seminar-mode",
-        "name": "🎓 Seminar / Discussion Mode",
+        "name": "Seminar / Discussion Mode",
         "kind": "seminar",
         "description": "Optimized for debate and discussion tracking. Ideal for Political Science, Philosophy, Law, Sociology, Anthropology, and Literature. Emphasizes argument clarity, position mapping, and normative stakes.",
         "targetDisciplines": [

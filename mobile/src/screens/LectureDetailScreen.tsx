@@ -4,7 +4,6 @@ import {
   ScrollView,
   RefreshControl,
   Alert,
-  Platform,
 } from 'react-native';
 import {
   SegmentedButtons,
@@ -17,11 +16,13 @@ import {
   Dialog,
   Portal,
   List,
+  IconButton,
 } from 'react-native-paper';
 import api from '../services/api';
 import { useTheme } from '../theme';
+import NetworkErrorView from '../components/NetworkErrorView';
 
-const ExportUtils = Platform.OS !== 'web' ? require('../services/exportUtils') : null;
+import * as ExportUtils from '../services/exportUtils';
 
 interface Props {
   navigation: any;
@@ -41,9 +42,18 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const [exporting, setExporting] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [generatingStage, setGeneratingStage] = useState('');
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
-    navigation.setOptions({ title: lectureTitle || 'Lecture Details' });
+    navigation.setOptions({
+      title: lectureTitle || 'Lecture Details',
+      headerRight: () => (
+        <IconButton
+          icon="share-variant"
+          onPress={() => setShowExportMenu(true)}
+        />
+      ),
+    });
     loadData();
   }, [lectureId]);
 
@@ -58,6 +68,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const loadData = async () => {
     try {
       setLoading(true);
+      setLoadError(false);
       const [summaryData, artifactsData, progressData] = await Promise.all([
         api.getLectureSummary(lectureId),
         api.getLectureArtifacts(lectureId),
@@ -66,8 +77,9 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
       setSummary(summaryData);
       setArtifacts(artifactsData);
       setProgress(progressData);
-    } catch (error) {
-      console.error('Error loading lecture data:', error);
+    } catch (err) {
+      console.error('Error loading lecture data:', err);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -115,14 +127,6 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
       setExporting(true);
       setShowExportMenu(false);
 
-      if (Platform.OS === 'web' || !ExportUtils) {
-        Alert.alert(
-          'Export Not Available',
-          'File export is only available on iOS and Android devices. Please use the mobile app to export files.'
-        );
-        return;
-      }
-
       switch (type) {
         case 'all':
           if (artifacts?.artifacts) {
@@ -169,6 +173,24 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
       console.error('Export error:', error);
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleRetryStage = async (stageKey: string) => {
+    try {
+      const jobs = await api.getLectureJobs(lectureId);
+      const failedJob = jobs.jobs?.find(
+        (j: any) => j.job_type === stageKey && j.status === 'failed'
+      );
+      if (failedJob) {
+        await api.replayJob(failedJob.id);
+        Alert.alert('Retry Started', `Retrying ${stageKey}...`);
+        loadData();
+      } else {
+        Alert.alert('No Failed Job', 'Could not find a failed job to retry.');
+      }
+    } catch (err: any) {
+      Alert.alert('Retry Failed', err.message || 'Could not retry this stage.');
     }
   };
 
@@ -232,6 +254,25 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
                     >
                       {stage.label}
                     </Text>
+                    {isFailed && stageData?.error && (
+                      <Text
+                        variant="labelSmall"
+                        style={{ color: theme.colors.error, textAlign: 'center', marginTop: 4, fontSize: 10 }}
+                        numberOfLines={2}
+                      >
+                        {stageData.error}
+                      </Text>
+                    )}
+                    {isFailed && (
+                      <Chip
+                        compact
+                        onPress={() => handleRetryStage(stage.key)}
+                        style={{ marginTop: 4, backgroundColor: theme.colors.errorContainer }}
+                        textStyle={{ fontSize: 10, color: theme.colors.error }}
+                      >
+                        Retry
+                      </Chip>
+                    )}
                   </View>
                   {index < stages.length - 1 && (
                     <View
@@ -274,24 +315,57 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
     return (
       <View>
         {arts.summary && (
-          <Card style={{ marginBottom: 16 }} mode="elevated">
+          <Card
+            style={{ marginBottom: 16 }}
+            onPress={() => navigation.navigate('SummaryViewer', { summary: arts.summary })}
+            mode="elevated"
+          >
             <Card.Content>
               <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>SUMMARY</Chip>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Lecture Summary</Text>
-              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }} numberOfLines={3}>
                 {arts.summary.overview}
+              </Text>
+              <Text variant="labelLarge" style={{ color: theme.colors.primary }}>
+                View Full Summary →
               </Text>
             </Card.Content>
           </Card>
         )}
 
         {arts.outline && (
-          <Card style={{ marginBottom: 16 }} mode="elevated">
+          <Card
+            style={{ marginBottom: 16 }}
+            onPress={() => navigation.navigate('OutlineViewer', { outline: arts.outline })}
+            mode="elevated"
+          >
             <Card.Content>
               <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>OUTLINE</Chip>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Lecture Outline</Text>
-              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
                 {arts.outline.sections?.length || 0} sections
+              </Text>
+              <Text variant="labelLarge" style={{ color: theme.colors.primary }}>
+                View Outline →
+              </Text>
+            </Card.Content>
+          </Card>
+        )}
+
+        {arts['key-terms'] && (
+          <Card
+            style={{ marginBottom: 16 }}
+            onPress={() => navigation.navigate('KeyTermsViewer', { keyTerms: arts['key-terms'] })}
+            mode="elevated"
+          >
+            <Card.Content>
+              <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>KEY TERMS</Chip>
+              <Text variant="titleMedium" style={{ marginBottom: 8 }}>Key Terms</Text>
+              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
+                {arts['key-terms'].terms?.length || 0} terms
+              </Text>
+              <Text variant="labelLarge" style={{ color: theme.colors.primary }}>
+                View Key Terms →
               </Text>
             </Card.Content>
           </Card>
@@ -412,6 +486,14 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
     );
   };
 
+  if (loadError && !summary) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <NetworkErrorView onRetry={loadData} message="Could not load lecture data. Please check your connection and try again." />
+      </View>
+    );
+  }
+
   if (loading && !refreshing) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
@@ -455,7 +537,13 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
         <View style={{ backgroundColor: theme.colors.tertiaryContainer, paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <ActivityIndicator size="small" />
           <Text variant="labelMedium" style={{ color: theme.colors.onTertiaryContainer }}>
-            Transcribing your lecture... this takes a few seconds
+            {progress?.currentStage === 'transcription'
+              ? 'Transcribing your lecture... this takes a few seconds'
+              : progress?.currentStage === 'generation'
+              ? 'Generating study materials...'
+              : progress?.currentStage === 'export'
+              ? 'Preparing exports...'
+              : 'Processing your lecture...'}
           </Text>
         </View>
       )}

@@ -4,6 +4,8 @@ import { Appbar, TextInput, Button, Text, ActivityIndicator, Divider } from 'rea
 import { useTheme } from '../theme';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import api from '../services/api';
+import NetworkErrorView from '../components/NetworkErrorView';
 
 type ChatRouteParamList = {
   Chat: { courseId: string };
@@ -27,53 +29,77 @@ const ChatScreen: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
-  const [courseContext, setCourseContext] = useState<{ summary: string; concepts: string[] } | null>(null);
+  const [loadError, setLoadError] = useState<boolean>(false);
+  const [courseTitle, setCourseTitle] = useState<string>('');
   const flatListRef = useRef<FlatList<Message>>(null);
 
   const DISCLAIMER_TEXT = "I am an AI assistant for studies, not a qualified mental health care provider. If you are experiencing high levels of distress, please reach out to your institutional support services.";
 
   useEffect(() => {
-    // Initial load for course context (this will be from backend API call later)
-    setCourseContext({
-      summary: "Loading course summary...",
-      concepts: [],
-    });
-    // Simulate fetching context
-    setTimeout(() => {
-      setCourseContext({
-        summary: "This course covers foundational neuroscience, focusing on neural pathways and cognitive functions.",
-        concepts: ["Neural Pathways", "Cognitive Functions", "Synaptic Plasticity"],
-      });
-      setMessages([
-        { id: '0', text: `Hello! I'm Pegasus, your study reflection copilot for ${courseId}. How can I help you reflect on your studies today?`, isUser: false },
-        { id: 'disclaimer', text: DISCLAIMER_TEXT, isUser: false },
-      ]);
-    }, 1000);
+    loadCourseDetails();
   }, [courseId]);
+
+  const loadCourseDetails = async () => {
+    setLoadError(false);
+    try {
+      if (courseId !== 'default-course') {
+        const course = await api.getCourse(courseId);
+        setCourseTitle(course.title);
+        setMessages([
+          { id: '0', text: `Hello! I'm Pegasus. I'm ready to help you with ${course.title}. What's on your mind?`, isUser: false },
+          { id: 'disclaimer', text: DISCLAIMER_TEXT, isUser: false },
+        ]);
+      } else {
+         setMessages([
+          { id: '0', text: `Hello! I'm Pegasus. How can I help you reflect on your studies today?`, isUser: false },
+          { id: 'disclaimer', text: DISCLAIMER_TEXT, isUser: false },
+        ]);
+      }
+    } catch (error) {
+      console.error('Failed to load course details:', error);
+      if (messages.length === 0) {
+        setLoadError(true);
+      } else {
+        setMessages([
+          { id: '0', text: `Hello! I'm Pegasus. How can I help you today?`, isUser: false },
+          { id: 'disclaimer', text: DISCLAIMER_TEXT, isUser: false },
+        ]);
+      }
+    }
+  };
 
   useEffect(() => {
     // Scroll to bottom when messages change
     if (messages.length > 0) {
-      flatListRef.current?.scrollToEnd({ animated: true });
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [messages]);
 
   const sendMessage = async () => {
     if (inputText.trim() === '') return;
 
-    const newUserMessage: Message = { id: String(messages.length), text: inputText, isUser: true };
+    const userMsgText = inputText;
+    const newUserMessage: Message = { id: String(Date.now()), text: userMsgText, isUser: true };
     setMessages((prev) => [...prev, newUserMessage]);
     setInputText('');
     setLoading(true);
 
     try {
-      // Simulate API call to Gemini
-      // In a real implementation, this would connect to your backend /chat/reflect endpoint
-      // and handle streaming responses.
-      const simulatedResponse = `That's a great point! Let's explore how "${newUserMessage.text}" connects with "${courseContext?.concepts[0] || 'your core concepts'}". What are your initial thoughts on their relationship?`;
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate network delay
+      // Prepare history for API (excluding the just added message which is current input)
+      // Actually, standard practice is to send history including the new message?
+      // Our API takes `message` separately. `history` is previous messages.
+      const history = messages.filter(m => m.id !== 'disclaimer').map(m => ({
+        text: m.text,
+        isUser: m.isUser
+      }));
 
-      const newAiMessage: Message = { id: String(messages.length + 1), text: simulatedResponse, isUser: false };
+      const response = await api.sendChatMessage(userMsgText, history, { courseId });
+      
+      const newAiMessage: Message = { 
+        id: String(Date.now() + 1), 
+        text: response.response || "I'm sorry, I couldn't generate a response.", 
+        isUser: false 
+      };
       setMessages((prev) => [...prev, newAiMessage]);
     } catch (error) {
       console.error('Error sending message:', error);
@@ -102,6 +128,18 @@ const ChatScreen: React.FC = () => {
     </View>
   );
 
+  if (loadError && messages.length === 0) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
+        <Appbar.Header elevated>
+          <Appbar.BackAction onPress={() => navigation.goBack()} />
+          <Appbar.Content title="Pegasus Chat" />
+        </Appbar.Header>
+        <NetworkErrorView onRetry={loadCourseDetails} />
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <Appbar.Header elevated>
@@ -110,20 +148,7 @@ const ChatScreen: React.FC = () => {
         {/* Potentially add actions for settings or other chat modes */}
       </Appbar.Header>
 
-      <View style={{ padding: 10, backgroundColor: theme.colors.surface }}>
-        <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 5 }}>
-          Course Context:
-        </Text>
-        <Text variant="bodySmall" style={{ color: theme.colors.onSurface }}>
-          {courseContext?.summary}
-        </Text>
-        {courseContext?.concepts.length > 0 && (
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurface, marginTop: 5 }}>
-            Key Concepts: {courseContext.concepts.join(', ')}
-          </Text>
-        )}
-        <Divider style={{ marginTop: 10 }} />
-      </View>
+
 
       <FlatList
         ref={flatListRef}

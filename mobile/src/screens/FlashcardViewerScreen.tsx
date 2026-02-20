@@ -110,17 +110,19 @@ export default function FlashcardViewerScreen({ navigation, route }: Props) {
                 elevation: 8,
                 opacity: frontOpacity,
                 transform: [{ rotateY: frontInterpolate }],
+                borderWidth: 1,
+                borderColor: theme.colors.outlineVariant,
               }}
             >
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
-                <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant, letterSpacing: 1, marginBottom: 24 }}>
+                <Chip icon="help-circle-outline" style={{ marginBottom: 24, backgroundColor: theme.colors.secondaryContainer }}>
                   QUESTION
-                </Text>
-                <Text variant="headlineSmall" style={{ textAlign: 'center', lineHeight: 36 }}>
+                </Chip>
+                <Text variant="headlineSmall" style={{ textAlign: 'center', lineHeight: 36, fontWeight: '600' }}>
                   {currentCard.front}
                 </Text>
                 <Text variant="bodySmall" style={{ position: 'absolute', bottom: 32, color: theme.colors.onSurfaceVariant, fontStyle: 'italic' }}>
-                  Tap to reveal answer
+                  Tap card to flip
                 </Text>
               </View>
             </Animated.View>
@@ -132,7 +134,7 @@ export default function FlashcardViewerScreen({ navigation, route }: Props) {
                 width: '100%',
                 height: '100%',
                 borderRadius: 24,
-                backgroundColor: theme.colors.primary,
+                backgroundColor: theme.colors.primaryContainer,
                 backfaceVisibility: 'hidden',
                 shadowColor: '#000',
                 shadowOpacity: 0.1,
@@ -141,16 +143,18 @@ export default function FlashcardViewerScreen({ navigation, route }: Props) {
                 elevation: 8,
                 opacity: backOpacity,
                 transform: [{ rotateY: backInterpolate }],
+                borderWidth: 1,
+                borderColor: theme.colors.primary,
               }}
             >
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
-                <Text variant="labelMedium" style={{ color: theme.colors.onPrimary + '80', letterSpacing: 1, marginBottom: 24 }}>
+                <Chip icon="lightbulb-on-outline" style={{ marginBottom: 24, backgroundColor: theme.colors.surface }}>
                   ANSWER
-                </Text>
-                <Text variant="headlineSmall" style={{ textAlign: 'center', lineHeight: 36, color: theme.colors.onPrimary }}>
+                </Chip>
+                <Text variant="headlineSmall" style={{ textAlign: 'center', lineHeight: 36, color: theme.colors.onPrimaryContainer }}>
                   {currentCard.back}
                 </Text>
-                <Text variant="bodySmall" style={{ position: 'absolute', bottom: 32, color: theme.colors.onPrimary + '80', fontStyle: 'italic' }}>
+                <Text variant="bodySmall" style={{ position: 'absolute', bottom: 32, color: theme.colors.onPrimaryContainer, fontStyle: 'italic' }}>
                   Tap to see question
                 </Text>
               </View>

@@ -9,9 +9,12 @@
     "test:e2e:ci": "npm run e2e:install-deps && npm run test:e2e"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@types/node": "^24.5.2",
     "tsx": "^4.20.5",
-    "typescript": "^5.9.2",
-    "@playwright/test": "^1.55.0"
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "react-native-gesture-handler": "^2.30.0"
   }
 }

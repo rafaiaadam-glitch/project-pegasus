@@ -113,6 +113,7 @@ def _generate_thread_records(
     transcript: str,
     llm_provider: str = "openai",
     llm_model: str | None = None,
+    generate_artifacts: bool = False,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     from pipeline.thread_engine import generate_thread_records
 
@@ -124,8 +125,67 @@ def _generate_thread_records(
         storage_dir=Path("storage"),
         llm_provider=llm_provider,
         llm_model=llm_model,
-        preset_id=context.preset_id,  # Pass preset_id to enable preset-aware thread detection
+        preset_id=context.preset_id,
+        generate_artifacts=generate_artifacts,
     )
+
+
+def _strip_nulls(items: list, allowed_keys: set | None = None) -> list:
+    """Strip null values and unexpected keys from a list of dicts (LLM output sanitisation)."""
+    cleaned = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        d = {k: v for k, v in item.items() if v is not None and (allowed_keys is None or k in allowed_keys)}
+        if d:
+            cleaned.append(d)
+    return cleaned
+
+
+def _wrap_thread_engine_artifacts(
+    raw: Dict[str, Any],
+    context: PipelineContext,
+) -> Dict[str, Dict[str, Any]]:
+    """Wrap raw artifact data from the Thread Engine LLM call into schema-conformant envelopes."""
+    artifacts: Dict[str, Dict[str, Any]] = {}
+
+    # summary → needs overview + sections[{title, bullets}]
+    if "summary" in raw:
+        s = raw["summary"]
+        base = _base_artifact(context, "summary")
+        base["overview"] = s.get("overview", "")
+        base["sections"] = _strip_nulls(s.get("sections", []), {"title", "bullets"})
+        artifacts["summary"] = base
+
+    # outline → needs outline[{title, points?, children?}]
+    if "outline" in raw:
+        base = _base_artifact(context, "outline")
+        outline_data = raw["outline"] if isinstance(raw["outline"], list) else raw["outline"].get("sections", raw["outline"])
+        base["outline"] = _strip_nulls(outline_data, {"title", "points", "children"})
+        artifacts["outline"] = base
+
+    # key-terms → needs terms[{term, definition}]
+    if "key_terms" in raw:
+        base = _base_artifact(context, "key-terms")
+        terms = raw["key_terms"] if isinstance(raw["key_terms"], list) else raw["key_terms"].get("terms", [])
+        base["terms"] = _strip_nulls(terms, {"term", "definition", "example", "threadRef"})
+        artifacts["key-terms"] = base
+
+    # flashcards → needs cards[{front, back}]
+    if "flashcards" in raw:
+        base = _base_artifact(context, "flashcards")
+        cards = raw["flashcards"] if isinstance(raw["flashcards"], list) else raw["flashcards"].get("cards", [])
+        base["cards"] = _strip_nulls(cards, {"front", "back", "difficulty", "tags", "threadRef"})
+        artifacts["flashcards"] = base
+
+    # exam-questions → needs questions[{prompt, type, answer}]
+    if "exam_questions" in raw:
+        base = _base_artifact(context, "exam-questions")
+        questions = raw["exam_questions"] if isinstance(raw["exam_questions"], list) else raw["exam_questions"].get("questions", [])
+        base["questions"] = _strip_nulls(questions, {"prompt", "type", "answer", "choices", "correctChoiceIndex", "threadRef"})
+        artifacts["exam-questions"] = base
+
+    return artifacts
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -141,12 +201,12 @@ def run_pipeline(
     output_dir: Path,
     use_llm: bool = False,
     openai_model: str = "gpt-4o-mini",  # Fallback for legacy OpenAI calls
-    llm_provider: str = "gemini",  # Default to Gemini for GCP alignment
+    llm_provider: str = "openai",  # Default to OpenAI
     llm_model: str | None = None,
     progress_tracker=None,
     continuity_threshold: float | None = None,
 ) -> None:
-    # STEP 1: Generate threads FIRST to get real UUIDs
+    # STEP 1: Generate threads AND artifacts in a single LLM call
     if progress_tracker:
         progress_tracker.start_step("thread_generation")
 
@@ -155,6 +215,7 @@ def run_pipeline(
         transcript,
         llm_provider=llm_provider,
         llm_model=llm_model or openai_model,
+        generate_artifacts=use_llm,
     )
 
     if progress_tracker:
@@ -188,23 +249,15 @@ def run_pipeline(
         ),
     }
 
-    # STEP 4: Generate artifacts with real thread references
+    # STEP 4: Build artifacts from Thread Engine output or fallback templates
     if progress_tracker:
         progress_tracker.start_step("artifact_generation")
 
     if use_llm:
-        from pipeline.llm_generation import generate_artifacts_with_llm
+        from pipeline.thread_engine import get_last_artifacts
 
-        artifacts = generate_artifacts_with_llm(
-            transcript=transcript,
-            preset_id=updated_context.preset_id,
-            course_id=updated_context.course_id,
-            lecture_id=updated_context.lecture_id,
-            generated_at=updated_context.generated_at,
-            model=llm_model or openai_model,
-            provider=llm_provider,
-            thread_refs=thread_ids,  # Pass real thread IDs
-        )
+        raw_artifacts = get_last_artifacts() or {}
+        artifacts = _wrap_thread_engine_artifacts(raw_artifacts, updated_context)
     else:
         artifacts = {
             "summary": _summary(updated_context, transcript),

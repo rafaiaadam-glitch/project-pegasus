@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { PaperProvider } from 'react-native-paper';
 import HomeScreen from './src/screens/HomeScreen';
 import CourseListScreen from './src/screens/CourseListScreen';
@@ -19,158 +20,202 @@ import DownloadsScreen from './src/screens/DownloadsScreen';
 import GestureSettingsScreen from './src/screens/GestureSettingsScreen';
 import WidgetsScreen from './src/screens/WidgetsScreen';
 import ThreadsScreen from './src/screens/ThreadsScreen';
+import ChatScreen from './src/screens/ChatScreen';
+import SummaryViewerScreen from './src/screens/SummaryViewerScreen';
+import OutlineViewerScreen from './src/screens/OutlineViewerScreen';
+import KeyTermsViewerScreen from './src/screens/KeyTermsViewerScreen';
 import { ThemeProvider, useTheme } from './src/theme';
+import ErrorBoundary from './src/components/ErrorBoundary';
 
 const Stack = createNativeStackNavigator();
 
+function AppStack() {
+  const { theme } = useTheme();
+  return (
+    <Stack.Navigator
+      id={undefined}
+      initialRouteName="Home"
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: theme.colors.surface,
+        },
+        headerTintColor: theme.colors.primary,
+        headerTitleStyle: {
+          fontWeight: '600',
+          color: theme.colors.text,
+        },
+        headerShadowVisible: false,
+      }}
+    >
+      <Stack.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="CourseList"
+        component={CourseListScreen}
+        options={{
+          headerShown: false, // CourseList has its own header
+        }}
+      />
+      <Stack.Screen
+        name="LectureList"
+        component={LectureListScreen}
+        options={{
+          title: 'Lectures',
+        }}
+      />
+      <Stack.Screen
+        name="LectureDetail"
+        component={LectureDetailScreen}
+        options={{
+          title: 'Lecture Details',
+        }}
+      />
+      <Stack.Screen
+        name="LectureMode"
+        component={LectureModeScreen}
+        options={{
+          title: 'Select Lecture Type',
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
+        name="RecordLecture"
+        component={RecordLectureScreen}
+        options={{
+          title: 'Add Lecture',
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
+        name="FlashcardViewer"
+        component={FlashcardViewerScreen}
+        options={{
+          title: 'Flashcards',
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
+        name="ExamViewer"
+        component={ExamViewerScreen}
+        options={{
+          title: 'Practice Exam',
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{
+          title: 'Settings',
+        }}
+      />
+      <Stack.Screen
+        name="Search"
+        component={SearchScreen}
+        options={{
+          title: 'Search',
+        }}
+      />
+      <Stack.Screen
+        name="Favorites"
+        component={FavoritesScreen}
+        options={{
+          title: 'Favorites',
+        }}
+      />
+      <Stack.Screen
+        name="Statistics"
+        component={StatisticsScreen}
+        options={{
+          title: 'Statistics',
+        }}
+      />
+      <Stack.Screen
+        name="Downloads"
+        component={DownloadsScreen}
+        options={{
+          title: 'Downloads',
+        }}
+      />
+      <Stack.Screen
+        name="GestureSettings"
+        component={GestureSettingsScreen}
+        options={{
+          title: 'Gesture Controls',
+        }}
+      />
+      <Stack.Screen
+        name="Widgets"
+        component={WidgetsScreen}
+        options={{
+          title: 'Widgets',
+        }}
+      />
+      <Stack.Screen
+        name="Threads"
+        component={ThreadsScreen}
+        options={{
+          title: 'Conceptual Threads',
+        }}
+      />
+      <Stack.Screen
+        name="Chat"
+        component={ChatScreen}
+        options={{
+          title: 'Pegasus Chat',
+        }}
+      />
+      <Stack.Screen
+        name="SummaryViewer"
+        component={SummaryViewerScreen}
+        options={{
+          title: 'Summary',
+        }}
+      />
+      <Stack.Screen
+        name="OutlineViewer"
+        component={OutlineViewerScreen}
+        options={{
+          title: 'Outline',
+        }}
+      />
+      <Stack.Screen
+        name="KeyTermsViewer"
+        component={KeyTermsViewerScreen}
+        options={{
+          title: 'Key Terms',
+        }}
+      />
+    </Stack.Navigator>
+  );
+}
+
 function AppNavigator() {
   const { theme, isDark } = useTheme();
-
   return (
     <PaperProvider theme={theme}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      <NavigationContainer>
-        <Stack.Navigator
-          id={undefined}
-          initialRouteName="Home"
-          screenOptions={{
-            headerStyle: {
-              backgroundColor: theme.colors.surface,
-            },
-            headerTintColor: theme.colors.primary,
-            headerTitleStyle: {
-              fontWeight: '600',
-              color: theme.colors.text,
-            },
-            headerShadowVisible: false,
-          }}
-        >
-          <Stack.Screen
-            name="Home"
-            component={HomeScreen}
-            options={{
-              headerShown: false,
-            }}
-          />
-          <Stack.Screen
-            name="CourseList"
-            component={CourseListScreen}
-            options={{
-              headerShown: false, // CourseList has its own header
-            }}
-          />
-          <Stack.Screen
-            name="LectureList"
-            component={LectureListScreen}
-            options={{
-              title: 'Lectures',
-            }}
-          />
-          <Stack.Screen
-            name="LectureDetail"
-            component={LectureDetailScreen}
-            options={{
-              title: 'Lecture Details',
-            }}
-          />
-          <Stack.Screen
-            name="LectureMode"
-            component={LectureModeScreen}
-            options={{
-              title: 'Select Lecture Type',
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen
-            name="RecordLecture"
-            component={RecordLectureScreen}
-            options={{
-              title: 'Add Lecture',
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen
-            name="FlashcardViewer"
-            component={FlashcardViewerScreen}
-            options={{
-              title: 'Flashcards',
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen
-            name="ExamViewer"
-            component={ExamViewerScreen}
-            options={{
-              title: 'Practice Exam',
-              presentation: 'modal',
-            }}
-          />
-          <Stack.Screen
-            name="Settings"
-            component={SettingsScreen}
-            options={{
-              title: 'Settings',
-            }}
-          />
-          <Stack.Screen
-            name="Search"
-            component={SearchScreen}
-            options={{
-              title: 'Search',
-            }}
-          />
-          <Stack.Screen
-            name="Favorites"
-            component={FavoritesScreen}
-            options={{
-              title: 'Favorites',
-            }}
-          />
-          <Stack.Screen
-            name="Statistics"
-            component={StatisticsScreen}
-            options={{
-              title: 'Statistics',
-            }}
-          />
-          <Stack.Screen
-            name="Downloads"
-            component={DownloadsScreen}
-            options={{
-              title: 'Downloads',
-            }}
-          />
-          <Stack.Screen
-            name="GestureSettings"
-            component={GestureSettingsScreen}
-            options={{
-              title: 'Gesture Controls',
-            }}
-          />
-          <Stack.Screen
-            name="Widgets"
-            component={WidgetsScreen}
-            options={{
-              title: 'Widgets',
-            }}
-          />
-          <Stack.Screen
-            name="Threads"
-            component={ThreadsScreen}
-            options={{
-              title: 'Conceptual Threads',
-            }}
-          />
-        </Stack.Navigator>
-      </NavigationContainer>
+      <ErrorBoundary>
+        <NavigationContainer>
+          <AppStack />
+        </NavigationContainer>
+      </ErrorBoundary>
     </PaperProvider>
   );
 }
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppNavigator />
-    </ThemeProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ThemeProvider>
+        <AppNavigator />
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
+

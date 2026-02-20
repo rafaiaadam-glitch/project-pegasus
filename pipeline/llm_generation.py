@@ -1,31 +1,79 @@
+"""LLM-based artifact generation for Pegasus pipeline."""
+
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
-import urllib.error
-import urllib.request
+import sys
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-if importlib.util.find_spec("vertexai"):
-    import vertexai
-    from vertexai.generative_models import GenerationConfig, GenerativeModel
-else:
-    vertexai = None
+# Ensure project root is importable
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-    class GenerationConfig(dict):
-        def __init__(self, **kwargs: Any) -> None:
-            super().__init__(**kwargs)
+from backend.presets import PRESETS_BY_ID
 
-    class GenerativeModel:
-        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
-            raise RuntimeError("vertexai is required for Gemini/Vertex generation")
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _iso_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _load_preset_config(preset_id: str) -> Optional[Dict[str, Any]]:
+    """Load a preset configuration by ID."""
+    return PRESETS_BY_ID.get(preset_id)
+
+
+def _build_generation_prompt(preset_id: str, preset_config: Optional[Dict[str, Any]]) -> str:
+    """Build the system prompt for artifact generation, customized by preset."""
+    base_prompt = (
+        "You are an expert academic content generator. "
+        "Given a lecture transcript, produce structured study materials as JSON.\n\n"
+        "Return a single JSON object with these keys:\n"
+        "- \"summary\": {\"title\": str, \"text\": str, \"keyPoints\": [str]}\n"
+        "- \"outline\": {\"title\": str, \"sections\": [{\"heading\": str, \"points\": [str]}]}\n"
+        "- \"key_terms\": {\"terms\": [{\"term\": str, \"definition\": str}]}\n"
+        "- \"flashcards\": {\"cards\": [{\"front\": str, \"back\": str}]}\n"
+        "- \"exam_questions\": {\"questions\": [{\"question\": str, \"type\": str, "
+        "\"options\": [str] | null, \"answer\": str, \"explanation\": str}]}\n\n"
+    )
+
+    if not preset_config:
+        return base_prompt
+
+    gen_config = preset_config.get("generation_config", {})
+    if not gen_config:
+        return base_prompt
+
+    # Add preset-specific instructions
+    mode_section = f"MODE: {preset_config.get('name', preset_id)}\n"
+    mode_section += f"Description: {preset_config.get('description', '')}\n\n"
+
+    if gen_config.get("tone"):
+        mode_section += f"Tone: {gen_config['tone']}\n"
+    if gen_config.get("summary_max_words"):
+        mode_section += f"Summary max words: {gen_config['summary_max_words']}\n"
+    if gen_config.get("flashcard_count"):
+        mode_section += f"Target flashcard count: {gen_config['flashcard_count']}\n"
+    if gen_config.get("exam_question_count"):
+        mode_section += f"Target exam question count: {gen_config['exam_question_count']}\n"
+
+    question_types = gen_config.get("question_types", [])
+    if question_types:
+        mode_section += f"Question types to include: {', '.join(question_types)}\n"
+
+    special_instructions = gen_config.get("special_instructions", [])
+    if special_instructions:
+        mode_section += "\nSpecial instructions:\n"
+        for instruction in special_instructions:
+            mode_section += f"- {instruction}\n"
+
+    return base_prompt + "=" * 60 + "\n" + mode_section + "=" * 60 + "\n"
 
 
 def _base_artifact(
@@ -34,105 +82,60 @@ def _base_artifact(
     lecture_id: str,
     preset_id: str,
     generated_at: str,
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
+    """Create the base artifact envelope."""
     return {
-        "id": f"artifact-{uuid.uuid4()}",
-        "artifactType": artifact_type,
+        "id": str(uuid.uuid4()),
         "courseId": course_id,
         "lectureId": lecture_id,
         "presetId": preset_id,
+        "artifactType": artifact_type,
         "generatedAt": generated_at,
         "version": "0.2",
     }
 
 
-def _load_preset_config(preset_id: str) -> dict[str, Any] | None:
-    from backend.presets import PRESETS
+def _request_openai(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Send a request to the OpenAI API."""
+    import urllib.request
 
-    normalized = preset_id.strip().lower()
-    for preset in PRESETS:
-        pid = str(preset.get("id", "")).strip().lower()
-        kind = str(preset.get("kind", "")).strip().lower()
-        if normalized in {pid, kind, pid.removesuffix("-mode"), kind.removesuffix("-mode")}:
-            return preset
-    return None
-
-
-def _tone_directive(tone: str) -> str:
-    mapping = {
-        "formal_academic": "Use formal academic language. Be precise and scholarly.",
-        "conversational": "Use plain, everyday language. Explain clearly with examples and analogies.",
-        "direct_predictable": "Use short, direct sentences. Prefer numbered steps and predictable formatting.",
-        "analytical_precise": "Use precise technical language and emphasize evidence and mechanisms.",
-        "dialectical": "Present arguments and counterarguments, and attribute positions to speakers.",
-    }
-    return mapping.get(tone, "Use clear, structured academic language.")
-
-
-def _build_generation_prompt(preset_id: str, preset_config: dict[str, Any] | None) -> str:
-    generation = (preset_config or {}).get("generation_config", {})
-    summary_max_words = generation.get("summary_max_words", 700)
-    flashcard_count = generation.get("flashcard_count", 20)
-    exam_question_count = generation.get("exam_question_count", 10)
-    tone = generation.get("tone", "formal_academic")
-    question_types = generation.get("question_types", ["definition", "application"])
-    special_instructions = generation.get("special_instructions", [])
-
-    special_lines = "\n".join(f"- {item}" for item in special_instructions) if special_instructions else "- None"
-
-    preset_name = (preset_config or {}).get("name", preset_id)
-
-    return (
-        "You are Pegasus Lecture Copilot. Return ONLY valid JSON with no markdown.\n"
-        f"Preset: {preset_name} ({preset_id})\n"
-        f"Tone directive: {_tone_directive(str(tone))}\n"
-        f"Summary max words: {summary_max_words}\n"
-        f"Flashcard count target: {flashcard_count}\n"
-        f"Exam question count target: {exam_question_count}\n"
-        f"Question types: {', '.join(map(str, question_types))}\n"
-        "Special instructions:\n"
-        f"{special_lines}\n\n"
-        "Required top-level JSON keys: summary, outline, key_terms, flashcards, exam_questions.\n"
-        "Each artifact object should be content-only (metadata added later), but compatible with artifactType mapping.\n"
-        "Expected structures:\n"
-        "- summary: {overview: string, sections: [{title: string, bullets: [string]}]}\n"
-        "- outline: {outline: [{title: string, points: [string], children: [object]}]}\n"
-        "- key_terms: {terms: [{term: string, definition: string}]}\n"
-        "- flashcards: {cards: [{front: string, back: string}]}\n"
-        "- exam_questions: {questions: [{prompt: string, type: string, answer: string, choices: [string], correctChoiceIndex: number|null}]}\n"
-    )
-
-
-def _request_openai(payload: dict[str, Any]) -> dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required for OpenAI generation")
+        raise RuntimeError("OPENAI_API_KEY not set")
 
+    data = json.dumps(payload).encode()
     req = urllib.request.Request(
         "https://api.openai.com/v1/responses",
-        data=json.dumps(payload).encode("utf-8"),
+        data=data,
         headers={
-            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
         },
         method="POST",
     )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read())
 
-    with urllib.request.urlopen(req, timeout=90) as response:
-        return json.loads(response.read().decode("utf-8"))
+
+def _extract_openai_text(response: Dict[str, Any]) -> str:
+    """Extract text content from an OpenAI API response."""
+    # Handle Responses API format
+    output = response.get("output", [])
+    for item in output:
+        if item.get("type") == "message":
+            for content in item.get("content", []):
+                if content.get("type") == "output_text":
+                    return content.get("text", "")
+    # Fallback: Chat Completions API format
+    choices = response.get("choices", [])
+    if choices:
+        return choices[0].get("message", {}).get("content", "")
+    return ""
 
 
-def _extract_openai_text(response: dict[str, Any]) -> str:
-    if isinstance(response.get("output_text"), str):
-        return response["output_text"]
-
-    for item in response.get("output", []):
-        for content in item.get("content", []):
-            if content.get("type") in {"output_text", "text"} and isinstance(content.get("text"), str):
-                return content["text"]
-
-    raise ValueError("OpenAI response did not contain output text")
-
+# ---------------------------------------------------------------------------
+# Main generation function
+# ---------------------------------------------------------------------------
 
 def generate_artifacts_with_llm(
     transcript: str,
@@ -141,18 +144,20 @@ def generate_artifacts_with_llm(
     lecture_id: str,
     generated_at: str | None = None,
     model: str = "gemini-3-pro-preview",
-    thread_refs: list[str] | None = None,
+    thread_refs: List[str] | None = None,
     provider: str = "gemini",
-) -> dict[str, dict[str, Any]]:
+) -> Dict[str, Dict[str, Any]]:
     if generated_at is None:
         generated_at = _iso_now()
 
+    # Load preset configuration
     preset_config = _load_preset_config(preset_id)
     if preset_config:
         print(f"[LLM Generation] Using preset: {preset_config.get('name', preset_id)}")
     else:
         print(f"[LLM Generation] WARNING: Could not load preset config for {preset_id}, using defaults")
 
+    # Build customized prompt
     prompt = _build_generation_prompt(preset_id, preset_config)
     user_content = f"Preset: {preset_id}\nTranscript:\n{transcript}"
 
@@ -172,39 +177,39 @@ def generate_artifacts_with_llm(
         raw_text = _extract_openai_text(response)
 
     elif provider_key in {"gemini", "vertex"}:
-        if vertexai is None:
-            raise RuntimeError("vertexai SDK is not installed")
-
         try:
-            project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
-            location = os.getenv("GCP_REGION", "global")
-            if "gemini-3" in model:
-                location = "global"
+            import vertexai
+            from vertexai.generative_models import GenerativeModel, GenerationConfig
 
-            vertexai.init(project=project_id, location=location)
+            project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
+            llm_region = os.getenv("PLC_LLM_REGION", os.getenv("GCP_REGION", "us-central1"))
+            vertexai.init(project=project_id, location=llm_region)
+
             generative_model = GenerativeModel(model)
+            print(f"[LLM Generation] Generating via Vertex AI model: {model}")
 
             response = generative_model.generate_content(
                 [prompt, user_content],
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "temperature": 1.0,
-                    "max_output_tokens": 8192,
-                },
+                generation_config=GenerationConfig(
+                    response_mime_type="application/json",
+                    thinking_budget=32000,
+                    temperature=1.0,
+                    max_output_tokens=8192,
+                ),
             )
             raw_text = response.text
 
-        except Exception as exc:
-            print(f"[LLM Generation] Vertex AI Error: {exc}")
-            raise RuntimeError(f"Vertex AI generation failed: {exc}")
+        except Exception as e:
+            print(f"[LLM Generation] Vertex AI Error: {e}")
+            raise RuntimeError(f"Vertex AI generation failed: {e}")
     else:
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
     try:
         data = json.loads(raw_text)
-    except json.JSONDecodeError as exc:
+    except json.JSONDecodeError as e:
         print(f"[LLM Generation] JSON Decode Error. Raw output:\n{raw_text[:200]}...")
-        raise ValueError(f"LLM failed to return valid JSON: {exc}")
+        raise ValueError(f"LLM failed to return valid JSON: {e}")
 
     mapping = {
         "summary": "summary",
@@ -214,7 +219,7 @@ def generate_artifacts_with_llm(
         "exam_questions": "exam-questions",
     }
 
-    artifacts: dict[str, dict[str, Any]] = {}
+    artifacts: Dict[str, Dict[str, Any]] = {}
     for key, artifact_type in mapping.items():
         if key not in data:
             print(f"[LLM Generation] Warning: Missing '{key}' in LLM response.")
@@ -232,6 +237,7 @@ def generate_artifacts_with_llm(
             preset_id=preset_id,
             generated_at=generated_at,
         )
+
         base.update(artifact)
         base["artifactType"] = artifact_type
 

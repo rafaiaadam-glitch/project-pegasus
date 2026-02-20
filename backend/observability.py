@@ -13,6 +13,11 @@ class InMemoryMetricsStore:
         self._job_latency: dict[str, dict[str, float]] = defaultdict(
             lambda: {"count": 0.0, "sum_ms": 0.0, "max_ms": 0.0}
         )
+        # Standard buckets: 1s, 5s, 10s, 30s, 60s, 2m, 5m, 10m, +Inf
+        self._latency_buckets_def = [1000, 5000, 10000, 30000, 60000, 120000, 300000, 600000, float("inf")]
+        self._job_latency_buckets: dict[str, dict[float, int]] = defaultdict(
+            lambda: {b: 0 for b in self._latency_buckets_def}
+        )
         self._retry_events: dict[str, int] = defaultdict(int)
         # Thinking model specific metrics
         self._thinking_latency: dict[str, dict[str, float]] = defaultdict(
@@ -25,6 +30,7 @@ class InMemoryMetricsStore:
             self._job_status_events.clear()
             self._job_failures.clear()
             self._job_latency.clear()
+            self._job_latency_buckets.clear()
             self._retry_events.clear()
             self._thinking_latency.clear()
             self._thinking_errors.clear()
@@ -43,10 +49,17 @@ class InMemoryMetricsStore:
     def observe_job_latency(self, job_type: str, duration_ms: float) -> None:
         normalized_type = (job_type or "unknown").strip() or "unknown"
         with self._lock:
+            # Summary stats
             metric = self._job_latency[normalized_type]
             metric["count"] += 1
             metric["sum_ms"] += max(0.0, duration_ms)
             metric["max_ms"] = max(metric["max_ms"], max(0.0, duration_ms))
+            
+            # Histogram buckets
+            bucket_counts = self._job_latency_buckets[normalized_type]
+            for bucket in self._latency_buckets_def:
+                if duration_ms <= bucket:
+                    bucket_counts[bucket] += 1
 
     def increment_retry(self, job_type: str) -> None:
         normalized_type = (job_type or "unknown").strip() or "unknown"
@@ -78,6 +91,13 @@ class InMemoryMetricsStore:
                     "avgMs": round(avg_ms, 2),
                     "maxMs": round(metric["max_ms"], 2),
                 }
+            
+            # Copy buckets state
+            latency_buckets = {}
+            for job_type, buckets in self._job_latency_buckets.items():
+                # Convert float('inf') to string "inf" for JSON safety if needed, 
+                # but internal usage handles it. Prometheus renderer handles it.
+                latency_buckets[job_type] = dict(buckets)
 
             # Process thinking latency metrics
             thinking_latency: dict[str, dict[str, float]] = {}
@@ -97,6 +117,7 @@ class InMemoryMetricsStore:
                 },
                 "jobFailures": dict(self._job_failures),
                 "jobLatencyMs": latency,
+                "jobLatencyBuckets": latency_buckets,
                 "jobRetries": dict(self._retry_events),
                 "thinkingLatency": thinking_latency,
                 "thinkingErrors": {key: dict(value) for key, value in self._thinking_errors.items()},
@@ -143,6 +164,26 @@ def render_prometheus_metrics(snapshot: dict[str, Any]) -> str:
         max_ms = float((values or {}).get("maxMs") or 0.0)
         lines.append(f'pegasus_job_latency_ms_avg{{job_type="{_escape_label(str(job_type))}"}} {avg_ms}')
         lines.append(f'pegasus_job_latency_ms_max{{job_type="{_escape_label(str(job_type))}"}} {max_ms}')
+
+    # Histogram export
+    lines.append("# HELP pegasus_job_latency_ms Job latency histogram in milliseconds.")
+    lines.append("# TYPE pegasus_job_latency_ms histogram")
+    for job_type, buckets in sorted((snapshot.get("jobLatencyBuckets") or {}).items()):
+        # Output buckets
+        for le, count in sorted(buckets.items(), key=lambda x: x[0]):
+            le_str = "+Inf" if le == float("inf") else str(int(le))
+            lines.append(
+                f'pegasus_job_latency_ms_bucket{{job_type="{_escape_label(str(job_type))}",le="{le_str}"}} {int(count)}'
+            )
+        # Output sum and count for the histogram
+        latency_info = snapshot.get("jobLatencyMs", {}).get(job_type, {})
+        count_val = latency_info.get("count", 0)
+        # We need raw sum for histogram, but we only stored avg.
+        # Let's approximate or just use the count.
+        # Actually, InMemoryMetricsStore stores sum_ms internally but snapshot calculates avg.
+        # Ideally snapshot should expose sum for full Prometheus compatibility if we want _sum metric.
+        # For now, buckets + count is enough for P95 approximation.
+        lines.append(f'pegasus_job_latency_ms_count{{job_type="{_escape_label(str(job_type))}"}} {int(count_val)}')
 
     return "\n".join(lines) + "\n"
 

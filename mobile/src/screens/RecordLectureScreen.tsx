@@ -5,6 +5,7 @@ import {
   Alert,
   Platform,
   Animated,
+  StyleSheet,
 } from 'react-native';
 import {
   TextInput,
@@ -15,9 +16,11 @@ import {
   ActivityIndicator,
   IconButton,
   Divider,
+  ProgressBar,
 } from 'react-native-paper';
 import { Audio } from 'expo-av';
 import * as DocumentPicker from 'expo-document-picker';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Preset } from '../types';
 import api from '../services/api';
 import { useTheme } from '../theme';
@@ -36,7 +39,12 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
   const [selectedFile, setSelectedFile] = useState<any>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string>('exam-mode');
+  
+  // Upload State
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState<string>('');
+  const [uploadAttempts, setUploadAttempts] = useState(0);
 
   const isWeb = Platform.OS === 'web';
 
@@ -174,7 +182,31 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       }
 
       const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        {
+          isMeteringEnabled: true,
+          android: {
+            extension: '.m4a',
+            outputFormat: Audio.AndroidOutputFormat.MPEG_4,
+            audioEncoder: Audio.AndroidAudioEncoder.AAC,
+            sampleRate: 22050,
+            numberOfChannels: 1,
+            bitRate: 64000, // 64kbps is plenty for speech
+          },
+          ios: {
+            extension: '.m4a',
+            audioQuality: Audio.IOSAudioQuality.MEDIUM,
+            sampleRate: 22050,
+            numberOfChannels: 1,
+            bitRate: 64000,
+            linearPCMBitDepth: 16,
+            linearPCMIsBigEndian: false,
+            linearPCMIsFloat: false,
+          },
+          web: {
+            mimeType: 'audio/webm',
+            bitsPerSecond: 64000,
+          },
+        },
         handleRecordingStatus,
         500
       );
@@ -299,45 +331,78 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
 
     try {
       setUploading(true);
+      setUploadProgress(0.05);
+      setUploadStatus('Preparing upload...');
 
+      // Get safe filename
+      const fileExt = selectedFile.uri.split('.').pop() || 'm4a';
+      const safeName = `upload_${Date.now()}.${fileExt}`;
+      const contentType = selectedFile.mimeType || (fileExt === 'pdf' ? 'application/pdf' : 'audio/mp4');
+
+      // 1. Get Signed URL
+      const { url, storagePath } = await api.getUploadUrl(safeName, contentType);
+      
+      // 2. Direct Upload to GCS
+      setUploadStatus('Uploading directly to cloud...');
+      await api.uploadToSignedUrl(url, selectedFile.uri, contentType, (progress) => {
+        setUploadProgress(progress * 0.9);
+      });
+
+      setUploadProgress(0.95);
+      setUploadStatus('Finalizing...');
+
+      // 3. Ingest using reference
       const lectureId = `lecture-${Date.now()}`;
       const formData = new FormData();
-      const audioPayload = {
-        uri: selectedFile.uri,
-        type: selectedFile.mimeType || 'audio/m4a',
-        name: selectedFile.name,
-      } as any;
-
-      formData.append('audio', audioPayload);
-      formData.append('file', audioPayload);
       formData.append('course_id', courseId);
       formData.append('lecture_id', lectureId);
       formData.append('title', title);
       formData.append('preset_id', selectedPreset);
       formData.append('lecture_mode', lectureMode);
       formData.append('auto_transcribe', 'true');
+      formData.append('storage_path', storagePath); // Pass reference instead of file
 
       const result = await api.ingestLecture(formData);
+      
+      setUploadProgress(1.0);
+      setUploadStatus('Processing started!');
+
       const returnedId = result?.lectureId || lectureId;
 
-      navigation.replace('LectureDetail', {
-        lectureId: returnedId,
-        lectureTitle: title,
-        courseId,
-      });
+      setTimeout(() => {
+        navigation.replace('LectureDetail', {
+          lectureId: returnedId,
+          lectureTitle: title,
+          courseId,
+        });
+      }, 1000);
+
     } catch (error: any) {
+      setUploading(false);
+      setUploadProgress(0);
+      const attempt = uploadAttempts + 1;
+      setUploadAttempts(attempt);
+
       if (error.message?.includes('Mock')) {
         Alert.alert(
           'Demo Mode',
           'This is a demo. In production, your lecture would be uploaded and processed automatically!',
           [{ text: 'OK', onPress: () => navigation.goBack() }]
         );
+      } else if (attempt < 3) {
+        Alert.alert(
+          'Upload Failed',
+          `${error.message || 'Could not upload file.'}\n\nAttempt ${attempt} of 3.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Retry', onPress: () => handleUpload() },
+          ]
+        );
       } else {
-        Alert.alert('Error', 'Failed to upload. Make sure the backend is running.');
+        Alert.alert('Upload Failed', 'Maximum retry attempts reached. Please check your connection and try again later.');
+        setUploadAttempts(0);
       }
       console.error(error);
-    } finally {
-      setUploading(false);
     }
   };
 
@@ -347,14 +412,74 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const getPresetIcon = (id: string) => {
+    if (id.includes('exam')) return 'school';
+    if (id.includes('concept')) return 'sitemap';
+    if (id.includes('beginner')) return 'compass-outline';
+    if (id.includes('neuro')) return 'brain';
+    if (id.includes('research')) return 'flask-outline';
+    if (id.includes('seminar')) return 'account-voice';
+    return 'text-box-outline';
+  };
+
+  const renderPresetItem = (preset: Preset) => {
+    const isSelected = selectedPreset === preset.id;
+    return (
+      <Card
+        key={preset.id}
+        mode={isSelected ? 'contained' : 'outlined'}
+        style={{
+          marginRight: 12,
+          minWidth: 100,
+          backgroundColor: isSelected ? theme.colors.primaryContainer : theme.colors.surface,
+          borderColor: isSelected ? theme.colors.primary : theme.colors.outline,
+        }}
+        onPress={() => setSelectedPreset(preset.id)}
+        disabled={isRecording || uploading}
+      >
+        <Card.Content style={{ alignItems: 'center', paddingVertical: 12, paddingHorizontal: 8 }}>
+          <View style={{ marginBottom: 8 }}>
+             <MaterialCommunityIcons 
+               name={getPresetIcon(preset.id)} 
+               size={24} 
+               color={isSelected ? theme.colors.primary : theme.colors.onSurfaceVariant} 
+             />
+          </View>
+          <Text 
+            variant="labelMedium" 
+            style={{ 
+              textAlign: 'center', 
+              color: isSelected ? theme.colors.onPrimaryContainer : theme.colors.onSurface 
+            }}
+            numberOfLines={2}
+          >
+            {preset.name}
+          </Text>
+        </Card.Content>
+      </Card>
+    );
+  };
+
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.colors.background }}
       contentContainerStyle={{ padding: 20, paddingBottom: 40 }}
     >
-      <Chip icon="tag-outline" style={{ alignSelf: 'flex-start', marginBottom: 12 }}>
-        Lecture Type: {lectureModeTitle}
-      </Chip>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+        <Chip 
+          icon="tag-outline" 
+          onPress={() => navigation.navigate('LectureMode', { courseId })}
+          style={{ backgroundColor: theme.colors.secondaryContainer }}
+        >
+          Lecture Type: {lectureModeTitle}
+        </Chip>
+        <IconButton 
+          icon="pencil-outline" 
+          size={16} 
+          onPress={() => navigation.navigate('LectureMode', { courseId })}
+          style={{ margin: 0 }}
+        />
+      </View>
 
       <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8, marginTop: 8 }}>
         LECTURE TITLE
@@ -365,26 +490,16 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         value={title}
         onChangeText={setTitle}
         autoCapitalize="words"
-        editable={!isRecording}
+        editable={!isRecording && !uploading}
         style={{ marginBottom: 16 }}
       />
 
       <Text variant="labelLarge" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8, marginTop: 8 }}>
         STYLE PRESET
       </Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-        {presets.map((preset) => (
-          <Chip
-            key={preset.id}
-            selected={selectedPreset === preset.id}
-            onPress={() => setSelectedPreset(preset.id)}
-            disabled={isRecording}
-            showSelectedOverlay
-          >
-            {preset.name}
-          </Chip>
-        ))}
-      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+        {presets.map(renderPresetItem)}
+      </ScrollView>
 
       {/* Recording Interface */}
       {!selectedFile && !isRecording && (
@@ -402,6 +517,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
             style={{ marginBottom: 16 }}
             mode="outlined"
             onPress={startRecording}
+            disabled={uploading}
           >
             <Card.Content style={{ alignItems: 'center', paddingVertical: 32 }}>
               <View
@@ -415,14 +531,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
                   marginBottom: 16,
                 }}
               >
-                <View
-                  style={{
-                    width: 60,
-                    height: 60,
-                    borderRadius: 30,
-                    backgroundColor: theme.colors.error,
-                  }}
-                />
+                <MaterialCommunityIcons name="microphone" size={40} color={theme.colors.error} />
               </View>
               <Text variant="titleMedium" style={{ color: theme.colors.error }}>
                 Tap to Start Recording
@@ -442,11 +551,12 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
             style={{ marginBottom: 16 }}
             mode="outlined"
             onPress={handlePickFile}
+            disabled={uploading}
           >
             <Card.Title
               title="Upload Audio or PDF Notes"
               subtitle="Browse your files"
-              left={(props) => <Text {...props} style={{ fontSize: 32 }}>📁</Text>}
+              left={(props) => <MaterialCommunityIcons name="folder-open-outline" size={32} color={theme.colors.primary} style={{ marginHorizontal: 8 }} />}
             />
           </Card>
         </>
@@ -494,8 +604,12 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
                 }),
               }}
             >
-              <Text style={{ fontSize: 16 }}>{isPaused ? '⏸️' : '🎙️'}</Text>
-              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
+              <MaterialCommunityIcons 
+                name={isPaused ? 'pause' : 'microphone'} 
+                size={40} 
+                color={theme.colors.onSurfaceVariant} 
+              />
+              <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 8 }}>
                 {isPaused ? 'Recording paused' : 'Recording in progress...'}
               </Text>
             </View>
@@ -519,7 +633,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         </Card>
       )}
 
-      {/* Selected File */}
+      {/* Selected File & Upload Progress */}
       {selectedFile && !isRecording && (
         <Card style={{ marginTop: 16 }} mode="elevated">
           <Card.Title
@@ -534,23 +648,30 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
                 : undefined
             }
             left={() => (
-              <Text style={{ fontSize: 32 }}>
-                {selectedFile.mimeType === 'application/pdf' || selectedFile.name?.toLowerCase().endsWith('.pdf') ? '📄' : '🎵'}
-              </Text>
+              <MaterialCommunityIcons 
+                name={selectedFile.mimeType === 'application/pdf' || selectedFile.name?.toLowerCase().endsWith('.pdf') ? 'file-document-outline' : 'file-music-outline'}
+                size={32}
+                color={theme.colors.primary}
+                style={{ marginHorizontal: 8 }}
+              />
             )}
             right={() => (
-              <IconButton icon="close" onPress={discardRecording} />
+              !uploading ? <IconButton icon="close" onPress={discardRecording} /> : null
             )}
           />
+          {uploading && (
+            <Card.Content>
+              <ProgressBar progress={uploadProgress} color={theme.colors.primary} style={{ height: 8, borderRadius: 4, marginVertical: 12 }} />
+              <Text style={{ textAlign: 'center', color: theme.colors.onSurfaceVariant }}>{uploadStatus}</Text>
+            </Card.Content>
+          )}
         </Card>
       )}
 
-      {selectedFile && !isRecording && (
+      {selectedFile && !isRecording && !uploading && (
         <Button
           mode="contained"
           onPress={handleUpload}
-          disabled={uploading}
-          loading={uploading}
           icon="upload"
           style={{ marginTop: 16 }}
           contentStyle={{ paddingVertical: 8 }}
@@ -559,7 +680,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         </Button>
       )}
 
-      {!isRecording && (
+      {!isRecording && !uploading && (
         <Text
           variant="bodySmall"
           style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center', marginTop: 16 }}

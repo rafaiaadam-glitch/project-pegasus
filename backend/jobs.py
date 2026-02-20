@@ -289,7 +289,11 @@ def _transcribe_with_whisper(audio_path: Path, model: str) -> Dict[str, Any]:
     }
 
 
-def _transcribe_with_google_speech(audio_path: Path, language_code: str | None) -> Dict[str, Any]:
+def _transcribe_with_google_speech(
+    audio_path: Path,
+    language_code: str | None,
+    gcs_uri: str | None = None,
+) -> Dict[str, Any]:
     try:
         from google.cloud import speech_v1 as speech
     except Exception as exc:
@@ -298,23 +302,70 @@ def _transcribe_with_google_speech(audio_path: Path, language_code: str | None) 
             "Install with `pip install google-cloud-speech`."
         ) from exc
 
-    # Convert audio to LINEAR16 WAV for best compatibility with Google STT
-    # This handles M4A from mobile recordings and other formats
-    stt_input_path = _convert_to_wav(audio_path)
-
     client = speech.SpeechClient()
-    with open(stt_input_path, "rb") as audio_file:
-        content = audio_file.read()
+    lang = language_code or os.getenv("PLC_STT_LANGUAGE", "en-US")
+    stt_model = os.getenv("PLC_GCP_STT_MODEL", "latest_long")
 
-    audio = speech.RecognitionAudio(content=content)
-    config = speech.RecognitionConfig(
-        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=16000,
-        language_code=language_code or os.getenv("PLC_STT_LANGUAGE", "en-US"),
-        enable_automatic_punctuation=True,
-        model=os.getenv("PLC_GCP_STT_MODEL", "latest_long"),
-    )
-    response = client.recognize(config=config, audio=audio)
+    if gcs_uri:
+        # Use GCS URI directly with long_running_recognize for any-length audio.
+        # Convert to FLAC first for best STT compatibility, then upload back.
+        LOGGER.info("STT: converting audio to FLAC for GCS-based recognition")
+        import subprocess
+        import tempfile
+
+        flac_path = Path(tempfile.mktemp(suffix=".flac"))
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(audio_path), "-ac", "1", "-ar", "16000", str(flac_path)],
+            capture_output=True, check=True,
+        )
+
+        # Upload FLAC to GCS temp location
+        from google.cloud import storage as gcs_storage
+        bucket_name, _ = gcs_uri[5:].split("/", 1)
+        temp_blob_name = f"pegasus/_stt_temp/{audio_path.stem}.flac"
+        gcs_client = gcs_storage.Client()
+        bucket = gcs_client.bucket(bucket_name)
+        blob = bucket.blob(temp_blob_name)
+        blob.upload_from_filename(str(flac_path))
+        flac_gcs_uri = f"gs://{bucket_name}/{temp_blob_name}"
+        flac_path.unlink(missing_ok=True)
+        LOGGER.info("STT: uploaded FLAC to %s, starting long_running_recognize", flac_gcs_uri)
+
+        audio = speech.RecognitionAudio(uri=flac_gcs_uri)
+        config = speech.RecognitionConfig(
+            encoding=speech.RecognitionConfig.AudioEncoding.FLAC,
+            sample_rate_hertz=16000,
+            language_code=lang,
+            enable_automatic_punctuation=True,
+            model=stt_model,
+        )
+        operation = client.long_running_recognize(config=config, audio=audio)
+        response = operation.result(timeout=600)
+
+        # Clean up temp FLAC
+        blob.delete()
+    else:
+        # Local storage: convert to WAV, use inline content
+        stt_input_path = _convert_to_wav(audio_path)
+        with open(stt_input_path, "rb") as audio_file:
+            content = audio_file.read()
+
+        audio = speech.RecognitionAudio(content=content)
+        config = speech.RecognitionConfig(
+            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz=16000,
+            language_code=lang,
+            enable_automatic_punctuation=True,
+            model=stt_model,
+        )
+
+        # Use long_running_recognize for files > 1MB, synchronous for small files
+        if len(content) > 1_000_000:
+            LOGGER.info("STT: large file (%d bytes), using long_running_recognize", len(content))
+            operation = client.long_running_recognize(config=config, audio=audio)
+            response = operation.result(timeout=600)
+        else:
+            response = client.recognize(config=config, audio=audio)
 
     lines: list[str] = []
     segments: list[dict[str, Any]] = []
@@ -331,11 +382,61 @@ def _transcribe_with_google_speech(audio_path: Path, language_code: str | None) 
         segments.append({"startSec": start_sec, "endSec": cursor, "text": transcript})
 
     return {
-        "language": language_code or os.getenv("PLC_STT_LANGUAGE", "en-US"),
+        "language": lang,
         "text": " ".join(lines).strip(),
         "segments": segments,
-        "engine": {"provider": "google_speech", "model": os.getenv("PLC_GCP_STT_MODEL", "latest_long")},
+        "engine": {"provider": "google_speech", "model": stt_model},
     }
+
+
+def _transcribe_with_openai_api(audio_path: Path, model: str = "whisper-1") -> Dict[str, Any]:
+    """Transcribe audio using OpenAI Whisper API."""
+    from openai import OpenAI
+
+    client = OpenAI()  # reads OPENAI_API_KEY from env
+
+    # OpenAI Whisper has a 25MB file size limit
+    file_size = audio_path.stat().st_size
+    if file_size > 25 * 1024 * 1024:
+        # Compress to a smaller file with ffmpeg
+        LOGGER.info("Audio file %d bytes exceeds 25MB limit, compressing with ffmpeg", file_size)
+        import subprocess
+        import tempfile
+
+        compressed = Path(tempfile.mktemp(suffix=".mp3"))
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", str(audio_path), "-ac", "1", "-ar", "16000", "-b:a", "64k", str(compressed)],
+            capture_output=True, check=True,
+        )
+        audio_path = compressed
+    else:
+        compressed = None
+
+    try:
+        with open(audio_path, "rb") as audio_file:
+            response = client.audio.transcriptions.create(
+                model=model,
+                file=audio_file,
+                response_format="verbose_json",
+            )
+
+        segments = []
+        for seg in getattr(response, "segments", []) or []:
+            segments.append({
+                "startSec": float(seg.get("start", seg.start) if isinstance(seg, dict) else seg.start),
+                "endSec": float(seg.get("end", seg.end) if isinstance(seg, dict) else seg.end),
+                "text": (seg.get("text", "") if isinstance(seg, dict) else seg.text).strip(),
+            })
+
+        return {
+            "language": getattr(response, "language", "en"),
+            "text": response.text.strip(),
+            "segments": segments,
+            "engine": {"provider": "openai", "model": model},
+        }
+    finally:
+        if compressed and compressed.exists():
+            compressed.unlink(missing_ok=True)
 
 
 def _extract_pdf_text(pdf_path: Path) -> Dict[str, Any]:
@@ -364,7 +465,7 @@ def run_transcription_job(
     job_id: str,
     lecture_id: str,
     model: str,
-    provider: str = "google",  # Default to Google Speech-to-Text
+    provider: str = "openai",  # Default to OpenAI Whisper
     language_code: str | None = None,
 ) -> Dict[str, Any]:
     _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="transcription")
@@ -375,6 +476,7 @@ def run_transcription_job(
         storage_dir = _storage_dir()
         storage_mode = os.getenv("STORAGE_MODE", "local").lower()
         LOGGER.info("Starting transcription job for lecture %s (storage_mode=%s)", lecture_id, storage_mode)
+        audio_path = None  # GCS URI, set when using cloud storage
 
         # For GCS/S3 storage, get the file path from the database
         if storage_mode in ("gcs", "s3"):
@@ -435,9 +537,13 @@ def run_transcription_job(
         if source_type == "pdf":
             transcription = _extract_pdf_text(source_path)
         else:
-            provider_key = (provider or "google").strip().lower()
-            if provider_key == "google":
-                transcription = _transcribe_with_google_speech(source_path, language_code)
+            provider_key = (provider or "openai").strip().lower()
+            if provider_key == "openai":
+                transcription = _transcribe_with_openai_api(source_path, model)
+            elif provider_key == "google":
+                # Pass GCS URI for long_running_recognize when using cloud storage
+                cloud_uri = audio_path if (storage_mode == "gcs" and audio_path and audio_path.startswith("gs://")) else None
+                transcription = _transcribe_with_google_speech(source_path, language_code, gcs_uri=cloud_uri)
             elif provider_key == "whisper":
                 transcription = _transcribe_with_whisper(source_path, model)
             else:
@@ -449,7 +555,7 @@ def run_transcription_job(
             "language": transcription.get("language"),
             "text": transcription.get("text", "").strip(),
             "segments": transcription.get("segments", []),
-            "engine": transcription.get("engine", {"provider": provider or "google", "model": model}),
+            "engine": transcription.get("engine", {"provider": provider or "openai", "model": model}),
         }
         transcript_payload = json.dumps(transcript, indent=2)
         transcript_path = save_transcript(transcript_payload, f"{lecture_id}.json")

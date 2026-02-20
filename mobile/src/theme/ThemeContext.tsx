@@ -2,12 +2,12 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CombinedLightTheme, CombinedDarkTheme } from './paperTheme';
-import type { MD3Theme } from 'react-native-paper';
+import { MD3Theme } from 'react-native-paper';
 
 type ThemeMode = 'light' | 'dark' | 'auto';
 
 interface ThemeContextType {
-  theme: any;
+  theme: MD3Theme;
   mode: ThemeMode;
   isDark: boolean;
   setThemeMode: (mode: ThemeMode) => void;
@@ -19,24 +19,30 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const THEME_STORAGE_KEY = '@pegasus_theme_mode';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [isLoading, setIsLoading] = useState(true);
   const systemColorScheme = useColorScheme();
   const [mode, setMode] = useState<ThemeMode>('auto');
 
   // Load saved theme preference on mount
   useEffect(() => {
+    const loadThemePreference = async () => {
+      try {
+        const savedMode = await AsyncStorage.getItem(THEME_STORAGE_KEY);
+        if (savedMode === 'light' || savedMode === 'dark' || savedMode === 'auto') {
+          setMode(savedMode);
+        }
+      } catch (error) {
+        console.error('Failed to load theme preference:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
     loadThemePreference();
   }, []);
 
-  const loadThemePreference = async () => {
-    try {
-      const savedMode = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-      if (savedMode === 'light' || savedMode === 'dark' || savedMode === 'auto') {
-        setMode(savedMode);
-      }
-    } catch (error) {
-      console.error('Failed to load theme preference:', error);
-    }
-  };
+  if (isLoading) {
+    return null;
+  }
 
   const setThemeMode = async (newMode: ThemeMode) => {
     try {
