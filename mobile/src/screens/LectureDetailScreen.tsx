@@ -521,6 +521,16 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             {generating ? (generatingStage || 'Starting...') : 'Generate'}
           </Button>
         )}
+        {(summary?.lecture?.status === 'transcribed' || artifacts?.artifactRecords?.length > 0) && (
+          <Button
+            mode="outlined"
+            onPress={() => navigation.navigate('DiceAnalysis', { lectureId, lectureTitle })}
+            icon="cube-outline"
+            style={{ flex: 1 }}
+          >
+            Dice Analysis
+          </Button>
+        )}
         <Button
           mode="outlined"
           onPress={() => setShowExportMenu(true)}

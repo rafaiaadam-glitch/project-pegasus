@@ -24,6 +24,7 @@ import ChatScreen from './src/screens/ChatScreen';
 import SummaryViewerScreen from './src/screens/SummaryViewerScreen';
 import OutlineViewerScreen from './src/screens/OutlineViewerScreen';
 import KeyTermsViewerScreen from './src/screens/KeyTermsViewerScreen';
+import DiceAnalysisScreen from './src/screens/DiceAnalysisScreen';
 import { ThemeProvider, useTheme } from './src/theme';
 import ErrorBoundary from './src/components/ErrorBoundary';
 
@@ -189,6 +190,13 @@ function AppStack() {
         component={KeyTermsViewerScreen}
         options={{
           title: 'Key Terms',
+        }}
+      />
+      <Stack.Screen
+        name="DiceAnalysis"
+        component={DiceAnalysisScreen}
+        options={{
+          title: 'Dice Analysis',
         }}
       />
     </Stack.Navigator>

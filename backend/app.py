@@ -2191,6 +2191,76 @@ def delete_context_file(request: Request, file_id: str):
 # =========================================================================
 # Chat Endpoints
 # =========================================================================
+class LLMCompleteRequest(BaseModel):
+    messages: List[dict]
+    model: Optional[str] = None
+    max_tokens: Optional[int] = None
+    provider: Optional[str] = None
+
+
+def _llm_complete_openai(messages: list[dict], model: str, max_tokens: int) -> str:
+    from openai import OpenAI
+
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+    )
+    return response.choices[0].message.content or ""
+
+
+def _llm_complete_google(messages: list[dict], model: str, max_tokens: int) -> str:
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(
+        vertexai=True,
+        project=os.getenv("GOOGLE_CLOUD_PROJECT", "delta-student-486911-n5"),
+        location=os.getenv("PLC_GENAI_REGION", "us-central1"),
+    )
+
+    # Separate system instruction from conversation messages
+    system_parts: list[str] = []
+    contents: list[types.Content] = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        text = msg.get("content", "")
+        if role == "system":
+            system_parts.append(text)
+        else:
+            # Gemini uses "user" and "model" roles (not "assistant")
+            gemini_role = "model" if role == "assistant" else "user"
+            contents.append(types.Content(role=gemini_role, parts=[types.Part.from_text(text=text)]))
+
+    config = types.GenerateContentConfig(
+        max_output_tokens=max_tokens,
+    )
+    if system_parts:
+        config.system_instruction = "\n".join(system_parts)
+
+    response = client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=config,
+    )
+    return response.text or ""
+
+
+@app.post("/api/llm/complete")
+def llm_complete(payload: LLMCompleteRequest):
+    """Generic LLM completion proxy for the dice engine. Supports openai and google providers."""
+    provider = (payload.provider or os.getenv("PLC_LLM_PROVIDER", "openai")).lower()
+
+    if provider == "google":
+        model = payload.model or os.getenv("PLC_LLM_MODEL", "gemini-3.1-pro-preview")
+        return {"content": _llm_complete_google(payload.messages, model, payload.max_tokens or 512)}
+
+    # Default: OpenAI
+    model = payload.model or os.getenv("PLC_LLM_MODEL", "gpt-4o-mini")
+    return {"content": _llm_complete_openai(payload.messages, model, payload.max_tokens or 512)}
+
+
 class SimpleChatRequest(BaseModel):
     message: str
     history: List[dict] = []

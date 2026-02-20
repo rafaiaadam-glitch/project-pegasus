@@ -182,6 +182,10 @@ class ApiClient {
     return this.request(`/lectures/${lectureId}/summary`);
   }
 
+  async getTranscript(lectureId: string): Promise<{ lectureId: string; text: string; segments: any[]; segmentCount: number }> {
+    return this.request(`/lectures/${lectureId}/transcript`);
+  }
+
   // Presets
   async getPresets(): Promise<{ presets: Preset[] }> {
     return this.request('/presets');
@@ -263,6 +267,18 @@ class ApiClient {
   // Action Items
   async getActionItems(limit = 20, offset = 0): Promise<{ actionItems: any[] }> {
     return this.request(`/action-items?limit=${limit}&offset=${offset}`);
+  }
+
+  // LLM Completion (proxy for dice engine)
+  async llmComplete(
+    messages: Array<{ role: string; content: string }>,
+    options?: { provider?: string; model?: string },
+  ): Promise<string> {
+    const result = await this.request<{ content: string }>('/api/llm/complete', {
+      method: 'POST',
+      body: JSON.stringify({ messages, ...options }),
+    });
+    return result.content;
   }
 }
 

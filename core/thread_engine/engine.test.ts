@@ -4,9 +4,6 @@ import assert from "node:assert/strict"
 import { initialiseFacets } from "./facets.js"
 import { processThreadSegments } from "./engine.js"
 import { DiceFace } from "./rotate.js"
-import { initialiseFacets } from "./facets"
-import { processThreadSegments } from "./engine"
-import { DiceFace } from "./rotate"
 
 test("thread engine processes extractors in rotatePerspective order", () => {
   const facets = initialiseFacets()
