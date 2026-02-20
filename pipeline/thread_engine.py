@@ -309,6 +309,9 @@ Rules:
 - "refinement" = revisited with more detail or nuance.
 - Return empty arrays if nothing qualifies — do not pad with filler.
 - Do NOT hallucinate terms or quotes not present in the transcript.
+- Each existing thread includes which lectures it appeared in. When new content
+  relates to a previously covered concept, update it rather than creating a
+  duplicate. Note connections to earlier lectures in your updates.
 """
 
     if generate_artifacts:
@@ -339,7 +342,8 @@ Include an "artifacts" key in your response with the following sub-keys:
       "type": "multiple-choice|short-answer|true-false|essay",
       "answer": "<correct answer>",
       "choices": ["<option A>", "<option B>", "<option C>", "<option D>"] or null,
-      "correctChoiceIndex": 0
+      "correctChoiceIndex": 0,
+      "explanation": "<1-2 sentence explanation of why the correct answer is right>"
     }
   ]
 }
@@ -348,6 +352,7 @@ Artifact rules:
 - Summary must have at least 1 section with at least 1 bullet each.
 - Generate 8-15 flashcards covering the main concepts.
 - Generate 5-10 exam questions mixing multiple-choice, short-answer, and true-false.
+- Each exam question MUST include an "explanation" field with a 1-2 sentence explanation of why the correct answer is right.
 - Generate 8-15 key terms with clear definitions.
 - Outline should be hierarchical, reflecting the lecture structure.
 - All content must come directly from the transcript — do NOT hallucinate.
@@ -378,7 +383,7 @@ def _call_openai(
     transcript: str,
     existing_threads: List[Dict[str, Any]],
     model: str,
-    timeout: int = 90,
+    timeout: int = 300,
     course_context: Optional[Dict[str, str]] = None,
     preset_config: Optional[Dict[str, Any]] = None,
     generate_artifacts: bool = False,
@@ -397,7 +402,11 @@ def _call_openai(
         raise RuntimeError("OPENAI_API_KEY is not set.")
 
     existing_summary = [
-        {"title": t["title"], "summary": t["summary"]}
+        {
+            "title": t["title"],
+            "summary": t["summary"],
+            "lectures": t.get("lectureRefs", t.get("lecture_refs", [])),
+        }
         for t in existing_threads
     ]
 
@@ -793,6 +802,7 @@ def generate_thread_records(
     preset_id: Optional[str] = None,
     generate_artifacts: bool = False,
     focus_face: Optional[str] = None,
+    existing_threads: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[
     List[Dict[str, Any]],
     List[Dict[str, Any]],
@@ -816,13 +826,23 @@ def generate_thread_records(
         llm_model: Specific model name
         preset_id: Optional preset ID to customize thread detection behavior
         focus_face: Optional dice face to prioritize (e.g. "BLUE")
+        existing_threads: Optional list of existing thread dicts from database.
+            If provided, used instead of local ThreadStore for cross-lecture
+            continuity. Each dict should have id, title, summary, lecture_refs.
     """
     if generated_at is None:
         generated_at = _iso_now()
 
-    store = ThreadStore(storage_dir / "threads" / f"{course_id}.json")
-    existing = store.load()
-    existing_list = list(existing.values())
+    if existing_threads is not None:
+        # Use database-provided threads for cross-lecture continuity
+        existing = {t["id"]: t for t in existing_threads if isinstance(t, dict) and "id" in t}
+        existing_list = list(existing.values())
+        print(f"[ThreadEngine] Using {len(existing_list)} existing threads from database")
+    else:
+        # Fallback to local ThreadStore (for CLI / local dev)
+        store = ThreadStore(storage_dir / "threads" / f"{course_id}.json")
+        existing = store.load()
+        existing_list = list(existing.values())
 
     global _last_artifacts
     _last_artifacts = None
@@ -902,7 +922,9 @@ def generate_thread_records(
             transcript, existing, course_id, lecture_id, generated_at
         )
 
-    store.save(threads)
+    # Persist threads locally only when using ThreadStore (not DB-provided threads)
+    if existing_threads is None:
+        store.save(threads)
 
     # Collect and log metrics
     try:
@@ -969,6 +991,7 @@ def generate_thread_records_with_rotation(
     llm_model: str | None = None,
     preset_id: Optional[str] = None,
     max_iterations: int = 6,
+    existing_threads: Optional[List[Dict[str, Any]]] = None,
 ) -> Tuple[
     List[Dict[str, Any]],
     List[Dict[str, Any]],
@@ -1054,6 +1077,7 @@ def generate_thread_records_with_rotation(
             preset_id=preset_id,
             focus_face=current_face,
             generate_artifacts=(iteration == 0),
+            existing_threads=existing_threads,
         )
 
         # Merge threads (avoid duplicates by ID)

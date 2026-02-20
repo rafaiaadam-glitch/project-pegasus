@@ -87,8 +87,12 @@ def _resolve_lecture_upsert_payload(
     }
 
 
-def _resolve_thread_refs(db, course_id: str) -> list[str]:
-    """Load known thread IDs for a course to seed cross-lecture continuity."""
+def _resolve_thread_refs(db, course_id: str) -> list[Dict[str, Any]]:
+    """Load known threads for a course to seed cross-lecture continuity.
+
+    Returns full thread objects with id, title, summary, and lecture_refs
+    so the Thread Engine can detect cross-lecture connections.
+    """
     fetch_threads_for_course = getattr(db, "fetch_threads_for_course", None)
     if not callable(fetch_threads_for_course):
         return []
@@ -101,7 +105,7 @@ def _resolve_thread_refs(db, course_id: str) -> list[str]:
     if not isinstance(threads, list):
         return []
 
-    refs: list[str] = []
+    result: list[Dict[str, Any]] = []
     seen: set[str] = set()
     for thread in threads:
         if not isinstance(thread, dict):
@@ -113,8 +117,16 @@ def _resolve_thread_refs(db, course_id: str) -> list[str]:
         if not normalized or normalized in seen:
             continue
         seen.add(normalized)
-        refs.append(normalized)
-    return refs
+        result.append({
+            "id": normalized,
+            "courseId": course_id,
+            "title": thread.get("title", ""),
+            "summary": thread.get("summary", ""),
+            "status": thread.get("status", "foundational"),
+            "complexityLevel": thread.get("complexity_level", 1),
+            "lectureRefs": thread.get("lecture_refs", []),
+        })
+    return result
 
 
 
@@ -395,22 +407,49 @@ def _transcribe_with_openai_api(audio_path: Path, model: str = "whisper-1") -> D
 
     client = OpenAI()  # reads OPENAI_API_KEY from env
 
-    # OpenAI Whisper has a 25MB file size limit
-    file_size = audio_path.stat().st_size
-    if file_size > 25 * 1024 * 1024:
-        # Compress to a smaller file with ffmpeg
-        LOGGER.info("Audio file %d bytes exceeds 25MB limit, compressing with ffmpeg", file_size)
-        import subprocess
-        import tempfile
+    # OpenAI Whisper has a 25MB file size limit (26,214,400 bytes)
+    # Use 24MB threshold for safety margin
+    import subprocess
+    import tempfile
 
+    WHISPER_LIMIT = 24 * 1024 * 1024  # 24MB safety margin
+    file_size = audio_path.stat().st_size
+    print(f"[whisper-compress] Audio file size: {file_size} bytes ({file_size / (1024*1024):.1f} MB)", flush=True)
+
+    compressed = None
+    if file_size > WHISPER_LIMIT:
+        print(f"[whisper-compress] File exceeds {WHISPER_LIMIT} bytes, compressing with ffmpeg", flush=True)
+        # Use 32kbps to ensure we stay well under 25MB even for long lectures
         compressed = Path(tempfile.mktemp(suffix=".mp3"))
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", str(audio_path), "-ac", "1", "-ar", "16000", "-b:a", "64k", str(compressed)],
-            capture_output=True, check=True,
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", str(audio_path), "-ac", "1", "-ar", "16000", "-b:a", "32k", str(compressed)],
+            capture_output=True,
         )
-        audio_path = compressed
-    else:
-        compressed = None
+        if result.returncode != 0:
+            stderr_text = result.stderr.decode(errors="replace")
+            print(f"[whisper-compress] ffmpeg FAILED (rc={result.returncode}): {stderr_text[:500]}", flush=True)
+            compressed = None
+        else:
+            compressed_size = compressed.stat().st_size
+            print(f"[whisper-compress] Compressed {file_size} -> {compressed_size} bytes ({compressed_size / (1024*1024):.1f} MB)", flush=True)
+            if compressed_size > WHISPER_LIMIT:
+                # Still too large — try even more aggressive compression
+                print(f"[whisper-compress] Still over limit, retrying at 16kbps 8kHz", flush=True)
+                compressed2 = Path(tempfile.mktemp(suffix=".mp3"))
+                result2 = subprocess.run(
+                    ["ffmpeg", "-y", "-i", str(audio_path), "-ac", "1", "-ar", "8000", "-b:a", "16k", str(compressed2)],
+                    capture_output=True,
+                )
+                compressed.unlink(missing_ok=True)
+                if result2.returncode == 0:
+                    compressed = compressed2
+                    compressed_size = compressed.stat().st_size
+                    print(f"[whisper-compress] Ultra-compressed to {compressed_size} bytes ({compressed_size / (1024*1024):.1f} MB)", flush=True)
+                else:
+                    print(f"[whisper-compress] Ultra-compress also failed", flush=True)
+                    compressed2.unlink(missing_ok=True)
+                    compressed = None
+            audio_path = compressed if compressed else audio_path
 
     try:
         with open(audio_path, "rb") as audio_file:
@@ -623,7 +662,8 @@ def run_generation_job(
             raise ValueError("Transcript text is empty.")
 
         db = get_database()
-        thread_refs = _resolve_thread_refs(db, course_id)
+        existing_threads = _resolve_thread_refs(db, course_id)
+        thread_refs = [t["id"] for t in existing_threads]
 
         context = PipelineContext(
             course_id=course_id,
@@ -631,6 +671,7 @@ def run_generation_job(
             preset_id=preset_id,
             generated_at=_iso_now(),
             thread_refs=thread_refs,
+            existing_threads=existing_threads,
         )
         output_dir = Path("pipeline/output")
         run_pipeline(
@@ -689,6 +730,11 @@ def run_generation_job(
 
         threads_path = artifacts_dir / "threads.json"
         if threads_path.exists():
+            # Remove old threads for this lecture before saving new ones
+            deleted_count = db.delete_threads_for_lecture(lecture_id)
+            if deleted_count:
+                LOGGER.info("Deleted %d old threads for lecture %s before re-generation", deleted_count, lecture_id)
+
             threads_payload = json.loads(threads_path.read_text(encoding="utf-8"))
             for thread in threads_payload.get("threads", []):
                 db.upsert_thread(

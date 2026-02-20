@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   ScrollView,
@@ -9,7 +9,6 @@ import {
   Button,
   ProgressBar,
   Card,
-  RadioButton,
   Chip,
   TouchableRipple,
   Divider,
@@ -25,29 +24,41 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
   const { theme } = useTheme();
   const { questions } = route.params;
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  // MC/true-false: question index → selected choice index
+  const [selectedChoices, setSelectedChoices] = useState<Record<number, number>>({});
+  // Short-answer/essay: question index → marked as answered
+  const [markedAnswered, setMarkedAnswered] = useState<Record<number, boolean>>({});
   const [showResults, setShowResults] = useState(false);
 
   const currentQuestion = questions[currentIndex];
   const progress = (currentIndex + 1) / questions.length;
+  const isMCType = currentQuestion.type === 'multiple-choice' || currentQuestion.type === 'true-false';
+  const currentMCAnswered = isMCType && currentIndex in selectedChoices;
 
-  const handleAnswer = (answer: string) => {
-    setAnswers({ ...answers, [currentIndex]: answer });
+  const handleMCAnswer = (choiceIndex: number) => {
+    if (currentIndex in selectedChoices) return; // lock after first answer
+    setSelectedChoices({ ...selectedChoices, [currentIndex]: choiceIndex });
+  };
+
+  const toggleMarkAnswered = () => {
+    setMarkedAnswered({
+      ...markedAnswered,
+      [currentIndex]: !markedAnswered[currentIndex],
+    });
   };
 
   const nextQuestion = () => {
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else {
+      const answered = Object.keys(selectedChoices).length +
+        Object.values(markedAnswered).filter(Boolean).length;
       Alert.alert(
         'Complete Practice Exam?',
-        `You've answered ${Object.keys(answers).length} of ${questions.length} questions.`,
+        `You've answered ${answered} of ${questions.length} questions.`,
         [
           { text: 'Review', style: 'cancel' },
-          {
-            text: 'Finish',
-            onPress: () => setShowResults(true),
-          },
+          { text: 'Finish', onPress: () => setShowResults(true) },
         ]
       );
     }
@@ -64,14 +75,30 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
   };
 
   const restartExam = () => {
-    setAnswers({});
+    setSelectedChoices({});
+    setMarkedAnswered({});
     setCurrentIndex(0);
     setShowResults(false);
   };
 
+  const { correctCount, totalMC, answeredCount } = useMemo(() => {
+    let correct = 0;
+    let mcCount = 0;
+    questions.forEach((q: any, idx: number) => {
+      if (q.type === 'multiple-choice' || q.type === 'true-false') {
+        mcCount++;
+        if (idx in selectedChoices && selectedChoices[idx] === q.correctChoiceIndex) {
+          correct++;
+        }
+      }
+    });
+    const answered = Object.keys(selectedChoices).length +
+      Object.values(markedAnswered).filter(Boolean).length;
+    return { correctCount: correct, totalMC: mcCount, answeredCount: answered };
+  }, [questions, selectedChoices, markedAnswered]);
+
   if (showResults) {
-    const answeredCount = Object.keys(answers).length;
-    const completionRate = (answeredCount / questions.length) * 100;
+    const scorePercent = totalMC > 0 ? (correctCount / totalMC) * 100 : 0;
 
     return (
       <ScrollView style={{ flex: 1, backgroundColor: theme.colors.background }}>
@@ -81,9 +108,9 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
           </Text>
           <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
             {[
+              { value: `${correctCount}/${totalMC}`, label: 'Score' },
+              { value: `${scorePercent.toFixed(0)}%`, label: 'Accuracy' },
               { value: answeredCount, label: 'Answered' },
-              { value: questions.length, label: 'Total' },
-              { value: `${completionRate.toFixed(0)}%`, label: 'Complete' },
             ].map((stat, idx) => (
               <View key={idx} style={{ alignItems: 'center' }}>
                 <Text variant="displaySmall" style={{ color: theme.colors.primary, fontWeight: '700', marginBottom: 4 }}>
@@ -99,31 +126,54 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
 
         <View style={{ padding: 20 }}>
           <Text variant="titleLarge" style={{ marginBottom: 16 }}>Your Answers</Text>
-          {questions.map((q: any, idx: number) => (
-            <Card key={idx} style={{ marginBottom: 12 }} mode="elevated">
-              <Card.Content>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <Text variant="labelLarge" style={{ color: theme.colors.primary }}>
-                    Question {idx + 1}
+          {questions.map((q: any, idx: number) => {
+            const isMC = q.type === 'multiple-choice' || q.type === 'true-false';
+            const wasAnswered = isMC ? idx in selectedChoices : !!markedAnswered[idx];
+            const isCorrect = isMC && wasAnswered && selectedChoices[idx] === q.correctChoiceIndex;
+            const correctAnswer = isMC && q.choices ? q.choices[q.correctChoiceIndex] : q.answer;
+
+            return (
+              <Card key={idx} style={{ marginBottom: 12 }} mode="elevated">
+                <Card.Content>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <Text variant="labelLarge" style={{ color: theme.colors.primary }}>
+                      Question {idx + 1}
+                    </Text>
+                    <Chip
+                      compact
+                      selectedColor={
+                        !wasAnswered ? theme.colors.onSurfaceVariant :
+                        isMC ? (isCorrect ? '#4CAF50' : '#F44336') :
+                        theme.colors.primary
+                      }
+                    >
+                      {!wasAnswered ? '○ Skipped' : isMC ? (isCorrect ? '✓ Correct' : '✗ Incorrect') : '✓ Answered'}
+                    </Chip>
+                  </View>
+                  <Text variant="bodyMedium" style={{ marginBottom: 8 }}>
+                    {q.prompt}
                   </Text>
-                  <Chip
-                    compact
-                    selectedColor={answers[idx] ? theme.colors.primary : theme.colors.onSurfaceVariant}
-                  >
-                    {answers[idx] ? '✓ Answered' : '○ Skipped'}
-                  </Chip>
-                </View>
-                <Text variant="bodyMedium" style={{ marginBottom: 8 }}>
-                  {q.question}
-                </Text>
-                {answers[idx] && (
-                  <Text variant="bodySmall" style={{ color: theme.colors.primary, fontStyle: 'italic' }}>
-                    Your answer: {answers[idx]}
-                  </Text>
-                )}
-              </Card.Content>
-            </Card>
-          ))}
+                  {isMC && wasAnswered && (
+                    <View>
+                      <Text variant="bodySmall" style={{ color: isCorrect ? '#4CAF50' : '#F44336', fontStyle: 'italic' }}>
+                        Your answer: {q.choices?.[selectedChoices[idx]]}
+                      </Text>
+                      {!isCorrect && (
+                        <Text variant="bodySmall" style={{ color: '#4CAF50', fontStyle: 'italic' }}>
+                          Correct answer: {correctAnswer}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                  {q.explanation && (
+                    <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
+                      {q.explanation}
+                    </Text>
+                  )}
+                </Card.Content>
+              </Card>
+            );
+          })}
         </View>
 
         <Button
@@ -157,7 +207,9 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
       >
         {questions.map((_: any, idx: number) => {
           const isActive = currentIndex === idx;
-          const isAnswered = !!answers[idx];
+          const qIsMC = questions[idx].type === 'multiple-choice' || questions[idx].type === 'true-false';
+          const wasAnswered = qIsMC ? idx in selectedChoices : !!markedAnswered[idx];
+          const wasCorrect = qIsMC && wasAnswered && selectedChoices[idx] === questions[idx].correctChoiceIndex;
 
           return (
             <TouchableRipple
@@ -169,8 +221,8 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
                 borderRadius: 18,
                 backgroundColor: isActive
                   ? theme.colors.primary
-                  : isAnswered
-                  ? theme.colors.primaryContainer
+                  : wasAnswered
+                  ? (qIsMC ? (wasCorrect ? '#4CAF50' : '#F44336') : theme.colors.primaryContainer)
                   : theme.colors.surfaceVariant,
                 justifyContent: 'center',
                 alignItems: 'center',
@@ -183,8 +235,8 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
                 style={{
                   color: isActive
                     ? theme.colors.onPrimary
-                    : isAnswered
-                    ? theme.colors.onPrimaryContainer
+                    : wasAnswered
+                    ? '#FFFFFF'
                     : theme.colors.onSurfaceVariant,
                 }}
               >
@@ -209,31 +261,48 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
             </View>
 
             <Text variant="titleMedium" style={{ lineHeight: 28, marginBottom: 24 }}>
-              {currentQuestion.question}
+              {currentQuestion.prompt}
             </Text>
 
-            {currentQuestion.type === 'multiple-choice' && currentQuestion.options && (
-              <RadioButton.Group
-                onValueChange={handleAnswer}
-                value={answers[currentIndex] || ''}
-              >
-                {currentQuestion.options.map((option: string, idx: number) => {
+            {isMCType && currentQuestion.choices && (
+              <View>
+                {currentQuestion.choices.map((choice: string, idx: number) => {
                   const optionLetter = String.fromCharCode(65 + idx);
-                  const isSelected = answers[currentIndex] === optionLetter;
+                  const isSelected = selectedChoices[currentIndex] === idx;
+                  const isCorrectChoice = idx === currentQuestion.correctChoiceIndex;
+                  const showResult = currentMCAnswered;
+
+                  let bgColor = theme.colors.surfaceVariant;
+                  let borderColor = 'transparent';
+
+                  if (showResult) {
+                    if (isCorrectChoice) {
+                      bgColor = '#E8F5E9';
+                      borderColor = '#4CAF50';
+                    } else if (isSelected) {
+                      bgColor = '#FFEBEE';
+                      borderColor = '#F44336';
+                    }
+                  } else if (isSelected) {
+                    bgColor = theme.colors.primaryContainer;
+                    borderColor = theme.colors.primary;
+                  }
 
                   return (
                     <TouchableRipple
                       key={idx}
-                      onPress={() => handleAnswer(optionLetter)}
+                      onPress={() => handleMCAnswer(idx)}
+                      disabled={currentMCAnswered}
                       style={{
                         flexDirection: 'row',
                         alignItems: 'center',
                         padding: 16,
-                        backgroundColor: isSelected ? theme.colors.primaryContainer : theme.colors.surfaceVariant,
+                        backgroundColor: bgColor,
                         borderRadius: 12,
                         borderWidth: 2,
-                        borderColor: isSelected ? theme.colors.primary : 'transparent',
+                        borderColor: borderColor,
                         marginBottom: 12,
+                        opacity: currentMCAnswered && !isSelected && !isCorrectChoice ? 0.6 : 1,
                       }}
                     >
                       <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
@@ -242,7 +311,9 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
                             width: 32,
                             height: 32,
                             borderRadius: 16,
-                            backgroundColor: isSelected ? theme.colors.primary : theme.colors.surface,
+                            backgroundColor: showResult
+                              ? (isCorrectChoice ? '#4CAF50' : isSelected ? '#F44336' : theme.colors.surface)
+                              : (isSelected ? theme.colors.primary : theme.colors.surface),
                             justifyContent: 'center',
                             alignItems: 'center',
                             marginRight: 12,
@@ -250,22 +321,40 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
                         >
                           <Text
                             variant="labelLarge"
-                            style={{ color: isSelected ? theme.colors.onPrimary : theme.colors.onSurfaceVariant }}
+                            style={{
+                              color: (showResult && (isCorrectChoice || isSelected)) || (!showResult && isSelected)
+                                ? '#FFFFFF'
+                                : theme.colors.onSurfaceVariant,
+                            }}
                           >
-                            {optionLetter}
+                            {showResult && isCorrectChoice ? '✓' : showResult && isSelected ? '✗' : optionLetter}
                           </Text>
                         </View>
                         <Text
                           variant="bodyMedium"
-                          style={{ flex: 1, fontWeight: isSelected ? '600' : '400' }}
+                          style={{ flex: 1, fontWeight: isSelected || (showResult && isCorrectChoice) ? '600' : '400' }}
                         >
-                          {option}
+                          {choice}
                         </Text>
                       </View>
                     </TouchableRipple>
                   );
                 })}
-              </RadioButton.Group>
+
+                {currentMCAnswered && currentQuestion.explanation && (
+                  <View style={{
+                    backgroundColor: theme.colors.surfaceVariant,
+                    padding: 16,
+                    borderRadius: 12,
+                    marginTop: 4,
+                  }}>
+                    <Text variant="labelLarge" style={{ marginBottom: 4 }}>Explanation</Text>
+                    <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                      {currentQuestion.explanation}
+                    </Text>
+                  </View>
+                )}
+              </View>
             )}
 
             {(currentQuestion.type === 'short-answer' ||
@@ -276,23 +365,30 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
                     ? 'Draft your essay answer here (mental or written notes).'
                     : 'Draft your short answer here.'}
                 </Text>
-                
+
                 <Button
-                  mode={answers[currentIndex] ? 'contained' : 'outlined'}
-                  onPress={() =>
-                    handleAnswer(answers[currentIndex] ? '' : 'answered')
-                  }
+                  mode={markedAnswered[currentIndex] ? 'contained' : 'outlined'}
+                  onPress={toggleMarkAnswered}
                   style={{ marginBottom: 16 }}
                 >
-                  {answers[currentIndex] ? '✓ Marked as Answered' : 'Mark as Answered'}
+                  {markedAnswered[currentIndex] ? '✓ Marked as Answered' : 'Mark as Answered'}
                 </Button>
 
                 <Divider style={{ marginBottom: 16 }} />
-                
+
                 <Text variant="labelLarge" style={{ marginBottom: 8 }}>Ideal Answer Key:</Text>
                 <View style={{ backgroundColor: theme.colors.surface, padding: 12, borderRadius: 8 }}>
                    <Text variant="bodyMedium">{currentQuestion.answer}</Text>
                 </View>
+
+                {currentQuestion.explanation && (
+                  <View style={{ marginTop: 12 }}>
+                    <Text variant="labelLarge" style={{ marginBottom: 4 }}>Explanation</Text>
+                    <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
+                      {currentQuestion.explanation}
+                    </Text>
+                  </View>
+                )}
               </View>
             )}
           </Card.Content>

@@ -81,6 +81,9 @@
             "type": "integer",
             "minimum": 0
           },
+          "explanation": {
+            "type": "string"
+          },
           "threadRef": {
             "type": "string"
           }

@@ -8,7 +8,7 @@ import json
 import os
 import sys
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
@@ -36,6 +36,7 @@ class PipelineContext:
     preset_id: str
     generated_at: str
     thread_refs: List[str]
+    existing_threads: List[Dict[str, Any]] = field(default_factory=list)
 
 
 def _now_iso() -> str:
@@ -133,6 +134,7 @@ def _generate_thread_records(
             llm_model=llm_model,
             preset_id=context.preset_id,
             max_iterations=3,
+            existing_threads=context.existing_threads or None,
         )
         return threads, occs, updates, rotation_state
 
@@ -148,6 +150,7 @@ def _generate_thread_records(
         llm_model=llm_model,
         preset_id=context.preset_id,
         generate_artifacts=False,
+        existing_threads=context.existing_threads or None,
     )
     return threads, occs, updates, None
 
@@ -204,7 +207,7 @@ def _wrap_thread_engine_artifacts(
     if "exam_questions" in raw:
         base = _base_artifact(context, "exam-questions")
         questions = raw["exam_questions"] if isinstance(raw["exam_questions"], list) else raw["exam_questions"].get("questions", [])
-        base["questions"] = _strip_nulls(questions, {"prompt", "type", "answer", "choices", "correctChoiceIndex", "threadRef"})
+        base["questions"] = _strip_nulls(questions, {"prompt", "type", "answer", "choices", "correctChoiceIndex", "explanation", "threadRef"})
         artifacts["exam-questions"] = base
 
     return artifacts
