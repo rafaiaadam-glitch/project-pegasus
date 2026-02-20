@@ -55,3 +55,46 @@ jobs:
         run: pytest backend/tests
       - name: Run pipeline tests
         run: pytest pipeline/tests -v
+
+  vulnerability-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependency manifests
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Audit Python dependencies (backend)
+        run: pip-audit -r backend/requirements.txt -r backend/requirements-dev.txt
+
+      - name: Audit Python dependencies (pipeline)
+        run: pip-audit -r pipeline/requirements.txt
+
+      - name: Build backend container image for scanning
+        run: docker build -f backend/Dockerfile -t pegasus-backend:${{ github.sha }} .
+
+      - name: Run Trivy vulnerability scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: pegasus-backend:${{ github.sha }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
