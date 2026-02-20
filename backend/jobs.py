@@ -741,6 +741,35 @@ def run_generation_job(
         except Exception as e:
             print(f"[Job] WARNING: Failed to save thread metrics: {e}")
 
+        # Save dice rotation state if present
+        try:
+            import backend.db as db_module
+            rotation_path = artifacts_dir / "rotation-state.json"
+            if rotation_path.exists():
+                rotation_state = json.loads(rotation_path.read_text(encoding="utf-8"))
+                collapsed = rotation_state.get("collapsed", False)
+                eq_gap = rotation_state.get("equilibriumGap", 1.0)
+                if collapsed:
+                    rs_status = "collapsed"
+                elif eq_gap < 0.15:
+                    rs_status = "equilibrium"
+                else:
+                    rs_status = "max_iterations"
+                rotation_state["id"] = str(uuid.uuid4())
+                rotation_state["lectureId"] = lecture_id
+                rotation_state["courseId"] = course_id
+                rotation_state["iterationsCompleted"] = len(
+                    rotation_state.get("iterationHistory", [])
+                )
+                rotation_state["status"] = rs_status
+                db_module.upsert_dice_rotation_state(db.conn, rotation_state)
+                LOGGER.info(
+                    "Saved dice rotation state for lecture %s: status=%s",
+                    lecture_id, rs_status,
+                )
+        except Exception as e:
+            LOGGER.warning("Failed to save rotation state: %s", e)
+
         payload = {
             "lectureId": lecture_id,
             "outputDir": str(artifacts_dir),

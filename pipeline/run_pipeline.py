@@ -114,10 +114,31 @@ def _generate_thread_records(
     llm_provider: str = "openai",
     llm_model: str | None = None,
     generate_artifacts: bool = False,
-) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any] | None]:
+    """Generate thread records, using rotation when LLM generation is active.
+
+    Returns:
+        Tuple of (threads, occurrences, updates, rotation_state_dict_or_None)
+    """
+    if generate_artifacts:
+        from pipeline.thread_engine import generate_thread_records_with_rotation
+
+        threads, occs, updates, rotation_state = generate_thread_records_with_rotation(
+            course_id=context.course_id,
+            lecture_id=context.lecture_id,
+            transcript=transcript,
+            generated_at=context.generated_at,
+            storage_dir=Path("storage"),
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            preset_id=context.preset_id,
+            max_iterations=3,
+        )
+        return threads, occs, updates, rotation_state
+
     from pipeline.thread_engine import generate_thread_records
 
-    return generate_thread_records(
+    threads, occs, updates = generate_thread_records(
         course_id=context.course_id,
         lecture_id=context.lecture_id,
         transcript=transcript,
@@ -126,8 +147,9 @@ def _generate_thread_records(
         llm_provider=llm_provider,
         llm_model=llm_model,
         preset_id=context.preset_id,
-        generate_artifacts=generate_artifacts,
+        generate_artifacts=False,
     )
+    return threads, occs, updates, None
 
 
 def _strip_nulls(items: list, allowed_keys: set | None = None) -> list:
@@ -210,7 +232,7 @@ def run_pipeline(
     if progress_tracker:
         progress_tracker.start_step("thread_generation")
 
-    threads, thread_occurrences, thread_updates = _generate_thread_records(
+    threads, thread_occurrences, thread_updates, rotation_state = _generate_thread_records(
         context,
         transcript,
         llm_provider=llm_provider,
@@ -301,6 +323,12 @@ def run_pipeline(
         output_dir / updated_context.lecture_id / "thread-continuity.json",
         continuity_payload,
     )
+
+    if rotation_state is not None:
+        _write_json(
+            output_dir / updated_context.lecture_id / "rotation-state.json",
+            rotation_state,
+        )
 
     if continuity_threshold is not None and not continuity_payload["passed"]:
         score = continuity_metrics["score"]

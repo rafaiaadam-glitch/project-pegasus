@@ -3,7 +3,7 @@
 from __future__ import annotations
 import math
 from typing import Dict, List, Any
-from pipeline.dice_rotation.types import Facet, FacetScores
+from pipeline.dice_rotation.types import Facet, FacetScores, FACE_TO_FACET
 
 
 # Equilibrium threshold: gap below this = equilibrium
@@ -65,8 +65,13 @@ def score_facets(
         summary = thread.get("summary", "").lower()
         evidence = thread.get("evidence", "")
 
-        # Keyword-based facet detection
-        facet = _detect_primary_facet(title, summary)
+        # Use the thread's face field directly when available
+        face = thread.get("face")
+        if face and face in FACE_TO_FACET:
+            facet = FACE_TO_FACET[face]
+        else:
+            # Fall back to keyword-based detection
+            facet = _detect_primary_facet(title, summary)
         facet_counts[facet] += 1
 
         # Evidence quality (longer evidence = higher confidence)

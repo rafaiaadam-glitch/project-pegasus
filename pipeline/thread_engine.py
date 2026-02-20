@@ -165,6 +165,7 @@ def _build_system_prompt(
     preset_config: Optional[Dict[str, Any]] = None,
     generate_artifacts: bool = False,
     preset_id: str = "",
+    focus_face: Optional[str] = None,
 ) -> str:
     """
     Build a system prompt for thread detection and optionally artifact generation.
@@ -173,6 +174,7 @@ def _build_system_prompt(
         preset_config: Optional preset configuration with diceWeights and emphasis
         generate_artifacts: If True, also ask the LLM to generate study artifacts
         preset_id: Preset ID for artifact customisation
+        focus_face: Optional dice face (e.g. "BLUE") to prioritize in detection
 
     Returns:
         System prompt string
@@ -246,6 +248,26 @@ You will be given:
                 if dice_weights.get("when", 0) > 0:
                     weight_pct = int(dice_weights["when"] * 100)
                     base_prompt += f"\n- WHEN ({weight_pct}%): Track historical context and temporal relationships"
+
+    # Inject focus-face directive for rotation
+    if focus_face:
+        face_to_dimension = {
+            "RED": ("HOW", "methods, mechanisms, processes, and procedures"),
+            "ORANGE": ("WHAT", "core concepts, definitions, and entities"),
+            "YELLOW": ("WHEN", "temporal context, timelines, and sequences"),
+            "GREEN": ("WHERE", "spatial, institutional, and environmental context"),
+            "BLUE": ("WHO", "actors, agents, authors, and stakeholders"),
+            "PURPLE": ("WHY", "rationale, purpose, causation, and motivation"),
+        }
+        dim = face_to_dimension.get(focus_face)
+        if dim:
+            base_prompt += (
+                f"\n\nFOCUS: For this pass, prioritise the {dim[0]} dimension — "
+                f"look especially for {dim[1]}. "
+                f"Still extract concepts from other dimensions, but weight your "
+                f"attention toward {dim[0]} when deciding what qualifies as a "
+                f"new concept or update."
+            )
 
     base_prompt += """
 
@@ -361,6 +383,7 @@ def _call_openai(
     preset_config: Optional[Dict[str, Any]] = None,
     generate_artifacts: bool = False,
     preset_id: str = "",
+    focus_face: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Call OpenAI with retry logic and return parsed JSON response."""
     from pipeline.retry_utils import (
@@ -396,6 +419,7 @@ def _call_openai(
         preset_config,
         generate_artifacts=generate_artifacts,
         preset_id=preset_id,
+        focus_face=focus_face,
     )
 
     print(f"[ThreadEngine] Calling OpenAI model={model} artifacts={generate_artifacts}")
@@ -517,7 +541,12 @@ def _process_llm_output(
     occurrences: List[Dict[str, Any]] = []
     updates: List[Dict[str, Any]] = []
 
-    # --- New concepts ---
+    # Build case-insensitive title index for deduplication
+    existing_by_title: Dict[str, Dict[str, Any]] = {
+        t["title"].lower(): t for t in threads
+    }
+
+    # --- New concepts (with dedup against existing titles) ---
     for concept in llm_result.get("new_concepts", []):
         if not isinstance(concept, dict):
             continue
@@ -527,10 +556,41 @@ def _process_llm_output(
         if not title or not summary:
             continue
 
-        thread_id = str(uuid.uuid4())
         complexity = _clamp_complexity(concept.get("complexity_level"), 1)
         status = _safe_status(concept.get("status"))
         face = _safe_face(concept.get("face"))
+
+        # Dedup: if a thread with the same title already exists, merge
+        matching = existing_by_title.get(title.lower())
+        if matching is not None:
+            thread_id = matching["id"]
+            matching["summary"] = summary
+            if complexity > matching.get("complexityLevel", 1):
+                matching["complexityLevel"] = complexity
+            if complexity > 2:
+                matching["status"] = "advanced"
+            refs = matching.get("lectureRefs", [])
+            if lecture_id not in refs:
+                matching["lectureRefs"] = sorted(set(refs + [lecture_id]))
+            matching.setdefault("evolutionNotes", []).append({
+                "lectureId": lecture_id,
+                "changeType": "refinement",
+                "note": f"Concept re-detected in lecture {lecture_id}.",
+            })
+            occurrences.append({
+                "id": str(uuid.uuid4()),
+                "threadId": thread_id,
+                "courseId": course_id,
+                "lectureId": lecture_id,
+                "artifactId": "summary",
+                "evidence": evidence[:180] or summary[:180],
+                "confidence": 0.90,
+                "capturedAt": generated_at,
+            })
+            continue
+
+        # Genuinely new concept
+        thread_id = str(uuid.uuid4())
 
         thread: Dict[str, Any] = {
             "id": thread_id,
@@ -550,6 +610,7 @@ def _process_llm_output(
             ],
         }
         threads.append(thread)
+        existing_by_title[title.lower()] = thread
 
         occurrences.append({
             "id": str(uuid.uuid4()),
@@ -563,7 +624,6 @@ def _process_llm_output(
         })
 
     # --- Updates to existing concepts ---
-    existing_by_title = {t["title"]: t for t in threads}
 
     for update in llm_result.get("concept_updates", []):
         if not isinstance(update, dict):
@@ -576,7 +636,7 @@ def _process_llm_output(
         if not title or not summary_text:
             continue
 
-        matching = existing_by_title.get(title)
+        matching = existing_by_title.get(title.lower())
         if matching is None:
             continue
 
@@ -732,6 +792,7 @@ def generate_thread_records(
     llm_model: str | None = None,
     preset_id: Optional[str] = None,
     generate_artifacts: bool = False,
+    focus_face: Optional[str] = None,
 ) -> Tuple[
     List[Dict[str, Any]],
     List[Dict[str, Any]],
@@ -754,6 +815,7 @@ def generate_thread_records(
         llm_provider: LLM provider (openai)
         llm_model: Specific model name
         preset_id: Optional preset ID to customize thread detection behavior
+        focus_face: Optional dice face to prioritize (e.g. "BLUE")
     """
     if generated_at is None:
         generated_at = _iso_now()
@@ -812,6 +874,7 @@ def generate_thread_records(
                 preset_config=preset_config,
                 generate_artifacts=generate_artifacts,
                 preset_id=preset_id or "",
+                focus_face=focus_face,
             )
             detection_method = "openai"
             api_response_time_ms = (time.time() - start_time) * 1000
@@ -972,10 +1035,12 @@ def generate_thread_records_with_rotation(
     # Iterate through permutations
     iteration = 0
     while iteration < max_iterations:
-        print(f"[ThreadEngine] Rotation iteration {iteration + 1}/{max_iterations}")
+        # Read the primary face from the current schedule position
+        current_face = rotation_state.schedule[rotation_state.active_index][0]
+        print(f"[ThreadEngine] Rotation iteration {iteration + 1}/{max_iterations} "
+              f"(focus_face={current_face})")
 
-        # Run standard thread detection for this iteration
-        # This reuses the existing logic
+        # Run thread detection with the focus face for this iteration
         iter_threads, iter_occurrences, iter_updates = generate_thread_records(
             course_id=course_id,
             lecture_id=lecture_id,
@@ -986,6 +1051,7 @@ def generate_thread_records_with_rotation(
             llm_provider=llm_provider,
             llm_model=llm_model,
             preset_id=preset_id,
+            focus_face=current_face,
         )
 
         # Merge threads (avoid duplicates by ID)
