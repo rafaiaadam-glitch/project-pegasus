@@ -30,6 +30,18 @@ export default function ExamViewerScreen({ navigation, route }: Props) {
   const [markedAnswered, setMarkedAnswered] = useState<Record<number, boolean>>({});
   const [showResults, setShowResults] = useState(false);
 
+  if (!questions || questions.length === 0) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background, padding: 32 }}>
+        <Text style={{ fontSize: 48, marginBottom: 12 }}>{'📝'}</Text>
+        <Text variant="titleMedium" style={{ marginBottom: 8, textAlign: 'center' }}>No practice questions available</Text>
+        <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
+          Generate study materials from a lecture to see practice questions here.
+        </Text>
+      </View>
+    );
+  }
+
   const currentQuestion = questions[currentIndex];
   const progress = (currentIndex + 1) / questions.length;
   const isMCType = currentQuestion.type === 'multiple-choice' || currentQuestion.type === 'true-false';

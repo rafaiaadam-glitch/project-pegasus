@@ -13,6 +13,7 @@ import {
 import { Thread, DiceFace } from '../types';
 import api from '../services/api';
 import { useTheme } from '../theme';
+import NetworkErrorView from '../components/NetworkErrorView';
 
 const FACE_META: Record<DiceFace, { label: string; color: string; darkColor: string }> = {
   RED:    { label: 'How',   color: '#D32F2F', darkColor: '#EF5350' },
@@ -41,6 +42,7 @@ export default function ThreadsScreen({ navigation, route }: Props) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({ title: courseTitle || 'Threads' });
@@ -50,10 +52,12 @@ export default function ThreadsScreen({ navigation, route }: Props) {
   const loadThreads = async () => {
     try {
       setLoading(true);
+      setLoadError(false);
       const data = await api.getCourseThreads(courseId);
       setThreads(data.threads || []);
     } catch (error) {
       console.error('Error loading threads:', error);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -166,6 +170,14 @@ export default function ThreadsScreen({ navigation, route }: Props) {
       </Text>
     </View>
   );
+
+  if (loadError && threads.length === 0) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
+        <NetworkErrorView onRetry={loadThreads} message="Could not load threads. Please check your connection and try again." />
+      </View>
+    );
+  }
 
   if (loading && !refreshing) {
     return (

@@ -7,6 +7,7 @@ import {
 import {
   Text,
   Button,
+  Chip,
   ProgressBar,
   Card,
   TouchableRipple,
@@ -26,6 +27,18 @@ export default function FlashcardViewerScreen({ navigation, route }: Props) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [flipAnim] = useState(new Animated.Value(0));
+
+  if (!cards || cards.length === 0) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background, padding: 32 }}>
+        <Text style={{ fontSize: 48, marginBottom: 12 }}>{'🃏'}</Text>
+        <Text variant="titleMedium" style={{ marginBottom: 8, textAlign: 'center' }}>No flashcards available</Text>
+        <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
+          Generate study materials from a lecture to see flashcards here.
+        </Text>
+      </View>
+    );
+  }
 
   const currentCard = cards[currentIndex];
   const progress = (currentIndex + 1) / cards.length;

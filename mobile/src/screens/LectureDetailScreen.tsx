@@ -17,6 +17,7 @@ import {
   Portal,
   List,
   IconButton,
+  Snackbar,
 } from 'react-native-paper';
 import api from '../services/api';
 import { useTheme } from '../theme';
@@ -40,9 +41,12 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const [progress, setProgress] = useState<any>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingType, setExportingType] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generatingStage, setGeneratingStage] = useState('');
   const [loadError, setLoadError] = useState(false);
+  const [retryingStage, setRetryingStage] = useState<string | null>(null);
+  const [snackbar, setSnackbar] = useState<{ visible: boolean; message: string }>({ visible: false, message: '' });
 
   useEffect(() => {
     navigation.setOptions({
@@ -125,7 +129,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const handleExport = async (type: 'all' | 'summary' | 'flashcards' | 'questions') => {
     try {
       setExporting(true);
-      setShowExportMenu(false);
+      setExportingType(type);
 
       switch (type) {
         case 'all':
@@ -135,7 +139,6 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
               lectureTitle,
               route.params.courseTitle
             );
-            Alert.alert('Success', 'All artifacts exported successfully!');
           }
           break;
         case 'summary':
@@ -145,7 +148,6 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
               lectureTitle,
               route.params.courseTitle
             );
-            Alert.alert('Success', 'Summary exported successfully!');
           }
           break;
         case 'flashcards':
@@ -154,7 +156,6 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
               artifacts.artifacts.flashcards,
               lectureTitle
             );
-            Alert.alert('Success', 'Flashcards exported as Anki CSV!');
           }
           break;
         case 'questions':
@@ -164,33 +165,36 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
               lectureTitle,
               route.params.courseTitle
             );
-            Alert.alert('Success', 'Exam questions exported successfully!');
           }
           break;
       }
+      setShowExportMenu(false);
     } catch (error: any) {
-      Alert.alert('Export Failed', error.message || 'Could not export file');
+      setSnackbar({ visible: true, message: error.message || 'Could not export file' });
       console.error('Export error:', error);
     } finally {
       setExporting(false);
+      setExportingType(null);
     }
   };
 
   const handleRetryStage = async (stageKey: string) => {
     try {
+      setRetryingStage(stageKey);
       const jobs = await api.getLectureJobs(lectureId);
       const failedJob = jobs.jobs?.find(
-        (j: any) => j.job_type === stageKey && j.status === 'failed'
+        (j: any) => (j.jobType || j.job_type) === stageKey && j.status === 'failed'
       );
       if (failedJob) {
         await api.replayJob(failedJob.id);
-        Alert.alert('Retry Started', `Retrying ${stageKey}...`);
         loadData();
       } else {
-        Alert.alert('No Failed Job', 'Could not find a failed job to retry.');
+        setSnackbar({ visible: true, message: 'Could not find a failed job to retry.' });
       }
     } catch (err: any) {
-      Alert.alert('Retry Failed', err.message || 'Could not retry this stage.');
+      setSnackbar({ visible: true, message: err.message || 'Could not retry this stage.' });
+    } finally {
+      setRetryingStage(null);
     }
   };
 
@@ -244,9 +248,13 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
                         borderColor,
                       }}
                     >
-                      <Text style={{ fontSize: 20 }}>
-                        {isCompleted ? '✓' : isFailed ? '✕' : stage.icon}
-                      </Text>
+                      {retryingStage === stage.key ? (
+                        <ActivityIndicator size="small" />
+                      ) : (
+                        <Text style={{ fontSize: 20 }}>
+                          {isCompleted ? '✓' : isFailed ? '✕' : stage.icon}
+                        </Text>
+                      )}
                     </View>
                     <Text
                       variant="labelSmall"
@@ -317,7 +325,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
         {arts.summary && (
           <Card
             style={{ marginBottom: 16 }}
-            onPress={() => navigation.navigate('SummaryViewer', { summary: arts.summary })}
+            onPress={() => navigation.navigate('SummaryViewer', { summary: arts.summary, lectureTitle })}
             mode="elevated"
           >
             <Card.Content>
@@ -584,39 +592,56 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
 
       {/* Export Menu Dialog */}
       <Portal>
-        <Dialog visible={showExportMenu} onDismiss={() => setShowExportMenu(false)}>
+        <Dialog visible={showExportMenu} onDismiss={() => !exporting && setShowExportMenu(false)}>
           <Dialog.Title>Export Options</Dialog.Title>
           <Dialog.Content>
             <List.Item
               title="Export All"
               description="Complete study guide with all artifacts"
               left={(props) => <List.Icon {...props} icon="package-variant" />}
+              right={() => exportingType === 'all' ? <ActivityIndicator size="small" /> : null}
               onPress={() => handleExport('all')}
+              disabled={exporting}
             />
             <List.Item
               title="Summary Only"
               description="Markdown file with lecture summary"
               left={(props) => <List.Icon {...props} icon="file-document-outline" />}
+              right={() => exportingType === 'summary' ? <ActivityIndicator size="small" /> : null}
               onPress={() => handleExport('summary')}
+              disabled={exporting}
             />
             <List.Item
               title="Flashcards (Anki CSV)"
               description="Import into Anki or other apps"
               left={(props) => <List.Icon {...props} icon="cards-outline" />}
+              right={() => exportingType === 'flashcards' ? <ActivityIndicator size="small" /> : null}
               onPress={() => handleExport('flashcards')}
+              disabled={exporting}
             />
             <List.Item
               title="Exam Questions"
               description="Practice questions with answers"
               left={(props) => <List.Icon {...props} icon="help-circle-outline" />}
+              right={() => exportingType === 'questions' ? <ActivityIndicator size="small" /> : null}
               onPress={() => handleExport('questions')}
+              disabled={exporting}
             />
           </Dialog.Content>
           <Dialog.Actions>
-            <Button onPress={() => setShowExportMenu(false)}>Cancel</Button>
+            <Button onPress={() => setShowExportMenu(false)} disabled={exporting}>Cancel</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
+
+      <Snackbar
+        visible={snackbar.visible}
+        onDismiss={() => setSnackbar({ visible: false, message: '' })}
+        duration={4000}
+        action={{ label: 'Dismiss', onPress: () => setSnackbar({ visible: false, message: '' }) }}
+      >
+        {snackbar.message}
+      </Snackbar>
     </View>
   );
 }

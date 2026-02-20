@@ -298,6 +298,8 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
     setIsPaused(false);
   };
 
+  const MAX_FILE_SIZE_MB = 200;
+
   const handlePickFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -306,9 +308,20 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        setSelectedFile(result.assets[0]);
+        const file = result.assets[0];
+        const fileSizeMB = (file.size || 0) / (1024 * 1024);
+
+        if (fileSizeMB > MAX_FILE_SIZE_MB) {
+          Alert.alert(
+            'File Too Large',
+            `This file is ${fileSizeMB.toFixed(0)} MB. The maximum allowed size is ${MAX_FILE_SIZE_MB} MB. Please choose a smaller file.`
+          );
+          return;
+        }
+
+        setSelectedFile(file);
         if (!title) {
-          const filename = result.assets[0].name || 'Untitled Lecture';
+          const filename = file.name || 'Untitled Lecture';
           setTitle(filename.replace(/\.[^/.]+$/, ''));
         }
       }
@@ -348,8 +361,8 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
         setUploadProgress(progress * 0.9);
       });
 
-      setUploadProgress(0.95);
-      setUploadStatus('Finalizing...');
+      setUploadProgress(0.92);
+      setUploadStatus('Processing...');
 
       // 3. Ingest using reference
       const lectureId = `lecture-${Date.now()}`;
@@ -362,8 +375,11 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
       formData.append('auto_transcribe', 'true');
       formData.append('storage_path', storagePath); // Pass reference instead of file
 
+      setUploadProgress(0.97);
+      setUploadStatus('Finalizing...');
+
       const result = await api.ingestLecture(formData);
-      
+
       setUploadProgress(1.0);
       setUploadStatus('Processing started!');
 
@@ -648,7 +664,7 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
                 : undefined
             }
             left={() => (
-              <MaterialCommunityIcons 
+              <MaterialCommunityIcons
                 name={selectedFile.mimeType === 'application/pdf' || selectedFile.name?.toLowerCase().endsWith('.pdf') ? 'file-document-outline' : 'file-music-outline'}
                 size={32}
                 color={theme.colors.primary}
@@ -659,6 +675,18 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
               !uploading ? <IconButton icon="close" onPress={discardRecording} /> : null
             )}
           />
+          {selectedFile.size && (selectedFile.size / 1024 / 1024) > 50 && (
+            <Card.Content style={{ paddingTop: 0, paddingBottom: 8 }}>
+              <Chip
+                compact
+                icon="alert-outline"
+                style={{ alignSelf: 'flex-start', backgroundColor: theme.colors.tertiaryContainer }}
+                textStyle={{ color: theme.colors.onTertiaryContainer, fontSize: 12 }}
+              >
+                Large file — upload may take longer
+              </Chip>
+            </Card.Content>
+          )}
           {uploading && (
             <Card.Content>
               <ProgressBar progress={uploadProgress} color={theme.colors.primary} style={{ height: 8, borderRadius: 4, marginVertical: 12 }} />
