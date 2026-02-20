@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import urllib.request
+import urllib.error
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +353,7 @@ def _call_openai(
         for t in existing_threads
     ]
 
-    # Build user content with course context (matching _call_vertex_sdk)
+    # Build user content with course context
     content_parts = []
     if course_context:
         if course_context.get("syllabus"):
@@ -395,14 +396,40 @@ def _call_openai(
             method="POST",
         )
 
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = json.loads(resp.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                status = resp.getcode()
+                body = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as http_err:
+            error_body = http_err.read().decode("utf-8", errors="replace")[:500]
+            raise NonRetryableError(
+                f"OpenAI API returned HTTP {http_err.code}: {error_body}"
+            ) from http_err
+        except urllib.error.URLError as url_err:
+            raise NonRetryableError(
+                f"OpenAI API connection failed: {url_err.reason}"
+            ) from url_err
+
+        if status != 200:
+            raise NonRetryableError(f"OpenAI API returned unexpected status {status}")
+
+        try:
+            raw = json.loads(body)
+        except json.JSONDecodeError as je:
+            raise NonRetryableError(
+                f"OpenAI returned invalid JSON: {body[:200]}"
+            ) from je
 
         # Extract text from OpenAI responses API format
         for output in raw.get("output", []):
             for content in output.get("content", []):
                 if "text" in content:
-                    return json.loads(content["text"])
+                    try:
+                        return json.loads(content["text"])
+                    except json.JSONDecodeError as je:
+                        raise NonRetryableError(
+                            f"OpenAI returned non-JSON text: {content['text'][:200]}"
+                        ) from je
 
         raise ValueError("OpenAI response did not contain extractable JSON text.")
 
@@ -690,7 +717,7 @@ def generate_thread_records(
         generated_at: ISO timestamp
         storage_dir: Path to storage directory
         openai_model: OpenAI model to use
-        llm_provider: LLM provider (openai/gemini/vertex)
+        llm_provider: LLM provider (openai)
         llm_model: Specific model name
         preset_id: Optional preset ID to customize thread detection behavior
     """
@@ -865,7 +892,7 @@ def generate_thread_records_with_rotation(
         generated_at: ISO timestamp
         storage_dir: Path to storage directory
         openai_model: OpenAI model to use
-        llm_provider: LLM provider (openai/gemini/vertex)
+        llm_provider: LLM provider (openai)
         llm_model: Specific model name
         preset_id: Optional preset ID
         max_iterations: Maximum rotation iterations

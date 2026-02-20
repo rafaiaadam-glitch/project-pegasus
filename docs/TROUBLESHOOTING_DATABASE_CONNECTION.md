@@ -87,7 +87,7 @@ The deployment script uses `planwell-db` as the instance name. Verify this match
 gcloud sql instances list --project=${PROJECT_ID}
 
 # Update deployment script if needed
-# In scripts/deploy-cloud-run-google-stt.sh, line 37:
+# In cloudbuild.yaml deploy step:
 --add-cloudsql-instances="${PROJECT_ID}:${REGION}:YOUR_ACTUAL_INSTANCE_NAME"
 ```
 
@@ -147,7 +147,7 @@ EXPO_PUBLIC_API_URL=https://pegasus-api-988514135894.us-west1.run.app
 **Option B: Redeploy to europe-west1**
 ```bash
 # Update deployment script region
-REGION="europe-west1" ./scripts/deploy-cloud-run-google-stt.sh
+cd temp-repo && gcloud builds submit --config=cloudbuild.yaml --region=us-central1
 
 # May need to create Cloud SQL instance in europe-west1 first
 ```

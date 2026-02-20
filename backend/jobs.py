@@ -538,16 +538,10 @@ def run_transcription_job(
             transcription = _extract_pdf_text(source_path)
         else:
             provider_key = (provider or "openai").strip().lower()
-            if provider_key == "openai":
+            if provider_key in ("openai", "whisper"):
                 transcription = _transcribe_with_openai_api(source_path, model)
-            elif provider_key == "google":
-                # Pass GCS URI for long_running_recognize when using cloud storage
-                cloud_uri = audio_path if (storage_mode == "gcs" and audio_path and audio_path.startswith("gs://")) else None
-                transcription = _transcribe_with_google_speech(source_path, language_code, gcs_uri=cloud_uri)
-            elif provider_key == "whisper":
-                transcription = _transcribe_with_whisper(source_path, model)
             else:
-                raise ValueError(f"Unsupported transcription provider: {provider}")
+                raise ValueError(f"Unsupported transcription provider: {provider}. Use 'openai'.")
 
         transcript = {
             "lectureId": lecture_id,

@@ -329,7 +329,7 @@ User selects preset → API receives preset_id
                 "- Include mark scheme criteria"
                 "- Highlight examinable points"
                               ↓
-                    Send to LLM (Gemini/OpenAI)
+                    Send to LLM (OpenAI)
                               ↓
         LLM generates artifacts following preset style
                               ↓

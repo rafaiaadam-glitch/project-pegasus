@@ -62,7 +62,7 @@ app = FastAPI(title="Pegasus Lecture Copilot API", lifespan=app_lifespan)
 # Configure CORS for mobile app
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins in development
+    allow_origins=os.getenv("PLC_CORS_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -846,8 +846,7 @@ async def ingest_lecture(
     transcribe_language_code: Optional[str] = Form(None),
     storage_path: Optional[str] = Form(None),
 ) -> dict:
-    print(f"DEBUG INGEST: auto_transcribe={auto_transcribe} type={type(auto_transcribe)} storage_path={storage_path}")
-    LOGGER.info("INGEST: %s", request.headers)
+    LOGGER.info("INGEST: auto_transcribe=%s storage_path=%s", auto_transcribe, storage_path)
 
     # Check if this is a CloudEvent from Eventarc
     if _is_cloudevent(request):
@@ -888,8 +887,8 @@ async def ingest_lecture(
                             "message": "Transcription already in progress"
                         }
 
-                    provider = os.getenv("PLC_INGEST_TRANSCRIBE_PROVIDER", "google")
-                    model = os.getenv("PLC_INGEST_TRANSCRIBE_MODEL", "base")
+                    provider = os.getenv("PLC_INGEST_TRANSCRIBE_PROVIDER", "openai")
+                    model = os.getenv("PLC_INGEST_TRANSCRIBE_MODEL", "whisper-1")
                     language_code = os.getenv("PLC_STT_LANGUAGE")
 
                     job_id = enqueue_job(
@@ -1356,8 +1355,8 @@ def list_lectures(
 def transcribe_lecture(
     request: Request,
     lecture_id: str,
-    model: str = "latest_long",  # Google STT model
-    provider: str = "google",  # Default to Google Speech-to-Text
+    model: str = "whisper-1",
+    provider: str = "openai",
     language_code: Optional[str] = None,
 ) -> dict:
     _enforce_write_auth(request)
@@ -1926,7 +1925,8 @@ def review_artifacts(
         
         try:
             payload[artifact_type_key] = load_json_payload(storage_path)
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning("Failed to load artifact %s from %s: %s", artifact_type_key, storage_path, exc)
             payload[artifact_type_key] = None
 
         if storage_path.startswith("s3://"):

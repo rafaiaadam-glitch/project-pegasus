@@ -5,10 +5,7 @@ To deploy the MVP, you will need:
 
 - Postgres (Supabase recommended)
 - S3-compatible storage, Supabase Storage, or GCS
-- LLM provider credentials (Gemini/Vertex recommended on GCP; OpenAI supported)
-- Transcription runtime credentials (Google Speech-to-Text recommended on GCP; Whisper supported)
-- OpenAI API key for LLM generation
-- Whisper runtime (self-hosted or API)
+- OpenAI API key (`OPENAI_API_KEY`) for transcription (Whisper), LLM generation, and chat
 
 ## Backend
 
@@ -28,11 +25,8 @@ storage at `/data`.
 Environment variables:
 - `DATABASE_URL`
 - `PLC_LLM_PROVIDER`
-- `OPENAI_API_KEY` / `OPENAI_MODEL` (OpenAI path)
-- `GEMINI_API_KEY` or `GOOGLE_API_KEY` (Gemini/Vertex path)
-- `PLC_GCP_STT_MODEL` / `PLC_STT_LANGUAGE` (Google STT tuning)
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
+- `OPENAI_API_KEY` (required — transcription, LLM, and chat)
+- `OPENAI_MODEL` (optional, default: `gpt-4o-mini`)
 - `STORAGE_MODE` (`local`, `s3`, or `gcs`)
 - `S3_BUCKET`, `S3_PREFIX` (if `STORAGE_MODE=s3`)
 - `S3_ENDPOINT_URL` (optional, for S3-compatible storage)
@@ -115,7 +109,7 @@ services:
 
 Use your provider’s secrets tooling to store sensitive values:
 - `DATABASE_URL`, `REDIS_URL`
-- `PLC_LLM_PROVIDER`, plus provider credentials (`GEMINI_API_KEY`/`GOOGLE_API_KEY` or `OPENAI_API_KEY`)
+- `OPENAI_API_KEY`
 - `S3_BUCKET`, `S3_PREFIX`, plus any storage credentials required by your S3
   provider (or Supabase Storage keys)
 
@@ -229,7 +223,7 @@ Expected: JSON containing `lectureId` and `audioPath`.
 ### 3) Enqueue a transcription job
 
 ```bash
-curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/transcribe?provider=google&language_code=en-US"
+curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/transcribe?provider=openai"
 ```
 
 Capture `jobId` from the response.
@@ -258,7 +252,7 @@ You should see the job picked up and completed/failed with a concrete reason.
 
 ### 6) (Optional) Full artifact path smoke
 
-If transcription succeeds in your environment (Google STT or Whisper configured):
+If transcription succeeds in your environment (OpenAI Whisper):
 
 ```bash
 curl -sS -X POST "$API_BASE_URL/lectures/smoke-lecture/generate" \

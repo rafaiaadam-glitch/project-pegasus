@@ -107,158 +107,10 @@ def test_transcription_uses_metadata_when_lecture_missing(monkeypatch, tmp_path)
     assert lecture["status"] == "transcribed"
 
 
-def test_google_transcription_converts_input_to_wav(monkeypatch, tmp_path):
 
 
-    source_audio = tmp_path / "lecture.m4a"
 
-
-    source_audio.write_bytes(b"m4a-audio")
-
-
-    converted_audio = tmp_path / "lecture.wav"
-
-
-    converted_audio.write_bytes(b"wav-audio")
-
-
-
-
-
-    class FakeAlternative:
-
-
-        def __init__(self, transcript: str):
-
-
-            self.transcript = transcript
-
-
-
-
-
-    class FakeResult:
-
-
-        def __init__(self, transcript: str):
-
-
-            self.alternatives = [FakeAlternative(transcript)]
-
-
-
-
-
-    class FakeResponse:
-
-
-        def __init__(self):
-
-
-            self.results = [FakeResult("Hello world")]
-
-
-
-
-
-    class FakeSpeechClient:
-
-
-        def recognize(self, config, audio):
-
-
-            assert audio.content == b"wav-audio"
-
-
-            assert config.model == "latest_long"
-
-
-            return FakeResponse()
-
-
-
-
-
-    class FakeRecognitionAudio:
-
-
-        def __init__(self, content):
-
-
-            self.content = content
-
-
-
-
-
-    class FakeRecognitionConfig:
-
-
-        def __init__(self, language_code, enable_automatic_punctuation, model, encoding, sample_rate_hertz):
-
-
-            self.language_code = language_code
-
-
-            self.enable_automatic_punctuation = enable_automatic_punctuation
-
-
-            self.model = model
-
-
-            self.encoding = encoding
-
-
-            self.sample_rate_hertz = sample_rate_hertz
-
-
-
-
-
-    FakeRecognitionConfig.AudioEncoding = types.SimpleNamespace(LINEAR16=1)
-
-
-    fake_speech = types.SimpleNamespace(
-
-
-        SpeechClient=FakeSpeechClient,
-
-
-        RecognitionAudio=FakeRecognitionAudio,
-
-
-        RecognitionConfig=FakeRecognitionConfig,
-
-
-    )
-
-
-
-
-
-    monkeypatch.setitem(sys.modules, "google", types.ModuleType("google"))
-
-
-    monkeypatch.setitem(sys.modules, "google.cloud", types.ModuleType("google.cloud"))
-
-
-    monkeypatch.setitem(sys.modules, "google.cloud.speech_v1", fake_speech)
-
-
-    monkeypatch.setattr(jobs_module, "_convert_to_wav", lambda _path: converted_audio)
-
-
-
-
-
-    result = jobs_module._transcribe_with_google_speech(source_audio, "en-US")
-    assert result["text"] == "Hello world"
-    assert result["segments"][0]["text"] == "Hello world"
-    assert result["engine"]["provider"] == "google_speech"
-
-
-
-def test_transcription_provider_defaults_to_google_when_blank(monkeypatch, tmp_path):
+def test_transcription_provider_defaults_to_openai_when_blank(monkeypatch, tmp_path):
     storage_dir = tmp_path / "storage"
     (storage_dir / "audio").mkdir(parents=True, exist_ok=True)
     audio_path = storage_dir / "audio" / "lecture-default.mp3"
@@ -278,16 +130,13 @@ def test_transcription_provider_defaults_to_google_when_blank(monkeypatch, tmp_p
         }
     )
 
-    def fake_google(_audio_path, _language_code):
+    def fake_openai(_audio_path, _model):
         return {
-            "language": "en-US",
-            "text": "google transcript",
-            "segments": [{"startSec": 0.0, "endSec": 1.0, "text": "google transcript"}],
-            "engine": {"provider": "google_speech", "model": "latest_long"},
+            "language": "en",
+            "text": "openai transcript",
+            "segments": [{"startSec": 0.0, "endSec": 1.0, "text": "openai transcript"}],
+            "engine": {"provider": "openai", "model": "whisper-1"},
         }
-
-    def fail_whisper(*_args, **_kwargs):
-        raise AssertionError("Whisper should not be used when provider is blank")
 
     def fake_save_transcript(payload: str, name: str) -> str:
         out = storage_dir / "transcripts"
@@ -298,11 +147,10 @@ def test_transcription_provider_defaults_to_google_when_blank(monkeypatch, tmp_p
 
     monkeypatch.setenv("PLC_STORAGE_DIR", str(storage_dir))
     monkeypatch.setattr(jobs_module, "get_database", lambda: fake_db)
-    monkeypatch.setattr(jobs_module, "_transcribe_with_google_speech", fake_google)
-    monkeypatch.setattr(jobs_module, "_transcribe_with_whisper", fail_whisper)
+    monkeypatch.setattr(jobs_module, "_transcribe_with_openai_api", fake_openai)
     monkeypatch.setattr(jobs_module, "save_transcript", fake_save_transcript)
 
-    jobs_module.run_transcription_job("job-default", "lecture-default", "base", provider="")
+    jobs_module.run_transcription_job("job-default", "lecture-default", "whisper-1", provider="")
 
     job = fake_db.jobs["job-default"]
     assert job["status"] == "completed"
@@ -585,37 +433,3 @@ def test_assert_minimum_artifact_quality_fails_for_empty_summary_overview():
         jobs_module._assert_minimum_artifact_quality(FakeExportDB(), "lecture-1")
 
 
-@pytest.mark.skipif(
-    True,
-    reason="Google Speech tests require complex mocking, covered by integration tests"
-)
-def test_google_speech_transcription_success(monkeypatch, tmp_path):
-    """Test successful Google Speech-to-Text transcription - SKIPPED, use integration tests"""
-    pass
-
-
-@pytest.mark.skipif(
-    True,
-    reason="Google Speech tests require complex mocking, covered by integration tests"
-)
-def test_google_speech_uses_env_language_code(monkeypatch, tmp_path):
-    """Test that Google STT uses PLC_STT_LANGUAGE env var - SKIPPED, use integration tests"""
-    pass
-
-
-@pytest.mark.skipif(
-    True,
-    reason="Google Speech tests require complex mocking, covered by integration tests"
-)
-def test_google_speech_handles_empty_alternatives(monkeypatch, tmp_path):
-    """Test that Google STT handles empty alternatives - SKIPPED, use integration tests"""
-    pass
-
-
-@pytest.mark.skipif(
-    True,
-    reason="Google Speech tests require complex mocking, covered by integration tests"
-)
-def test_google_speech_raises_on_missing_library(monkeypatch, tmp_path):
-    """Test missing library error - SKIPPED, use integration tests"""
-    pass

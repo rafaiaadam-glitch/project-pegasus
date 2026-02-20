@@ -10,27 +10,15 @@ The Pegasus mobile app (iOS/Android) uses **Expo's HIGH_QUALITY preset**, which 
 
 ### Transcription Provider Compatibility
 
-#### ✅ **Google Speech-to-Text (Default)**
-- **Supports:** MP3, FLAC, OGG_OPUS, WEBM_OPUS, LINEAR16 (WAV)
-- **M4A Support:** ✅ **Automatic conversion** - Backend converts M4A → MP3
-- **Accuracy:** Excellent, optimized for Google Cloud
-- **Setup:** Default transcription provider
-- **Usage:** No special configuration needed
+#### OpenAI Whisper (Default)
+- **Supports:** M4A, MP3, WAV, FLAC, WEBM, and more (native M4A support)
+- **Accuracy:** Excellent for mobile recordings
+- **Setup:** Default transcription provider (`OPENAI_API_KEY` required)
+- **File size limit:** 25MB (auto-compressed via ffmpeg for larger files)
 
-**Use Google STT for all recordings (including mobile M4A):**
 ```bash
 POST /lectures/{lecture_id}/transcribe
-# provider defaults to "google" - M4A files automatically converted to MP3
-```
-
-#### 🔄 **Whisper (Alternative)**
-- **Supports:** M4A, MP3, WAV, FLAC, and more (native M4A support)
-- **Accuracy:** Excellent for mobile recordings
-- **Best for:** Offline/local transcription
-
-**To use Whisper instead:**
-```bash
-POST /lectures/{lecture_id}/transcribe?provider=whisper
+# provider defaults to "openai", model defaults to "whisper-1"
 ```
 
 ---
@@ -111,21 +99,13 @@ Automatically requested via app.json permissions. If denied:
 
 1. **User records audio** → M4A file created
 2. **Upload to backend** → `POST /lectures/ingest`
-3. **Automatic transcription** → Uses Google Speech-to-Text by default
-   - M4A files automatically converted to MP3 using ffmpeg
-4. **Artifact generation** → Uses Gemini (default)
+3. **Automatic transcription** → Uses OpenAI Whisper (supports M4A natively)
+4. **Artifact generation** → Uses OpenAI (gpt-4o-mini)
 
-**Default configuration (works perfectly with mobile):**
+**Default configuration (works with mobile):**
 ```bash
-# No special config needed - Google STT handles M4A via auto-conversion
 POST /lectures/{lecture_id}/transcribe
-# Provider defaults to "google", M4A → MP3 conversion is automatic
-```
-
-**To use Whisper instead (native M4A support, no conversion):**
-```bash
-# Whisper supports M4A natively, no conversion needed
-POST /lectures/{lecture_id}/transcribe?provider=whisper
+# Provider defaults to "openai", Whisper handles M4A natively
 ```
 
 ---
@@ -174,31 +154,15 @@ POST /lectures/{lecture_id}/transcribe?provider=whisper
    - Verify file size > 0
    - Check upload completed successfully
 
-3. **Google STT quota exceeded**
-   - Check GCP Console → Speech-to-Text → Quotas
-   - Default: 1,000 minutes/month free tier
-
-**Alternative:** Use Whisper (no conversion needed):
-```bash
-POST /lectures/{lecture_id}/transcribe?provider=whisper
-```
+3. **OpenAI rate limit exceeded**
+   - Check usage at https://platform.openai.com/usage
+   - Upgrade API tier if needed
 
 ---
 
 ## Audio Encoding Reference
 
-### Google Speech-to-Text Supported Formats
-
-| Format | Extension | Encoding | Mobile Compatible |
-|--------|-----------|----------|-------------------|
-| MP3 | `.mp3` | MP3 | ⚠️ Need conversion |
-| FLAC | `.flac` | FLAC | ⚠️ Need conversion |
-| OGG Opus | `.ogg` | OGG_OPUS | ⚠️ Need conversion |
-| WebM Opus | `.webm` | WEBM_OPUS | ⚠️ Need conversion |
-| WAV | `.wav` | LINEAR16 | ⚠️ Need conversion |
-| **M4A** | `.m4a` | **AAC** | **❌ NOT SUPPORTED** |
-
-### Whisper Supported Formats
+### OpenAI Whisper Supported Formats
 
 | Format | Extension | Mobile Compatible |
 |--------|-----------|-------------------|
@@ -210,7 +174,7 @@ POST /lectures/{lecture_id}/transcribe?provider=whisper
 | OGG | `.ogg` | ✅ |
 | WebM | `.webm` | ✅ |
 
-**Conclusion:** Use Whisper for mobile app recordings! ✅
+Whisper supports M4A natively — no conversion needed for mobile recordings.
 
 ---
 
@@ -233,15 +197,10 @@ POST /lectures/{lecture_id}/transcribe?provider=whisper
 
 ```bash
 # Backend .env or Cloud Run environment
-PLC_LLM_PROVIDER=gemini  # Fast and cost-effective
+OPENAI_API_KEY=sk-...  # Required for Whisper + LLM + Chat
+PLC_LLM_PROVIDER=openai
 PLC_MAX_AUDIO_UPLOAD_MB=200  # Allow large lectures
 PLC_INLINE_JOBS=1  # Process immediately (or use Redis for queue)
-
-# Transcription: Google Speech-to-Text (default)
-# M4A files from mobile are automatically converted to MP3
-# Requires ffmpeg in Docker container (already included)
-PLC_GCP_STT_MODEL=latest_long  # High accuracy model
-PLC_STT_LANGUAGE=en-US  # Default language
 
 # Storage: Use Cloud Storage for production
 STORAGE_MODE=gcs
@@ -249,29 +208,18 @@ GCS_BUCKET=your-bucket-name
 GCS_PREFIX=pegasus
 ```
 
-**Alternative: Use Whisper for local/offline transcription:**
-```bash
-# Set provider=whisper in API calls (not as env var)
-# Whisper has native M4A support, no conversion needed
-```
-
 ---
 
 ## Summary
 
-✅ **Use Google Speech-to-Text for transcription** (M4A auto-converted to MP3)
-✅ **Use Gemini for artifact generation** (fast, cheap, accurate)
-✅ **Production URL in .env** for builds
-✅ **ffmpeg in Docker** for M4A conversion
-✅ **Test on real devices** before launch
-
-Your mobile app is production-ready with this configuration! 🚀
+- **OpenAI Whisper for transcription** (native M4A support)
+- **OpenAI gpt-4o-mini for artifact generation**
+- **Production URL in .env** for builds
+- **Test on real devices** before launch
 
 ### Key Technical Details
 
 - **Mobile recordings:** M4A (AAC) format
-- **Google STT:** Requires MP3/FLAC/WAV/OGG
-- **Auto-conversion:** M4A → MP3 (ffmpeg)
-- **Fallback:** Whisper supports M4A natively (no conversion)
-- **Default:** Google Speech-to-Text for cloud accuracy
-- **Cost:** ~$0.54/hour (Google STT enhanced model)
+- **OpenAI Whisper:** Native M4A support, no conversion needed
+- **File size limit:** 25MB (auto-compressed via ffmpeg for larger files)
+- **Cost:** ~$0.006/minute (Whisper transcription)

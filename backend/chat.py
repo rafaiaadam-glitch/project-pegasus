@@ -43,7 +43,10 @@ def get_chat_response(message: str, history: list, context: str = "") -> str:
             model=model_name,
             messages=messages,
         )
-        return response.choices[0].message.content
+        if not response.choices:
+            LOGGER.error("OpenAI returned empty choices list")
+            return "I'm having trouble connecting right now. Please try again later."
+        return response.choices[0].message.content or ""
     except Exception as e:
-        LOGGER.error(f"OpenAI Chat Error: {e}")
+        LOGGER.error("OpenAI Chat Error: %s", e)
         return "I'm having trouble connecting right now. Please try again later."

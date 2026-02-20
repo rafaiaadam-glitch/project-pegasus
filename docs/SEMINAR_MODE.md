@@ -98,7 +98,7 @@ The thread engine accepts a `preset_id` parameter and uses it to:
 
 1. Load the preset configuration from `backend/presets.py`
 2. Build a customized system prompt using `_build_system_prompt(preset_config)`
-3. Pass the enhanced prompt to the LLM (Gemini or OpenAI)
+3. Pass the enhanced prompt to the LLM (OpenAI)
 4. Extract threads with emphasis on the specified dimensions
 
 ### System Prompt Enhancement
@@ -153,7 +153,7 @@ run_pipeline(
     context=context,
     output_dir=Path("storage/artifacts"),
     use_llm=True,
-    llm_provider="gemini"
+    llm_provider="openai"
 )
 ```
 

@@ -336,7 +336,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llm-provider",
         default=os.getenv("PLC_LLM_PROVIDER", "openai"),
-        choices=["openai", "gemini", "vertex"],
+        choices=["openai"],
         help="LLM provider for generation.",
     )
     parser.add_argument(

@@ -7,7 +7,7 @@
 
 ### 1. Audio Format Mismatch ✅ **FIXED**
 
-**Problem:** Mobile app records in M4A (AAC), but Google Speech-to-Text requires conversion.
+**Problem:** Mobile app records in M4A (AAC), which OpenAI Whisper handles natively.
 
 **Solution Implemented:**
 - ✅ FFmpeg installed in `backend/Dockerfile` (line 11)
@@ -84,8 +84,8 @@ EXPO_PUBLIC_API_URL=https://pegasus-api-988514135894.europe-west1.run.app
 | Component | Provider | Details |
 |-----------|----------|---------|
 | **Platform** | Google Cloud Run | europe-west1 |
-| **Transcription** | Google Speech-to-Text | `latest_long` model (default) |
-| **LLM** | Gemini/Vertex AI | Default for all artifacts |
+| **Transcription** | OpenAI Whisper | `whisper-1` model |
+| **LLM** | OpenAI | `gpt-4o-mini` (Thread Engine + Chat) |
 | **Storage** | Google Cloud Storage | Bucket: `delta-student-486911-n5-pegasus-storage` |
 | **Database** | PostgreSQL | Cloud SQL |
 | **Audio Processing** | FFmpeg | M4A/MP3/WAV support |
@@ -109,7 +109,7 @@ Transcription job triggered
   ↓
 FFmpeg converts M4A → MP3 (if needed)
   ↓
-Google Speech-to-Text transcribes
+OpenAI Whisper transcribes
   ↓
 Transcript stored in GCS
   ↓
@@ -145,8 +145,8 @@ Ready for artifact generation
 ### End-to-End Flow
 - [x] Record lecture → Upload → Transcribe → Generate → Export
 - [x] M4A files successfully processed
-- [x] Google STT produces accurate transcripts
-- [x] Gemini generates quality artifacts
+- [x] OpenAI Whisper produces accurate transcripts
+- [x] OpenAI generates quality artifacts
 - [x] All 6 presets working
 
 ---
@@ -192,7 +192,7 @@ Ready for artifact generation
 
 ### Deploy Backend
 ```bash
-./scripts/deploy-cloud-run-google-stt.sh
+cd temp-repo && gcloud builds submit --config=cloudbuild.yaml --region=us-central1
 ```
 
 ### Verify Deployment
@@ -212,7 +212,7 @@ Ready for artifact generation
 
 **2. Transcription Hangs**
 - Check job status: `GET /jobs/{job_id}`
-- Verify Google STT API enabled
+- Verify OPENAI_API_KEY is set in Cloud Run secrets
 - Check service account permissions
 
 **3. Mobile Can't Connect**

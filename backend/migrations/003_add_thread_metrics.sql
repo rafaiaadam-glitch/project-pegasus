@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS thread_metrics (
     threads_with_evidence INTEGER NOT NULL DEFAULT 0,
 
     -- Performance metrics
-    detection_method TEXT NOT NULL, -- 'gemini', 'openai', 'fallback'
+    detection_method TEXT NOT NULL, -- 'openai', 'fallback'
     api_response_time_ms DECIMAL(10,2),
     token_usage JSONB, -- {input: N, output: M}
     retry_count INTEGER NOT NULL DEFAULT 0,

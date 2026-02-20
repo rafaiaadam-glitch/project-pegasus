@@ -35,7 +35,7 @@ class ThreadDetectionMetrics:
     threads_with_evidence: int
 
     # Performance metrics
-    detection_method: str  # "gemini", "openai", "fallback"
+    detection_method: str  # "openai", "fallback"
     api_response_time_ms: Optional[float]
     token_usage: Optional[Dict[str, int]]  # input/output tokens
     retry_count: int
@@ -81,7 +81,7 @@ def calculate_thread_metrics(
         updates: List of updates to existing threads
         lecture_id: ID of the lecture
         course_id: ID of the course
-        detection_method: Method used (gemini/openai/fallback)
+        detection_method: Method used (openai/fallback)
         model_name: LLM model name if applicable
         llm_provider: LLM provider if applicable
         api_response_time_ms: API response time in milliseconds
@@ -200,7 +200,7 @@ def calculate_quality_score(metrics: ThreadDetectionMetrics) -> float:
         score += evidence_score
 
     # Detection method (0-20 points)
-    if metrics.detection_method in ("gemini", "openai"):
+    if metrics.detection_method == "openai":
         score += 20  # Full points for LLM
     elif metrics.detection_method == "fallback":
         score += 10  # Half points for fallback
