@@ -751,6 +751,12 @@ def readiness() -> JSONResponse:
     )
 
 
+@app.get("/health/live")
+def liveness() -> dict:
+    """Lightweight liveness probe — confirms the process is running."""
+    return {"status": "ok"}
+
+
 @app.get("/presets")
 def list_presets() -> dict:
     return {"presets": PRESETS}
@@ -1500,12 +1506,17 @@ def _enqueue_replay_job(db, job: dict) -> dict:
         raise HTTPException(status_code=400, detail="Job is missing lecture context.")
 
     if job_type == "transcription":
+        provider = os.getenv("PLC_INGEST_TRANSCRIBE_PROVIDER", "openai")
+        model = "whisper-1" if provider == "openai" else os.getenv("PLC_LLM_MODEL", "base")
+        language_code = os.getenv("PLC_STT_LANGUAGE", "en-US")
         new_job_id = enqueue_job(
             "transcription",
             lecture_id,
             run_transcription_job,
             lecture_id,
-            "base",
+            model,
+            provider,
+            language_code,
         )
     elif job_type == "generation":
         lecture = db.fetch_lecture(lecture_id)

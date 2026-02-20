@@ -89,10 +89,10 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 7) Deployment readiness
 
-- [ ] Publish one canonical deployment guide for API + worker + storage
-- [ ] Add health/readiness checks to platform configs with sane thresholds
-- [ ] Add staging environment parity checklist
-- [ ] Add release checklist with rollback procedure
+- [x] Publish one canonical deployment guide for API + worker + storage
+- [x] Add health/readiness checks to platform configs with sane thresholds
+- [x] Add staging environment parity checklist
+- [x] Add release checklist with rollback procedure
 
 **Definition of done:**
 - staged release and rollback completed successfully at least once
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **18**
-- Items remaining: **18**
-- Completion: **50%**
+- Items marked complete: **22**
+- Items remaining: **14**
+- Completion: **61%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -169,6 +169,10 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Secrets management guidance per deploy target (Render/Railway/Fly/GCP/local) → `docs/runbooks/secrets-management.md`
 - Deletion workflow with auditability (`DELETE /lectures/{lecture_id}`, `DELETE /courses/{course_id}`, `GET /ops/deletion-audit`) → `backend/app.py`, `backend/db.py`, `backend/migrations/002_deletion_audit.sql`, `backend/tests/test_delete_workflow.py`
 - PII handling policy for transcript/artifact data → `docs/PII_HANDLING_POLICY.md`
+- Canonical deployment guide (Cloud Run production) → `docs/deployment-guide.md`
+- Health/readiness/liveness probes + Cloud Run config → `backend/app.py` (`/health/live`), `cloudbuild.yaml` (startup + liveness probes, scaling bounds)
+- Staging environment parity checklist → `docs/staging-parity-checklist.md`
+- Release checklist with rollback procedure → `docs/release-checklist.md`
 
 ## Progress notes
 

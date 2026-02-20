@@ -34,6 +34,13 @@ steps:
       - '--set-secrets=DATABASE_URL=pegasus-db-url:latest,OPENAI_API_KEY=openai-api-key:latest'
       - '--set-env-vars=STORAGE_MODE=gcs,GCS_BUCKET=$PROJECT_ID-pegasus-storage-eu,GCS_PREFIX=pegasus,PLC_LLM_PROVIDER=openai,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=europe-west1,PLC_INLINE_JOBS=1'
       - '--set-cloudsql-instances=$PROJECT_ID:europe-west1:pegasus-db-eu'
+      - '--min-instances=0'
+      - '--max-instances=4'
+      - '--timeout=300'
+      - '--concurrency=80'
+      - '--cpu-boost'
+      - '--startup-probe=httpGet.path=/health,initialDelaySeconds=0,timeoutSeconds=3,periodSeconds=10,failureThreshold=6'
+      - '--liveness-probe=httpGet.path=/health/live,initialDelaySeconds=10,timeoutSeconds=3,periodSeconds=30,failureThreshold=3'
 
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
