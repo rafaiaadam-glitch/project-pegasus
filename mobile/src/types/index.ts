@@ -37,6 +37,8 @@ export interface Artifact {
   created_at: string;
 }
 
+export type DiceFace = 'RED' | 'ORANGE' | 'YELLOW' | 'GREEN' | 'BLUE' | 'PURPLE';
+
 export interface Thread {
   id: string;
   course_id: string;
@@ -45,9 +47,7 @@ export interface Thread {
   status: 'foundational' | 'advanced';
   complexity_level: number;
   lecture_refs: string[];
-  parent_id?: string | null;
-  depth?: number;
-  child_count?: number;
+  face?: DiceFace | null;
   created_at?: string;
 }
 

@@ -395,21 +395,23 @@ class Database:
                     """
                     insert into threads (
                         id, course_id, title, summary, status, complexity_level,
-                        lecture_refs, created_at
+                        lecture_refs, face, created_at
                     ) values (
                         %(id)s, %(course_id)s, %(title)s, %(summary)s, %(status)s,
-                        %(complexity_level)s, %(lecture_refs)s, %(created_at)s
+                        %(complexity_level)s, %(lecture_refs)s, %(face)s, %(created_at)s
                     )
                     on conflict (id) do update set
                         title = excluded.title,
                         summary = excluded.summary,
                         status = excluded.status,
                         complexity_level = excluded.complexity_level,
-                        lecture_refs = excluded.lecture_refs;
+                        lecture_refs = excluded.lecture_refs,
+                        face = excluded.face;
                     """,
                     {
                         **payload,
                         "lecture_refs": Jsonb(payload.get("lecture_refs")),
+                        "face": payload.get("face"),
                     },
                 )
 

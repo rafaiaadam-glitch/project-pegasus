@@ -57,6 +57,7 @@ STOPWORDS = {
 
 VALID_CHANGE_TYPES = {"refinement", "contradiction", "complexity"}
 VALID_STATUSES = {"foundational", "advanced"}
+VALID_FACES = {"RED", "ORANGE", "YELLOW", "GREEN", "BLUE", "PURPLE"}
 
 # Module-level storage for last detection metrics
 _last_metrics = None
@@ -179,16 +180,25 @@ def _build_system_prompt(
     base_prompt = """\
 You are the Thread Engine for Pegasus Lecture Copilot.
 
-Your job is to analyse a university lecture transcript and identify academic
-concepts that should be tracked across lectures in this course.
+Your job is to analyse a university lecture transcript and extract focused
+keywords and key terms that should be tracked across lectures in this course.
+
+Each keyword must be tagged with a DICE FACE that describes what kind of
+knowledge it represents:
+  RED    = How (methods, processes, techniques, procedures)
+  ORANGE = What (definitions, core concepts, subject matter)
+  YELLOW = When (dates, periods, temporal context, sequences)
+  GREEN  = Where (locations, institutions, geographic context)
+  BLUE   = Who (people, authors, researchers, schools of thought)
+  PURPLE = Why (reasons, motivations, causes, justifications)
 
 You will be given:
 1. COURSE CONTEXT (if available): syllabus and notes uploaded by the student
    - Use this to understand the course structure and expected topics
-   - Prioritize concepts that align with the syllabus
+   - Prioritize keywords that align with the syllabus
    - Use terminology consistent with course materials
 2. The lecture transcript.
-3. A list of concepts (threads) already tracked for this course."""
+3. A list of keywords (threads) already tracked for this course."""
 
     # Add preset-specific guidance
     if preset_config:
@@ -232,17 +242,18 @@ Return STRICT JSON only — no markdown, no explanation.
 
 Return an object with two keys:
 
-"new_concepts": array of objects, one per brand-new concept not in the existing
+"new_concepts": array of objects, one per brand-new keyword not in the existing
 threads list. Each object:
   {
-    "title": "<concept name, title-cased, concise>",
-    "summary": "<one sentence: what this concept is>",
+    "title": "<keyword or key term, title-cased, 1-4 words, specific>",
+    "face": "<RED|ORANGE|YELLOW|GREEN|BLUE|PURPLE>",
+    "summary": "<one sentence: what this keyword means in context>",
     "evidence": "<direct quote or close paraphrase from the transcript, max 160 chars>",
     "complexity_level": <integer 1–5, 1=introductory>,
     "status": "<foundational|advanced>"
   }
 
-"concept_updates": array of objects, one per existing concept that appears in
+"concept_updates": array of objects, one per existing keyword that appears in
 this lecture. Each object:
   {
     "title": "<must exactly match a title from existing_threads>",
@@ -253,14 +264,16 @@ this lecture. Each object:
   }
 
 Rules:
-- Only return concepts that genuinely appear in the transcript.
+- Only return keywords that genuinely appear in the transcript.
+- Prefer specific, focused keywords (e.g. "Dopamine Receptor" not "Brain Chemistry").
+- Each new keyword MUST have a "face" field set to one of: RED, ORANGE, YELLOW, GREEN, BLUE, PURPLE.
 - "contradiction" means the lecture presents a conflicting claim to what was
   previously summarised for that thread.
-- "complexity" means the concept is being treated at a significantly deeper
+- "complexity" means the keyword is being treated at a significantly deeper
   level than before (increase new_complexity_level accordingly).
-- "refinement" means the concept is revisited with more detail or nuance.
-- Return an empty array if there are no new concepts or no updates.
-- Keep concept titles concise (2–5 words where possible).
+- "refinement" means the keyword is revisited with more detail or nuance.
+- Return an empty array if there are no new keywords or no updates.
+- Keep keyword titles concise (1–4 words).
 - Do NOT hallucinate content not present in the transcript.
 """
 
@@ -461,6 +474,12 @@ def _safe_status(value: Any) -> str:
     return "foundational"
 
 
+def _safe_face(value: Any) -> str:
+    if isinstance(value, str) and value.upper() in VALID_FACES:
+        return value.upper()
+    return "ORANGE"  # Default to ORANGE (What) for untagged concepts
+
+
 def _clamp_complexity(value: Any, current: int = 1) -> int:
     if isinstance(value, int) and 1 <= value <= 5:
         return value
@@ -499,6 +518,7 @@ def _process_llm_output(
         thread_id = str(uuid.uuid4())
         complexity = _clamp_complexity(concept.get("complexity_level"), 1)
         status = _safe_status(concept.get("status"))
+        face = _safe_face(concept.get("face"))
 
         thread: Dict[str, Any] = {
             "id": thread_id,
@@ -507,6 +527,7 @@ def _process_llm_output(
             "summary": summary,
             "status": status,
             "complexityLevel": complexity,
+            "face": face,
             "lectureRefs": [lecture_id],
             "evolutionNotes": [
                 {
@@ -637,6 +658,7 @@ def _process_fallback(
                 "summary": f"Concept '{title}' identified in lecture {lecture_id}.",
                 "status": "foundational",
                 "complexityLevel": 1,
+                "face": "ORANGE",
                 "lectureRefs": [lecture_id],
                 "evolutionNotes": [
                     {

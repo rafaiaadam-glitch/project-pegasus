@@ -47,6 +47,10 @@
       },
       "minItems": 1
     },
+    "face": {
+      "type": "string",
+      "enum": ["RED", "ORANGE", "YELLOW", "GREEN", "BLUE", "PURPLE"]
+    },
     "evolutionNotes": {
       "type": "array",
       "items": {

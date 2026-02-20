@@ -700,6 +700,7 @@ def run_generation_job(
                         "status": thread["status"],
                         "complexity_level": thread["complexityLevel"],
                         "lecture_refs": thread.get("lectureRefs", []),
+                        "face": thread.get("face"),
                         "created_at": now,
                     }
                 )
