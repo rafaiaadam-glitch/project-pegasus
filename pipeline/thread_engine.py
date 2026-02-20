@@ -1147,7 +1147,8 @@ def _load_course_context(course_id: str) -> Optional[Dict[str, str]]:
         from backend.db import get_database
 
         db = get_database()
-        context = db_module.fetch_context_text_for_course(db.conn, course_id)
+        with db.connect() as conn:
+            context = db_module.fetch_context_text_for_course(conn, course_id)
 
         if not context.get("syllabus") and not context.get("notes"):
             return None
