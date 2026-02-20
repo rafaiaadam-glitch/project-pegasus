@@ -1,15 +1,5 @@
-import permutations from "../dice/permutations.json" with { type: "json" }
-import { DiceFace, FaceWeights, getModeWeights } from "../dice/courseModes.js"
-export type { DiceFace } from "../dice/courseModes.js"
-
-export type LectureMode =
-  | "MATHEMATICS"
-  | "NATURAL_SCIENCE"
-  | "SOCIAL_SCIENCE"
-  | "HUMANITIES"
-  | "INTERDISCIPLINARY"
-  | "OPEN"
 import permutations from "../dice/permutations.json"
+import { FaceWeights, getModeWeights } from "../dice/courseModes"
 
 export type DiceFace =
   | "RED"
@@ -24,6 +14,7 @@ export type LectureMode =
   | "NATURAL_SCIENCE"
   | "SOCIAL_SCIENCE"
   | "HUMANITIES"
+  | "INTERDISCIPLINARY"
   | "OPEN"
 
 export interface FacetScores {
@@ -168,12 +159,6 @@ function collapsePriorityFace(scores: FacetScores, weights: FacetScores): DiceFa
 
 export function rotatePerspective(options: RotateOptions): DiceFace[] {
   const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
-export function rotatePerspective(options: RotateOptions): DiceFace[] {
-  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
-export function rotatePerspective(options: RotateOptions): DiceFace[] {
-  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights, empiricalMix } = options
-export function rotatePerspective(options: RotateOptions): DiceFace[] {
-  const { threadId, segmentIndex, facetScores, safeMode, mode, modeWeights } = options
 
   let permutation = selectPermutation(threadId, segmentIndex)
 
@@ -181,8 +166,6 @@ export function rotatePerspective(options: RotateOptions): DiceFace[] {
     const weights = resolveWeights(mode, modeWeights, empiricalMix)
     const prioritizedFace = collapsePriorityFace(facetScores, weights)
     permutation = [prioritizedFace, ...permutation.filter((face) => face !== prioritizedFace)]
-    const weakest = weakestFacet(facetScores)
-    permutation = [weakest, ...permutation.filter((face) => face !== weakest)]
     return permutation
   }
 

@@ -1,4 +1,3 @@
-import { DiceFace } from "./rotate.js"
 import { DiceFace } from "./rotate"
 
 export interface FacetEvidence {
