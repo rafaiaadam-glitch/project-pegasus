@@ -1041,6 +1041,7 @@ def generate_thread_records_with_rotation(
               f"(focus_face={current_face})")
 
         # Run thread detection with the focus face for this iteration
+        # Generate artifacts on the first iteration so they're available to the pipeline
         iter_threads, iter_occurrences, iter_updates = generate_thread_records(
             course_id=course_id,
             lecture_id=lecture_id,
@@ -1052,6 +1053,7 @@ def generate_thread_records_with_rotation(
             llm_model=llm_model,
             preset_id=preset_id,
             focus_face=current_face,
+            generate_artifacts=(iteration == 0),
         )
 
         # Merge threads (avoid duplicates by ID)
