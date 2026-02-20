@@ -48,7 +48,7 @@ export default function CourseListScreen({ navigation, route }: Props) {
       const response = await api.getCourses();
       setCourses(response.courses);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load courses. Make sure the backend is running on localhost:8000');
+      Alert.alert('Error', 'Unable to load courses. Please check your internet connection and try again.');
       console.error(error);
     } finally {
       setLoading(false);
@@ -146,7 +146,7 @@ export default function CourseListScreen({ navigation, route }: Props) {
           Courses will appear here once you start using PLC.
         </Text>
         <Text variant="labelMedium" style={{ color: theme.colors.primary, textAlign: 'center', marginTop: 16 }}>
-          Make sure your backend is running on localhost:8000
+          Tap + to create your first course
         </Text>
       </View>
     );

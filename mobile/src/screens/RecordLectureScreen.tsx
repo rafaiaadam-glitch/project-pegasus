@@ -309,6 +309,18 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
 
       if (!result.canceled && result.assets && result.assets[0]) {
         const file = result.assets[0];
+
+        // Validate file extension
+        const allowedExtensions = ['m4a', 'mp3', 'wav', 'aac', 'ogg', 'flac', 'mp4', 'webm', 'pdf'];
+        const ext = (file.name || file.uri || '').split('.').pop()?.toLowerCase();
+        if (!ext || !allowedExtensions.includes(ext)) {
+          Alert.alert(
+            'Unsupported File Type',
+            `Please select an audio file (${allowedExtensions.filter(e => e !== 'pdf').join(', ')}) or a PDF document.`
+          );
+          return;
+        }
+
         const fileSizeMB = (file.size || 0) / (1024 * 1024);
 
         if (fileSizeMB > MAX_FILE_SIZE_MB) {
@@ -339,6 +351,14 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
 
     if (!selectedFile) {
       Alert.alert('Error', 'Please record or select an audio file');
+      return;
+    }
+
+    // Pre-upload connectivity check
+    try {
+      await api.healthCheck();
+    } catch {
+      Alert.alert('No Connection', 'Unable to reach the server. Please check your internet connection and try again.');
       return;
     }
 
@@ -691,6 +711,18 @@ export default function RecordLectureScreen({ navigation, route }: Props) {
             <Card.Content>
               <ProgressBar progress={uploadProgress} color={theme.colors.primary} style={{ height: 8, borderRadius: 4, marginVertical: 12 }} />
               <Text style={{ textAlign: 'center', color: theme.colors.onSurfaceVariant }}>{uploadStatus}</Text>
+              <Button
+                mode="text"
+                onPress={() => {
+                  setUploading(false);
+                  setUploadProgress(0);
+                  setUploadStatus('');
+                }}
+                textColor={theme.colors.error}
+                style={{ marginTop: 8 }}
+              >
+                Cancel Upload
+              </Button>
             </Card.Content>
           )}
         </Card>

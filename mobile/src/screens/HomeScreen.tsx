@@ -52,7 +52,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   // Navigation handlers
   const handleRecord = () => {
-    navigation.navigate('RecordLecture', { courseId: undefined });
+    navigation.navigate('CourseList', { selectForRecording: true });
   };
 
   const handleLecturePress = (lecture: Lecture) => {

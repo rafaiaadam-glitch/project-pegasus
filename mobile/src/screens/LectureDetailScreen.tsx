@@ -25,6 +25,17 @@ import NetworkErrorView from '../components/NetworkErrorView';
 
 import * as ExportUtils from '../services/exportUtils';
 
+const humanizeError = (error: string | undefined): string => {
+  if (!error) return 'Something went wrong. Please try again.';
+  const e = error.toLowerCase();
+  if (e.includes('timeout') || e.includes('timed out')) return 'The request timed out. Please try again.';
+  if (e.includes('json') || e.includes('parse')) return 'Received an unexpected response. Please retry.';
+  if (e.includes('rate') || e.includes('429')) return 'Too many requests. Please wait a moment and retry.';
+  if (e.includes('network') || e.includes('fetch') || e.includes('econnrefused')) return 'Network error. Please check your connection.';
+  if (error.length > 120) return error.slice(0, 117) + '...';
+  return error;
+};
+
 interface Props {
   navigation: any;
   route: any;
@@ -107,6 +118,8 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
         { delay: 10000, msg: 'Reasoning through concepts...' },
         { delay: 25000, msg: 'Building flashcards & exam questions...' },
         { delay: 45000, msg: 'Almost done — finalizing study guide...' },
+        { delay: 90000, msg: 'Still processing — large lectures take longer...' },
+        { delay: 240000, msg: 'Taking longer than usual — please wait...' },
       ];
       const timers = stages.map(({ delay, msg }) =>
         setTimeout(() => setGeneratingStage(msg), delay)
@@ -119,7 +132,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
       await loadData();
       setActiveTab('artifacts');
     } catch (error: any) {
-      Alert.alert('Generation Failed', error.message || 'Could not generate artifacts');
+      Alert.alert('Generation Failed', humanizeError(error.message));
     } finally {
       setGenerating(false);
       setGeneratingStage('');
@@ -127,48 +140,54 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   };
 
   const handleExport = async (type: 'all' | 'summary' | 'flashcards' | 'questions') => {
+    // Guard: check if the relevant artifact exists
+    const arts = artifacts?.artifacts;
+    const missingMap: Record<string, boolean> = {
+      all: !arts,
+      summary: !arts?.summary,
+      flashcards: !arts?.flashcards,
+      questions: !arts?.['exam-questions'],
+    };
+    if (missingMap[type]) {
+      setSnackbar({ visible: true, message: `No ${type === 'all' ? 'artifacts' : type} available to export. Generate study materials first.` });
+      return;
+    }
+
     try {
       setExporting(true);
       setExportingType(type);
 
       switch (type) {
         case 'all':
-          if (artifacts?.artifacts) {
-            await ExportUtils.exportAllArtifacts(
-              artifacts.artifacts,
-              lectureTitle,
-              route.params.courseTitle
-            );
-          }
+          await ExportUtils.exportAllArtifacts(
+            arts,
+            lectureTitle,
+            route.params.courseTitle
+          );
           break;
         case 'summary':
-          if (artifacts?.artifacts?.summary) {
-            await ExportUtils.exportSummary(
-              artifacts.artifacts.summary,
-              lectureTitle,
-              route.params.courseTitle
-            );
-          }
+          await ExportUtils.exportSummary(
+            arts.summary,
+            lectureTitle,
+            route.params.courseTitle
+          );
           break;
         case 'flashcards':
-          if (artifacts?.artifacts?.flashcards) {
-            await ExportUtils.exportFlashcards(
-              artifacts.artifacts.flashcards,
-              lectureTitle
-            );
-          }
+          await ExportUtils.exportFlashcards(
+            arts.flashcards,
+            lectureTitle
+          );
           break;
         case 'questions':
-          if (artifacts?.artifacts['exam-questions']) {
-            await ExportUtils.exportExamQuestions(
-              artifacts.artifacts['exam-questions'],
-              lectureTitle,
-              route.params.courseTitle
-            );
-          }
+          await ExportUtils.exportExamQuestions(
+            arts['exam-questions'],
+            lectureTitle,
+            route.params.courseTitle
+          );
           break;
       }
       setShowExportMenu(false);
+      setSnackbar({ visible: true, message: 'Export successful!' });
     } catch (error: any) {
       setSnackbar({ visible: true, message: error.message || 'Could not export file' });
       console.error('Export error:', error);
@@ -248,7 +267,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
                         borderColor,
                       }}
                     >
-                      {retryingStage === stage.key ? (
+                      {retryingStage === stage.key || isProcessing ? (
                         <ActivityIndicator size="small" />
                       ) : (
                         <Text style={{ fontSize: 20 }}>
@@ -268,7 +287,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
                         style={{ color: theme.colors.error, textAlign: 'center', marginTop: 4, fontSize: 10 }}
                         numberOfLines={2}
                       >
-                        {stageData.error}
+                        {humanizeError(stageData.error)}
                       </Text>
                     )}
                     {isFailed && (
@@ -529,6 +548,27 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             {generating ? (generatingStage || 'Starting...') : 'Generate'}
           </Button>
         )}
+        {artifacts?.artifactRecords?.length > 0 && (
+          <Button
+            mode="outlined"
+            onPress={() => {
+              Alert.alert(
+                'Regenerate Artifacts',
+                'This will replace existing study materials. Continue?',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Regenerate', onPress: handleGenerate },
+                ]
+              );
+            }}
+            loading={generating}
+            disabled={generating}
+            icon="refresh"
+            style={{ flex: 1 }}
+          >
+            {generating ? (generatingStage || 'Starting...') : 'Regenerate'}
+          </Button>
+        )}
         {(summary?.lecture?.status === 'transcribed' || artifacts?.artifactRecords?.length > 0) && (
           <Button
             mode="outlined"
@@ -542,13 +582,18 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
         <Button
           mode="outlined"
           onPress={() => setShowExportMenu(true)}
-          disabled={exporting || !artifacts}
+          disabled={exporting || !artifacts?.artifacts}
           icon="export-variant"
           style={{ flex: 1 }}
         >
           {exporting ? 'Exporting...' : 'Export'}
         </Button>
       </View>
+      {!artifacts?.artifacts && (
+        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center', paddingHorizontal: 16, paddingBottom: 4 }}>
+          Generate study materials to enable export.
+        </Text>
+      )}
 
       {/* Transcription-in-progress banner */}
       {(summary?.lecture?.status === 'uploaded' || summary?.lecture?.status === 'transcribing') && (

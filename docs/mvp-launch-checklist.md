@@ -52,11 +52,11 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 4) Mobile product completion (MVP UX)
 
-- [ ] Replace scaffold-only flow with production navigation and error states
-- [ ] Add upload/record progress indicators and retry UX
-- [ ] Add per-lecture status timeline and stage-level failure messaging
-- [ ] Add artifact review screens tuned for revision workflows
-- [ ] Add export download/open/share affordances
+- [x] Replace scaffold-only flow with production navigation and error states
+- [x] Add upload/record progress indicators and retry UX
+- [x] Add per-lecture status timeline and stage-level failure messaging
+- [x] Add artifact review screens tuned for revision workflows
+- [x] Add export download/open/share affordances
 
 **Definition of done:**
 - a first-time user can complete Course → Preset → Upload → Process → Review → Export with no terminal access
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **22**
-- Items remaining: **14**
-- Completion: **61%**
+- Items marked complete: **27**
+- Items remaining: **9**
+- Completion: **75%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -173,6 +173,11 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Health/readiness/liveness probes + Cloud Run config → `backend/app.py` (`/health/live`), `cloudbuild.yaml` (startup + liveness probes, scaling bounds)
 - Staging environment parity checklist → `docs/staging-parity-checklist.md`
 - Release checklist with rollback procedure → `docs/release-checklist.md`
+- Navigation fix (mic → CourseList flow) → `mobile/src/screens/HomeScreen.tsx`
+- Upload hardening (file validation, connectivity check, cancel) → `mobile/src/screens/RecordLectureScreen.tsx`
+- Lecture detail polish (humanized errors, processing spinner, regenerate, export guards) → `mobile/src/screens/LectureDetailScreen.tsx`
+- User-friendly error messages → `mobile/src/screens/CourseListScreen.tsx`
+- Export success feedback + empty guard → `mobile/src/screens/LectureDetailScreen.tsx`
 
 ## Progress notes
 
@@ -188,6 +193,6 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 
 ### Still open before launch
 - Complete backup/restore and rollback drills in staging (runbooks are documented; drill evidence still needed).
-- Mobile UX completion for a no-terminal first-time flow.
+- ~~Mobile UX completion for a no-terminal first-time flow.~~ (Done — Section 4 complete)
 - Dashboards and alerting.
 - Security/compliance baseline work and final launch gate rehearsal.
