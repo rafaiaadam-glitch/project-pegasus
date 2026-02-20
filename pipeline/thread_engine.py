@@ -180,17 +180,28 @@ def _build_system_prompt(
     base_prompt = """\
 You are the Thread Engine for Pegasus Lecture Copilot.
 
-Your job is to analyse a university lecture transcript and extract focused
-keywords and key terms that should be tracked across lectures in this course.
+Your job is to analyse a university lecture transcript and extract precise,
+exam-worthy keywords and key terms that a student would need to know.
 
-Each keyword must be tagged with a DICE FACE that describes what kind of
-knowledge it represents:
-  RED    = How (methods, processes, techniques, procedures)
-  ORANGE = What (definitions, core concepts, subject matter)
-  YELLOW = When (dates, periods, temporal context, sequences)
-  GREEN  = Where (locations, institutions, geographic context)
-  BLUE   = Who (people, authors, researchers, schools of thought)
-  PURPLE = Why (reasons, motivations, causes, justifications)
+DICE FACE TAGGING — every keyword must be tagged with exactly one face:
+  RED    = How (methods, processes, techniques, algorithms, procedures)
+  ORANGE = What (specific terms, named concepts, definitions, formulas)
+  YELLOW = When (dates, eras, periods, temporal sequences, milestones)
+  GREEN  = Where (places, institutions, labs, countries, regions)
+  BLUE   = Who (named people, research groups, schools of thought)
+  PURPLE = Why (causal explanations, motivations, design rationales)
+
+GRANULARITY — pick the most specific term the transcript supports:
+  GOOD: "Gradient Descent", "Backpropagation", "ReLU Activation"
+  BAD:  "Common Algorithms", "Learning Methods", "Key Concepts"
+  GOOD: "Noam Chomsky", "MIT Linguistics Lab", "1957"
+  BAD:  "Famous Linguists", "Research Institutions", "Historical Context"
+  GOOD: "Cross-Entropy Loss", "Bayes' Theorem", "P-value"
+  BAD:  "Math Formulas", "Statistical Methods", "Loss Functions"
+
+If the transcript mentions "supervised learning includes decision trees,
+SVMs, and random forests", extract "Decision Tree", "SVM", "Random Forest"
+as separate ORANGE keywords — not one umbrella "Supervised Learning" thread.
 
 You will be given:
 1. COURSE CONTEXT (if available): syllabus and notes uploaded by the student
@@ -242,39 +253,40 @@ Return STRICT JSON only — no markdown, no explanation.
 
 Return an object with two keys:
 
-"new_concepts": array of objects, one per brand-new keyword not in the existing
-threads list. Each object:
+"new_concepts": array of objects (target 8–20 per lecture), one per brand-new
+keyword not in the existing threads list. Each object:
   {
-    "title": "<keyword or key term, title-cased, 1-4 words, specific>",
+    "title": "<specific term, title-cased, 1–4 words>",
     "face": "<RED|ORANGE|YELLOW|GREEN|BLUE|PURPLE>",
-    "summary": "<one sentence: what this keyword means in context>",
-    "evidence": "<direct quote or close paraphrase from the transcript, max 160 chars>",
+    "summary": "<one sentence: what this term means in the lecture's context>",
+    "evidence": "<verbatim quote from the transcript that mentions this term, max 160 chars>",
     "complexity_level": <integer 1–5, 1=introductory>,
     "status": "<foundational|advanced>"
   }
 
-"concept_updates": array of objects, one per existing keyword that appears in
-this lecture. Each object:
+"concept_updates": array of objects, one per existing keyword that reappears in
+this lecture with new information. Each object:
   {
     "title": "<must exactly match a title from existing_threads>",
     "change_type": "<refinement|contradiction|complexity>",
-    "summary": "<one sentence describing what changed>",
-    "evidence": "<direct quote or close paraphrase from the transcript, max 160 chars>",
+    "summary": "<one sentence describing what new information appeared>",
+    "evidence": "<verbatim quote from the transcript, max 160 chars>",
     "new_complexity_level": <integer 1–5, or null if unchanged>
   }
 
 Rules:
-- Only return keywords that genuinely appear in the transcript.
-- Prefer specific, focused keywords (e.g. "Dopamine Receptor" not "Brain Chemistry").
-- Each new keyword MUST have a "face" field set to one of: RED, ORANGE, YELLOW, GREEN, BLUE, PURPLE.
-- "contradiction" means the lecture presents a conflicting claim to what was
-  previously summarised for that thread.
-- "complexity" means the keyword is being treated at a significantly deeper
-  level than before (increase new_complexity_level accordingly).
-- "refinement" means the keyword is revisited with more detail or nuance.
-- Return an empty array if there are no new keywords or no updates.
-- Keep keyword titles concise (1–4 words).
-- Do NOT hallucinate content not present in the transcript.
+- ONLY extract keywords that are explicitly mentioned in the transcript.
+- Evidence MUST be a direct quote — not a paraphrase. Copy the words from the transcript.
+- Target 8–20 new keywords per lecture. Fewer is fine if the lecture is short or narrow.
+- Each keyword MUST have a "face" field: RED, ORANGE, YELLOW, GREEN, BLUE, or PURPLE.
+- REJECT vague umbrella terms. If the transcript says "methods include X, Y, Z",
+  extract X, Y, Z separately — not "Methods" or "Common Techniques".
+- A keyword title must be a noun phrase a student could look up or put on a flashcard.
+- "contradiction" = the lecture conflicts with a previous summary for that thread.
+- "complexity" = significantly deeper treatment (raise new_complexity_level).
+- "refinement" = revisited with more detail or nuance.
+- Return empty arrays if nothing qualifies — do not pad with filler.
+- Do NOT hallucinate terms or quotes not present in the transcript.
 """
 
     if generate_artifacts:
