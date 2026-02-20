@@ -832,7 +832,7 @@ def fetch_thread_metrics_summary(conn, course_id: str | None = None):
                 AVG(api_response_time_ms) as avg_response_time,
                 SUM(CASE WHEN success = true THEN 1 ELSE 0 END) as successful_detections,
                 COUNT(DISTINCT detection_method) as methods_used,
-                AVG(CASE WHEN detection_method = 'gemini' THEN quality_score ELSE NULL END) as gemini_avg_quality,
+                AVG(CASE WHEN detection_method = 'openai' THEN quality_score ELSE NULL END) as openai_avg_quality,
                 AVG(CASE WHEN detection_method = 'fallback' THEN quality_score ELSE NULL END) as fallback_avg_quality
             FROM thread_metrics
             {where_clause}
@@ -852,7 +852,7 @@ def fetch_thread_metrics_summary(conn, course_id: str | None = None):
         "avgResponseTimeMs": float(row["avg_response_time"]) if row["avg_response_time"] else 0,
         "successfulDetections": row["successful_detections"],
         "methodsUsed": row["methods_used"],
-        "geminiAvgQuality": float(row["gemini_avg_quality"]) if row["gemini_avg_quality"] else None,
+        "openaiAvgQuality": float(row["openai_avg_quality"]) if row["openai_avg_quality"] else None,
         "fallbackAvgQuality": float(row["fallback_avg_quality"]) if row["fallback_avg_quality"] else None,
         "successRate": round((row["successful_detections"] / row["total_detections"] * 100) if row["total_detections"] > 0 else 0, 1),
     }

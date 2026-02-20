@@ -22,7 +22,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-import urllib.parse
 import urllib.request
 
 
@@ -418,136 +417,6 @@ def _call_openai(
 
 
 
-def _call_gemini(
-    transcript: str,
-    existing_threads: List[Dict[str, Any]],
-    model: str,
-    timeout: int = 90,
-    course_context: Optional[Dict[str, str]] = None,
-    preset_config: Optional[Dict[str, Any]] = None,
-    generate_artifacts: bool = False,
-    preset_id: str = "",
-) -> Dict[str, Any]:
-    """Call Gemini with retry logic and return parsed JSON response."""
-    from pipeline.retry_utils import NonRetryableError, retry_config_from_env, with_retry
-
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY or GOOGLE_API_KEY is not set.")
-
-    existing_summary = [{"title": t["title"], "summary": t["summary"]} for t in existing_threads]
-
-    # Build user content with course context if available
-    content_parts = []
-
-    # Add course context (syllabus gets priority)
-    if course_context:
-        if course_context.get("syllabus"):
-            content_parts.append(f"=== COURSE SYLLABUS (use as primary reference) ===\n{course_context['syllabus']}\n")
-        if course_context.get("notes"):
-            notes = course_context['notes']
-            if len(notes) > 5000:
-                notes = notes[:5000] + "\n[... truncated for length ...]"
-            content_parts.append(f"=== COURSE NOTES (supporting context) ===\n{notes}\n")
-
-    content_parts.append(f"existing_threads: {json.dumps(existing_summary)}\n")
-    content_parts.append(f"transcript:\n{transcript}")
-
-    user_content = "\n".join(content_parts)
-
-    system_prompt = _build_system_prompt(
-        preset_config,
-        generate_artifacts=generate_artifacts,
-        preset_id=preset_id,
-    )
-
-    endpoint = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{urllib.parse.quote(model)}:generateContent?key={urllib.parse.quote(api_key)}"
-    )
-
-    payload = {
-        "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"role": "user", "parts": [{"text": user_content}]}],
-        "generationConfig": {"responseMimeType": "application/json"},
-    }
-
-    def make_request() -> Dict[str, Any]:
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = json.loads(resp.read().decode("utf-8"))
-
-        for candidate in raw.get("candidates", []):
-            content = candidate.get("content", {})
-            for part in content.get("parts", []):
-                text = part.get("text")
-                if isinstance(text, str) and text.strip():
-                    return json.loads(text)
-
-        raise ValueError("Gemini response did not contain extractable JSON text.")
-
-    config = retry_config_from_env()
-
-    try:
-        return with_retry(make_request, config=config, operation_name="Gemini thread detection")
-    except NonRetryableError as e:
-        raise RuntimeError(f"Gemini thread detection failed: {e}") from e
-def _call_vertex_sdk(
-    transcript: str,
-    existing_threads: List[Dict[str, Any]],
-    model: str,
-    course_context: Optional[Dict[str, str]] = None,
-    preset_config: Optional[Dict[str, Any]] = None,
-    generate_artifacts: bool = False,
-    preset_id: str = "",
-) -> Dict[str, Any]:
-    """Call Vertex AI using the SDK with service account credentials (no API key needed)."""
-    import vertexai
-    from vertexai.generative_models import GenerativeModel, GenerationConfig
-
-    project_id = os.getenv("GCP_PROJECT_ID", "delta-student-486911-n5")
-    region = os.getenv("PLC_LLM_REGION", os.getenv("GCP_REGION", "us-central1"))
-    vertexai.init(project=project_id, location=region)
-
-    existing_summary = [{"title": t["title"], "summary": t["summary"]} for t in existing_threads]
-
-    content_parts = []
-    if course_context:
-        if course_context.get("syllabus"):
-            content_parts.append(f"=== COURSE SYLLABUS ===\n{course_context['syllabus']}\n")
-        if course_context.get("notes"):
-            notes = course_context["notes"][:5000]
-            content_parts.append(f"=== COURSE NOTES ===\n{notes}\n")
-
-    content_parts.append(f"existing_threads: {json.dumps(existing_summary)}")
-    content_parts.append(f"transcript:\n{transcript}")
-    user_content = "\n".join(content_parts)
-
-    system_prompt = _build_system_prompt(
-        preset_config,
-        generate_artifacts=generate_artifacts,
-        preset_id=preset_id,
-    )
-
-    generative_model = GenerativeModel(model)
-    print(f"[ThreadEngine] Calling Vertex AI SDK model={model} region={region} artifacts={generate_artifacts}")
-
-    response = generative_model.generate_content(
-        [system_prompt, user_content],
-        generation_config=GenerationConfig(
-            response_mime_type="application/json",
-            temperature=1.0,
-            max_output_tokens=8192,
-        ),
-    )
-    return json.loads(response.text)
-
-
 def get_last_artifacts() -> Optional[Dict[str, Dict[str, Any]]]:
     """Get the artifacts from the last thread detection run."""
     return _last_artifacts
@@ -838,14 +707,8 @@ def generate_thread_records(
     provider_key = (llm_provider or "openai").strip().lower()
     model_name = llm_model or openai_model
     has_openai_key = bool(os.getenv("OPENAI_API_KEY"))
-    has_gemini_key = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-    # On Cloud Run, Vertex AI SDK works via service account without API key
-    can_use_vertex_sdk = bool(os.getenv("GCP_PROJECT_ID"))
 
-    should_try_llm = (
-        (provider_key == "openai" and has_openai_key)
-        or (provider_key in {"gemini", "vertex"} and (has_gemini_key or can_use_vertex_sdk))
-    )
+    should_try_llm = provider_key == "openai" and has_openai_key
 
     # Load preset configuration if provided
     preset_config = None
@@ -882,34 +745,14 @@ def generate_thread_records(
     if should_try_llm:
         try:
             start_time = time.time()
-            if provider_key == "openai":
-                llm_result = _call_openai(
-                    transcript, existing_list, model_name,
-                    course_context=course_context,
-                    preset_config=preset_config,
-                    generate_artifacts=generate_artifacts,
-                    preset_id=preset_id or "",
-                )
-                detection_method = "openai"
-            elif has_gemini_key:
-                llm_result = _call_gemini(
-                    transcript, existing_list, model_name,
-                    course_context=course_context,
-                    preset_config=preset_config,
-                    generate_artifacts=generate_artifacts,
-                    preset_id=preset_id or "",
-                )
-                detection_method = "gemini"
-            else:
-                # Use Vertex AI SDK (service account auth on Cloud Run)
-                llm_result = _call_vertex_sdk(
-                    transcript, existing_list, model_name,
-                    course_context=course_context,
-                    preset_config=preset_config,
-                    generate_artifacts=generate_artifacts,
-                    preset_id=preset_id or "",
-                )
-                detection_method = "vertex_sdk"
+            llm_result = _call_openai(
+                transcript, existing_list, model_name,
+                course_context=course_context,
+                preset_config=preset_config,
+                generate_artifacts=generate_artifacts,
+                preset_id=preset_id or "",
+            )
+            detection_method = "openai"
             api_response_time_ms = (time.time() - start_time) * 1000
 
             threads, occurrences, updates = _process_llm_output(

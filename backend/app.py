@@ -2199,7 +2199,7 @@ class SimpleChatRequest(BaseModel):
 
 @app.post("/chat")
 def chat_endpoint(payload: SimpleChatRequest):
-    """Simple chat endpoint using Vertex AI Gemini."""
+    """Chat endpoint using OpenAI."""
     from backend.chat import get_chat_response
 
     context_str = ""
