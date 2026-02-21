@@ -52,54 +52,74 @@ fi
 echo ""
 echo "--- [2/5] Log-based metrics ---"
 
-create_log_metric() {
+create_log_metric_from_config() {
   local name="$1"
-  local description="$2"
-  local filter="$3"
-  local label_extractors="$4"  # JSON string or empty
+  local config_json="$2"
 
-  EXISTING=$(gcloud logging metrics describe "$name" --project="$PROJECT" 2>/dev/null && echo "yes" || echo "no")
-  if [[ "$EXISTING" == "yes" ]]; then
+  if gcloud logging metrics describe "$name" --project="$PROJECT" > /dev/null 2>&1; then
     echo "  Metric $name already exists — skipping"
     return
   fi
 
-  local cmd=(gcloud logging metrics create "$name"
-    --project="$PROJECT"
-    --description="$description"
-    --log-filter="$filter")
-
-  if [[ -n "$label_extractors" ]]; then
-    cmd+=(--label-extractors="$label_extractors")
-  fi
-
-  "${cmd[@]}" 2>/dev/null
+  local tmpfile
+  tmpfile=$(mktemp)
+  echo "$config_json" > "$tmpfile"
+  gcloud logging metrics create "$name" \
+    --project="$PROJECT" \
+    --config-from-file="$tmpfile"
+  rm -f "$tmpfile"
   echo "  Created metric: $name"
 }
 
-create_log_metric \
-  "pegasus_job_failure_count" \
-  "Count of failed Pegasus jobs by type" \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="pegasus-api" AND jsonPayload.message="job.run.failed"' \
-  'job_type=EXTRACT(jsonPayload.job_type)'
+create_log_metric_from_config "pegasus_job_failure_count" '{
+  "description": "Count of failed Pegasus jobs by type",
+  "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"pegasus-api\" AND jsonPayload.message=\"job.run.failed\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      { "key": "job_type", "valueType": "STRING", "description": "Type of job (transcription, generation, export)" }
+    ]
+  },
+  "labelExtractors": {
+    "job_type": "EXTRACT(jsonPayload.job_type)"
+  }
+}'
 
-create_log_metric \
-  "pegasus_job_completion_count" \
-  "Count of completed Pegasus jobs by type" \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="pegasus-api" AND jsonPayload.message="job.run.completed"' \
-  'job_type=EXTRACT(jsonPayload.job_type)'
+create_log_metric_from_config "pegasus_job_completion_count" '{
+  "description": "Count of completed Pegasus jobs by type",
+  "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"pegasus-api\" AND jsonPayload.message=\"job.run.completed\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      { "key": "job_type", "valueType": "STRING", "description": "Type of job (transcription, generation, export)" }
+    ]
+  },
+  "labelExtractors": {
+    "job_type": "EXTRACT(jsonPayload.job_type)"
+  }
+}'
 
-create_log_metric \
-  "pegasus_generation_failure_count" \
-  "Count of failed generation jobs" \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="pegasus-api" AND jsonPayload.message="job.run.failed" AND jsonPayload.job_type="generation"' \
-  ''
+create_log_metric_from_config "pegasus_generation_failure_count" '{
+  "description": "Count of failed generation jobs",
+  "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"pegasus-api\" AND jsonPayload.message=\"job.run.failed\" AND jsonPayload.job_type=\"generation\""
+}'
 
-create_log_metric \
-  "pegasus_job_start_count" \
-  "Count of started Pegasus jobs by type" \
-  'resource.type="cloud_run_revision" AND resource.labels.service_name="pegasus-api" AND jsonPayload.message="job.run.start"' \
-  'job_type=EXTRACT(jsonPayload.job_type)'
+create_log_metric_from_config "pegasus_job_start_count" '{
+  "description": "Count of started Pegasus jobs by type",
+  "filter": "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"pegasus-api\" AND jsonPayload.message=\"job.run.start\"",
+  "metricDescriptor": {
+    "metricKind": "DELTA",
+    "valueType": "INT64",
+    "labels": [
+      { "key": "job_type", "valueType": "STRING", "description": "Type of job (transcription, generation, export)" }
+    ]
+  },
+  "labelExtractors": {
+    "job_type": "EXTRACT(jsonPayload.job_type)"
+  }
+}'
 
 # -------------------------------------------------------------------------
 # 3. Uptime check on /health
@@ -108,6 +128,7 @@ echo ""
 echo "--- [3/5] Uptime check ---"
 
 UPTIME_DISPLAY="Pegasus API Health"
+SERVICE_HOST="${SERVICE}-988514135894.${REGION}.run.app"
 EXISTING_UPTIME=$(gcloud monitoring uptime list-configs \
   --project="$PROJECT" \
   --filter="displayName=\"$UPTIME_DISPLAY\"" \
@@ -117,16 +138,15 @@ if [[ -n "$EXISTING_UPTIME" ]]; then
   echo "  Uptime check already exists: $EXISTING_UPTIME"
   UPTIME_ID="$EXISTING_UPTIME"
 else
-  UPTIME_ID=$(gcloud monitoring uptime create \
+  UPTIME_ID=$(gcloud monitoring uptime create "$UPTIME_DISPLAY" \
     --project="$PROJECT" \
-    --display-name="$UPTIME_DISPLAY" \
-    --resource-type="cloud-run-revision" \
-    --resource-labels="service_name=$SERVICE,project_id=$PROJECT,location=$REGION" \
-    --check-request-path="/health" \
-    --protocol="HTTPS" \
+    --resource-type="uptime-url" \
+    --resource-labels="host=$SERVICE_HOST,project_id=$PROJECT" \
+    --path="/health" \
+    --protocol="https" \
     --period="5" \
-    --regions="usa,europe,asia-pacific" \
-    --format="value(name)" 2>/dev/null)
+    --regions="usa-iowa,europe,asia-pacific" \
+    --format="value(name)")
   echo "  Created uptime check: $UPTIME_ID"
 fi
 
@@ -194,17 +214,26 @@ create_alert_if_missing "Pegasus API Down" "$(cat <<ALERT_JSON
 ALERT_JSON
 )"
 
-# 4b. Failure Rate Spike (>10%)
+# 4b. Failure Rate Spike (>10%) — fires when failure count rate exceeds threshold
 create_alert_if_missing "Pegasus Failure Rate Spike (>10%)" "$(cat <<ALERT_JSON
 {
   "displayName": "Pegasus Failure Rate Spike (>10%)",
   "combiner": "OR",
   "conditions": [
     {
-      "displayName": "Job failure rate > 10%",
-      "conditionMonitoringQueryLanguage": {
-        "query": "fetch cloud_run_revision\n| {\n    metric 'logging.googleapis.com/user/pegasus_job_failure_count'\n    | align rate(10m)\n    | group_by [], [failure_rate: aggregate(val())]\n  ;\n    metric 'logging.googleapis.com/user/pegasus_job_completion_count'\n    | align rate(10m)\n    | group_by [], [completion_rate: aggregate(val())]\n  }\n| join\n| value [ratio: val(0) / (val(0) + val(1))]\n| condition ratio > 0.10",
-        "duration": "600s"
+      "displayName": "Job failure rate elevated",
+      "conditionThreshold": {
+        "filter": "resource.type=\"cloud_run_revision\" AND metric.type=\"logging.googleapis.com/user/pegasus_job_failure_count\"",
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 0.10,
+        "duration": "600s",
+        "aggregations": [
+          {
+            "alignmentPeriod": "600s",
+            "perSeriesAligner": "ALIGN_RATE",
+            "crossSeriesReducer": "REDUCE_SUM"
+          }
+        ]
       }
     }
   ],
@@ -226,8 +255,8 @@ create_alert_if_missing "Pegasus Generation Failure Burst" "$(cat <<ALERT_JSON
       "displayName": "Generation failures >= 5 in 10m",
       "conditionThreshold": {
         "filter": "resource.type=\"cloud_run_revision\" AND metric.type=\"logging.googleapis.com/user/pegasus_generation_failure_count\"",
-        "comparison": "COMPARISON_GE",
-        "thresholdValue": 5,
+        "comparison": "COMPARISON_GT",
+        "thresholdValue": 4,
         "duration": "600s",
         "aggregations": [
           {
