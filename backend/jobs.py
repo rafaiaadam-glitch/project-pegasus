@@ -478,6 +478,94 @@ def _transcribe_with_openai_api(audio_path: Path, model: str = "whisper-1") -> D
             compressed.unlink(missing_ok=True)
 
 
+def _transcribe_with_deepgram(audio_path: Path, model: str = "nova-3") -> Dict[str, Any]:
+    """Transcribe audio using Deepgram REST API."""
+    import httpx
+
+    api_key = os.getenv("DEEPGRAM_API_KEY")
+    if not api_key:
+        raise RuntimeError("DEEPGRAM_API_KEY is not set.")
+
+    suffix = audio_path.suffix.lower()
+    content_type = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".flac": "audio/flac",
+        ".m4a": "audio/mp4",
+        ".ogg": "audio/ogg",
+        ".webm": "audio/webm",
+    }.get(suffix, "audio/mpeg")
+
+    file_size = audio_path.stat().st_size
+    LOGGER.info("Deepgram: sending %s (%d bytes, %s) model=%s",
+                audio_path.name, file_size, content_type, model)
+
+    with open(audio_path, "rb") as f:
+        audio_data = f.read()
+
+    response = httpx.post(
+        "https://api.deepgram.com/v1/listen",
+        params={
+            "model": model,
+            "smart_format": "true",
+            "punctuate": "true",
+            "language": "en",
+            "utterances": "true",
+        },
+        headers={
+            "Authorization": f"Token {api_key}",
+            "Content-Type": content_type,
+        },
+        content=audio_data,
+        timeout=600.0,
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    channel = data["results"]["channels"][0]["alternatives"][0]
+    text = channel.get("transcript", "").strip()
+
+    segments = []
+    for utt in data["results"].get("utterances", []):
+        segments.append({
+            "startSec": float(utt.get("start", 0)),
+            "endSec": float(utt.get("end", 0)),
+            "text": utt.get("transcript", "").strip(),
+        })
+
+    # Fallback: build segments from words if no utterances
+    if not segments and channel.get("words"):
+        current_seg_words = []
+        seg_start = 0.0
+        for w in channel["words"]:
+            if not current_seg_words:
+                seg_start = float(w.get("start", 0))
+            current_seg_words.append(w.get("word", ""))
+            if w.get("punctuated_word", "").endswith((".", "?", "!")):
+                segments.append({
+                    "startSec": seg_start,
+                    "endSec": float(w.get("end", 0)),
+                    "text": " ".join(current_seg_words).strip(),
+                })
+                current_seg_words = []
+        if current_seg_words:
+            segments.append({
+                "startSec": seg_start,
+                "endSec": float(channel["words"][-1].get("end", 0)),
+                "text": " ".join(current_seg_words).strip(),
+            })
+
+    detected_lang = data.get("metadata", {}).get("language", "en")
+    LOGGER.info("Deepgram: transcribed %d words, %d segments", len(text.split()), len(segments))
+
+    return {
+        "language": detected_lang,
+        "text": text,
+        "segments": segments,
+        "engine": {"provider": "deepgram", "model": model},
+    }
+
+
 def _extract_pdf_text(pdf_path: Path) -> Dict[str, Any]:
     """
     Extract text from a PDF file and return in transcript-compatible format.
@@ -579,8 +667,16 @@ def run_transcription_job(
             provider_key = (provider or "openai").strip().lower()
             if provider_key in ("openai", "whisper"):
                 transcription = _transcribe_with_openai_api(source_path, model)
+            elif provider_key == "deepgram":
+                transcription = _transcribe_with_deepgram(source_path, model)
+            elif provider_key in ("google", "google_speech"):
+                transcription = _transcribe_with_google_speech(
+                    source_path,
+                    language_code=language_code,
+                    gcs_uri=audio_path,
+                )
             else:
-                raise ValueError(f"Unsupported transcription provider: {provider}. Use 'openai'.")
+                raise ValueError(f"Unsupported transcription provider: {provider}. Use 'openai', 'deepgram', or 'google'.")
 
         transcript = {
             "lectureId": lecture_id,

@@ -1054,7 +1054,7 @@ async def ingest_lecture(
     transcription_job: Optional[dict] = None
     if auto_transcribe:
         provider = transcribe_provider or os.getenv("PLC_INGEST_TRANSCRIBE_PROVIDER", "openai")
-        model = transcribe_model or os.getenv("PLC_LLM_MODEL", "whisper-1")
+        model = transcribe_model or os.getenv("PLC_INGEST_TRANSCRIBE_MODEL", "whisper-1")
         
         # Use Google STT for transcription
         from backend.jobs import run_transcription_job

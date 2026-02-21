@@ -13,3 +13,4 @@ openai==2.21.0
 google-genai==1.64.0
 PyMuPDF==1.27.1
 python-docx==1.2.0
+httpx==0.28.1

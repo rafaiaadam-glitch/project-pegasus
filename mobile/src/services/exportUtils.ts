@@ -57,14 +57,26 @@ export const exportSummaryAsMarkdown = (summary: any, options: ExportOptions): s
 export const exportOutlineAsMarkdown = (outline: any, options: ExportOptions): string => {
   let markdown = `# ${options.lectureTitle} - Outline\n\n`;
 
-  if (outline.sections) {
-    outline.sections.forEach((section: any) => {
-      const indent = '  '.repeat((section.level || 1) - 1);
-      markdown += `${indent}- ${section.title}\n`;
-    });
-  }
+  const nodes = outline.outline || outline.sections || [];
 
-  markdown += `\n---\n*Generated with Pegasus Lecture Copilot*\n`;
+  const renderNode = (node: any, depth: number) => {
+    const indent = '  '.repeat(depth);
+    const prefix = depth === 0 ? '##' : '-';
+    markdown += depth === 0 ? `${prefix} ${node.title}\n` : `${indent}${prefix} ${node.title}\n`;
+    if (node.points) {
+      node.points.forEach((point: string) => {
+        markdown += `${indent}  - ${point}\n`;
+      });
+    }
+    if (node.children) {
+      node.children.forEach((child: any) => renderNode(child, depth + 1));
+    }
+    if (depth === 0) markdown += '\n';
+  };
+
+  nodes.forEach((node: any) => renderNode(node, 0));
+
+  markdown += `---\n*Generated with Pegasus Lecture Copilot*\n`;
 
   return markdown;
 };

@@ -370,7 +370,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
               <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>OUTLINE</Chip>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Lecture Outline</Text>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
-                {arts.outline.sections?.length || 0} sections
+                {arts.outline.outline?.length || arts.outline.sections?.length || 0} sections
               </Text>
               <Text variant="labelLarge" style={{ color: theme.colors.primary }}>
                 View Outline →

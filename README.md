@@ -262,11 +262,14 @@ Early milestones:
 **Backend API:** https://pegasus-api-988514135894.europe-west1.run.app
 
 - **Platform:** Google Cloud Run (europe-west1)
-- **LLM Provider:** OpenAI (`gpt-4o-mini` via Responses API) — single call generates threads + all artifacts
-- **Transcription:** OpenAI Whisper API (`whisper-1`), auto-compresses files >25 MB
+- **LLM Provider:** Google Gemini 2.5 Flash (via Vertex AI) — single call generates threads + all artifacts
+- **Chat:** Google Gemini 2.5 Flash (via Vertex AI)
+- **Transcription:** Deepgram Nova-3 — fast, accurate, no file size limit
 - **Database:** PostgreSQL on Cloud SQL
 - **Storage:** Google Cloud Storage
 - **Container Registry:** Artifact Registry
+
+Providers are runtime-configurable via environment variables (`PLC_LLM_PROVIDER`, `PLC_INGEST_TRANSCRIBE_PROVIDER`). OpenAI (GPT-4o-mini, Whisper) and Google Cloud Speech-to-Text remain available as fallbacks.
 
 All 6 lecture style presets are live and operational.
 
@@ -304,13 +307,15 @@ When generating artifacts for a new lecture, the Thread Engine loads all existin
 - Simple worker (BullMQ/Redis) **or** serverless background jobs
 
 **Transcription**
-- Google Speech-to-Text (default) with `latest_long` model for high accuracy
-- Automatic M4A to MP3 conversion via FFmpeg (mobile recordings)
-- Whisper available for local/dev or explicit fallback
+- Deepgram Nova-3 (default) — ~6s for a 27-min lecture on Cloud Run
+- OpenAI Whisper API available as fallback
+- Google Cloud Speech-to-Text (V1) available as fallback
+- Automatic compression via FFmpeg for Whisper's 25 MB limit
 
 **LLM**
-- Gemini (Vertex AI / Google Generative Language API) as default
-- OpenAI available for local/dev or explicit fallback
+- Google Gemini 2.5 Flash (Vertex AI) as default — generates 3x more content than GPT-4o-mini
+- OpenAI (GPT-4o-mini) available as fallback
+- Provider switchable at runtime via `PLC_LLM_PROVIDER` env var
 
 ---
 

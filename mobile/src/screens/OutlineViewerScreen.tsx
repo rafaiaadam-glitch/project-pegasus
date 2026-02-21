@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { ScrollView, View } from 'react-native';
 import { List, Text } from 'react-native-paper';
 import { useTheme } from '../theme';
@@ -7,43 +7,68 @@ interface Props {
   route: any;
 }
 
-interface OutlineSection {
+interface OutlineNode {
   title: string;
-  level?: number;
-  children?: OutlineSection[];
-  content?: string;
+  points?: string[];
+  children?: OutlineNode[];
 }
 
-function OutlineItem({ section }: { section: OutlineSection }) {
+function OutlineItem({ node, depth = 0 }: { node: OutlineNode; depth?: number }) {
   const { theme } = useTheme();
+  const hasChildren = node.children && node.children.length > 0;
+  const hasPoints = node.points && node.points.length > 0;
 
-  if (section.children && section.children.length > 0) {
+  if (hasChildren) {
     return (
       <List.Accordion
-        title={section.title}
+        title={node.title}
         titleStyle={{ fontWeight: '600' }}
-        style={{ paddingLeft: ((section.level || 1) - 1) * 16 }}
+        style={{ paddingLeft: depth * 16 }}
       >
-        {section.children.map((child, index) => (
-          <OutlineItem key={index} section={child} />
+        {hasPoints && node.points!.map((point, i) => (
+          <List.Item
+            key={`p-${i}`}
+            title={point}
+            titleNumberOfLines={5}
+            style={{ paddingLeft: (depth + 1) * 16 }}
+            left={(props) => (
+              <List.Icon {...props} icon="circle-small" color={theme.colors.primary} />
+            )}
+          />
+        ))}
+        {node.children!.map((child, i) => (
+          <OutlineItem key={`c-${i}`} node={child} depth={depth + 1} />
         ))}
       </List.Accordion>
     );
   }
 
   return (
-    <List.Item
-      title={section.title}
-      description={section.content}
-      style={{ paddingLeft: ((section.level || 1) - 1) * 16 }}
-      left={(props) => (
-        <List.Icon
-          {...props}
-          icon="circle-small"
-          color={theme.colors.primary}
+    <View style={{ paddingLeft: depth * 16 }}>
+      <List.Item
+        title={node.title}
+        titleStyle={{ fontWeight: depth === 0 ? '600' : 'normal' }}
+        titleNumberOfLines={3}
+        left={(props) => (
+          <List.Icon
+            {...props}
+            icon={depth === 0 ? 'file-document-outline' : 'circle-small'}
+            color={theme.colors.primary}
+          />
+        )}
+      />
+      {hasPoints && node.points!.map((point, i) => (
+        <List.Item
+          key={`p-${i}`}
+          title={point}
+          titleNumberOfLines={5}
+          style={{ paddingLeft: (depth + 1) * 16 }}
+          left={(props) => (
+            <List.Icon {...props} icon="circle-small" color={theme.colors.onSurfaceVariant} />
+          )}
         />
-      )}
-    />
+      ))}
+    </View>
   );
 }
 
@@ -51,7 +76,10 @@ export default function OutlineViewerScreen({ route }: Props) {
   const { theme } = useTheme();
   const { outline } = route.params;
 
-  if (!outline || !outline.sections || outline.sections.length === 0) {
+  // Backend returns { outline: [...nodes] } — the array lives under the "outline" key
+  const nodes: OutlineNode[] = outline?.outline || outline?.sections || [];
+
+  if (nodes.length === 0) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
         <Text variant="bodyLarge" style={{ color: theme.colors.onSurfaceVariant }}>
@@ -67,8 +95,8 @@ export default function OutlineViewerScreen({ route }: Props) {
       contentContainerStyle={{ paddingBottom: 40 }}
     >
       <List.Section>
-        {outline.sections.map((section: OutlineSection, index: number) => (
-          <OutlineItem key={index} section={section} />
+        {nodes.map((node: OutlineNode, index: number) => (
+          <OutlineItem key={index} node={node} />
         ))}
       </List.Section>
     </ScrollView>

@@ -500,6 +500,107 @@ def _call_openai(
         raise RuntimeError(f"OpenAI thread detection failed: {e}") from e
 
 
+def _call_gemini(
+    transcript: str,
+    existing_threads: List[Dict[str, Any]],
+    model: str,
+    timeout: int = 300,
+    course_context: Optional[Dict[str, str]] = None,
+    preset_config: Optional[Dict[str, Any]] = None,
+    generate_artifacts: bool = False,
+    preset_id: str = "",
+    focus_face: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Call Gemini via Vertex AI with retry logic and return parsed JSON response."""
+    from google import genai
+    from google.genai import types
+    from pipeline.retry_utils import (
+        with_retry,
+        retry_config_from_env,
+        NonRetryableError,
+    )
+
+    existing_summary = [
+        {
+            "title": t["title"],
+            "summary": t["summary"],
+            "lectures": t.get("lectureRefs", t.get("lecture_refs", [])),
+        }
+        for t in existing_threads
+    ]
+
+    # Build user content with course context
+    content_parts = []
+    if course_context:
+        if course_context.get("syllabus"):
+            content_parts.append(f"=== COURSE SYLLABUS ===\n{course_context['syllabus']}\n")
+        if course_context.get("notes"):
+            notes = course_context["notes"][:5000]
+            content_parts.append(f"=== COURSE NOTES ===\n{notes}\n")
+
+    content_parts.append(f"existing_threads: {json.dumps(existing_summary)}")
+    content_parts.append(f"transcript:\n{transcript}")
+    user_content = "\n".join(content_parts)
+
+    # Build preset-aware system prompt with artifact generation support
+    system_prompt = _build_system_prompt(
+        preset_config,
+        generate_artifacts=generate_artifacts,
+        preset_id=preset_id,
+        focus_face=focus_face,
+    )
+
+    print(f"[ThreadEngine] Calling Gemini model={model} artifacts={generate_artifacts}")
+
+    client = genai.Client(
+        vertexai=True,
+        project=os.getenv("GOOGLE_CLOUD_PROJECT", "delta-student-486911-n5"),
+        location=os.getenv("PLC_GENAI_REGION", "us-central1"),
+    )
+
+    def make_request() -> Dict[str, Any]:
+        try:
+            config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type="application/json",
+            )
+
+            response = client.models.generate_content(
+                model=model,
+                contents=[types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text=user_content)],
+                )],
+                config=config,
+            )
+
+            response_text = response.text or ""
+            if not response_text.strip():
+                raise NonRetryableError("Gemini returned empty response")
+
+            try:
+                return json.loads(response_text)
+            except json.JSONDecodeError as je:
+                raise NonRetryableError(
+                    f"Gemini returned non-JSON text: {response_text[:200]}"
+                ) from je
+
+        except NonRetryableError:
+            raise
+        except Exception as e:
+            error_str = str(e)
+            # Treat rate-limit / server errors as retryable by re-raising raw
+            if any(code in error_str for code in ("429", "500", "503", "RESOURCE_EXHAUSTED")):
+                raise
+            raise NonRetryableError(f"Gemini API error: {error_str}") from e
+
+    config = retry_config_from_env()
+
+    try:
+        return with_retry(make_request, config=config,
+                         operation_name="Gemini thread detection")
+    except NonRetryableError as e:
+        raise RuntimeError(f"Gemini thread detection failed: {e}") from e
 
 
 def get_last_artifacts() -> Optional[Dict[str, Dict[str, Any]]]:
@@ -850,8 +951,12 @@ def generate_thread_records(
     provider_key = (llm_provider or "openai").strip().lower()
     model_name = llm_model or openai_model
     has_openai_key = bool(os.getenv("OPENAI_API_KEY"))
+    has_gemini_access = True  # Vertex AI uses ADC, no explicit key needed on Cloud Run
 
-    should_try_llm = provider_key == "openai" and has_openai_key
+    should_try_llm = (
+        (provider_key == "openai" and has_openai_key)
+        or (provider_key in ("gemini", "google") and has_gemini_access)
+    )
 
     # Load preset configuration if provided
     preset_config = None
@@ -888,15 +993,22 @@ def generate_thread_records(
     if should_try_llm:
         try:
             start_time = time.time()
-            llm_result = _call_openai(
-                transcript, existing_list, model_name,
+            llm_call_kwargs = dict(
+                transcript=transcript,
+                existing_threads=existing_list,
+                model=model_name,
                 course_context=course_context,
                 preset_config=preset_config,
                 generate_artifacts=generate_artifacts,
                 preset_id=preset_id or "",
                 focus_face=focus_face,
             )
-            detection_method = "openai"
+            if provider_key in ("gemini", "google"):
+                llm_result = _call_gemini(**llm_call_kwargs)
+                detection_method = "gemini"
+            else:
+                llm_result = _call_openai(**llm_call_kwargs)
+                detection_method = "openai"
             api_response_time_ms = (time.time() - start_time) * 1000
 
             threads, occurrences, updates = _process_llm_output(
