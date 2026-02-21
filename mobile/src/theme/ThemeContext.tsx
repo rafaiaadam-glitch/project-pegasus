@@ -3,11 +3,14 @@ import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CombinedLightTheme, CombinedDarkTheme } from './paperTheme';
 import { MD3Theme } from 'react-native-paper';
+import { ThemeColors } from './colors';
 
 type ThemeMode = 'light' | 'dark' | 'auto';
 
+export type AppTheme = MD3Theme & ThemeColors & { colors: MD3Theme['colors'] & ThemeColors };
+
 interface ThemeContextType {
-  theme: MD3Theme;
+  theme: AppTheme;
   mode: ThemeMode;
   isDark: boolean;
   setThemeMode: (mode: ThemeMode) => void;

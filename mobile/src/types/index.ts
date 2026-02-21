@@ -16,6 +16,8 @@ export interface Lecture {
   source_type?: 'audio' | 'pdf';
   status: 'uploaded' | 'processing' | 'generated' | 'failed';
   duration_sec?: number;
+  audio_url?: string;
+  summary?: string;
   created_at: string;
   updated_at?: string;
 }

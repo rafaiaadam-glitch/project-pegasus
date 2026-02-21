@@ -141,10 +141,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   row: {
-    flexDirection: 'row',
+    flexDirection: 'row' as const,
     gap: 6,
     opacity: 0.4,
-    transition: '0.2s ease',
   },
   rowActive: {
     opacity: 1,

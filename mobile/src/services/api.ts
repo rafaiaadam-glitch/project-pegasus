@@ -217,6 +217,10 @@ class ApiClient {
     return this.request(`/lectures/${lectureId}`);
   }
 
+  async getLectureDetail(lectureId: string): Promise<Lecture> {
+    return this.request(`/lectures/${lectureId}`);
+  }
+
   async getLectureProgress(lectureId: string): Promise<LectureProgress> {
     return this.request(`/lectures/${lectureId}/progress`);
   }
