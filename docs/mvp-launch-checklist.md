@@ -103,7 +103,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 Before launch, all must be true:
 
-- [ ] Critical-path integration tests pass (ingest → transcribe → generate → export)
+- [x] Critical-path integration tests pass (ingest → transcribe → generate → export)
 - [ ] API and worker deploy from main with reproducible config
 - [ ] At least one mobile build (iOS/Android) validated end-to-end against staging
 - [x] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **32**
-- Items remaining: **4**
-- Completion: **89%**
+- Items marked complete: **33**
+- Items remaining: **3**
+- Completion: **92%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -177,6 +177,7 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Health/readiness/liveness probes + Cloud Run config → `backend/app.py` (`/health/live`), `cloudbuild.yaml` (startup + liveness probes, scaling bounds)
 - Staging environment parity checklist → `docs/staging-parity-checklist.md`
 - Release checklist with rollback procedure → `docs/release-checklist.md`
+- Critical-path integration tests (ingest → transcribe → generate → export) → `backend/tests/test_flow.py` (unit integration), `scripts/canary_e2e_flow.py` (live E2E canary), `ops/drills/critical-path-e2e.sh` (drill wrapper)
 - Navigation fix (mic → CourseList flow) → `mobile/src/screens/HomeScreen.tsx`
 - Upload hardening (file validation, connectivity check, cancel) → `mobile/src/screens/RecordLectureScreen.tsx`
 - Lecture detail polish (humanized errors, processing spinner, regenerate, export guards) → `mobile/src/screens/LectureDetailScreen.tsx`
