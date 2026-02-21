@@ -1,0 +1,61 @@
+[2026-02-21 10:15:34] ================================================================
+[2026-02-21 10:15:34] BACKUP/RESTORE DRILL — started at Sat 21 Feb 2026 10:15:34 GMT
+[2026-02-21 10:15:34] Project: delta-student-486911-n5
+[2026-02-21 10:15:34] Instance: pegasus-db-eu
+[2026-02-21 10:15:34] Bucket: delta-student-486911-n5-pegasus-storage-eu
+[2026-02-21 10:15:34] ================================================================
+[2026-02-21 10:15:34] 
+[2026-02-21 10:15:34] STEP 1: Creating on-demand Cloud SQL backup...
+Backing up Cloud SQL instance...
+......done.
+[https://sqladmin.googleapis.com/sql/v1beta4/projects/delta-student-486911-n5/instances/pegasus-db-eu] backed up.
+[2026-02-21 10:16:29] STEP 1: PASS — Backup created successfully.
+[2026-02-21 10:16:29] 
+[2026-02-21 10:16:29] STEP 2: Listing Cloud SQL backups (most recent 5)...
+ID: 1771668935300
+WINDOW_START_TIME: 2026-02-21T10:15:35.300+00:00
+ERROR: -
+STATUS: SUCCESSFUL
+INSTANCE: pegasus-db-eu
+[2026-02-21 10:16:29] STEP 2: PASS — Backup list retrieved.
+[2026-02-21 10:16:29] 
+[2026-02-21 10:16:29] STEP 3: Checking GCS object versioning on gs://delta-student-486911-n5-pegasus-storage-eu...
+
+[2026-02-21 10:16:31] STEP 3: WARN — Object versioning is NOT enabled (got: ).
+[2026-02-21 10:16:31]   Enable with: gcloud storage buckets update gs://delta-student-486911-n5-pegasus-storage-eu --versioning
+[2026-02-21 10:16:31] 
+[2026-02-21 10:16:31] STEP 4: GCS object lifecycle test (write → delete → restore from version)...
+Copying file://- to gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-101534.txt
+  
+
+[2026-02-21 10:16:33]   4a: Test object uploaded to gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-101534.txt
+[2026-02-21 10:16:33]   4b: Listing object versions...
+ERROR: (gcloud.storage.ls) unrecognized arguments: -la 
+
+To search the help text of gcloud commands, run:
+  gcloud help -- SEARCH_TERMS
+Removing objects:
+  
+Removing gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-101534.txt...
+.
+[2026-02-21 10:16:37]   4c: Test object deleted.
+[2026-02-21 10:16:37]   4d: Listing versions after delete (should show non-current version if versioning enabled)...
+ERROR: (gcloud.storage.ls) unrecognized arguments: -la 
+
+To search the help text of gcloud commands, run:
+  gcloud help -- SEARCH_TERMS
+[2026-02-21 10:16:38]   STEP 4: SKIP — No versioned copies found (versioning may not be enabled).
+Removing objects:
+  
+.
+ERROR: (gcloud.storage.rm) The following URLs matched no objects or files:
+gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-101534.txt
+[2026-02-21 10:16:41]   Cleanup: Drill test object removed.
+[2026-02-21 10:16:41] 
+[2026-02-21 10:16:41] STEP 5: Hitting /health endpoint to confirm API is healthy...
+HTTP status: 200
+[2026-02-21 10:16:41] STEP 5: PASS — API returned HTTP 200.
+[2026-02-21 10:16:41] ================================================================
+[2026-02-21 10:16:42] DRILL COMPLETE — Sat 21 Feb 2026 10:16:41 GMT
+[2026-02-21 10:16:42] Evidence log: ops/drills/drill-evidence-2026-02-21-101534.log
+[2026-02-21 10:16:42] ================================================================

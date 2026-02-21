@@ -13,7 +13,19 @@ interface Props {
 export default function LectureModeScreen({ navigation, route }: Props) {
   const { theme } = useTheme();
   const [selectedMode, setSelectedMode] = useState<LectureMode>('OPEN');
-  const courseId = route.params?.courseId ?? 'course-bio-101';
+  const courseId = route.params?.courseId;
+
+  if (!courseId) {
+    return (
+      <View style={{ flex: 1, backgroundColor: theme.colors.background, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <Text variant="titleMedium" style={{ marginBottom: 12 }}>No course selected</Text>
+        <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center', marginBottom: 20 }}>
+          Please select or create a course first.
+        </Text>
+        <Button mode="contained" onPress={() => navigation.goBack()}>Go Back</Button>
+      </View>
+    );
+  }
 
   const handleContinue = () => {
     navigation.navigate('RecordLecture', {

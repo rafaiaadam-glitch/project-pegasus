@@ -38,6 +38,14 @@ from backend.jobs import (
     run_transcription_job,
 )
 from backend.chat import get_chat_response  # Import chat logic
+from backend.auth import get_current_user, hash_password, verify_password, create_jwt, verify_apple_token, verify_google_token
+from backend.iap_validation import (
+    PRODUCT_CATALOG,
+    get_product_list,
+    get_product_tokens,
+    validate_apple_receipt,
+    validate_google_receipt,
+)
 
 from backend.presets import PRESETS, PRESETS_BY_ID
 from backend.runtime_config import validate_runtime_environment
@@ -1182,15 +1190,57 @@ def list_course_threads(
         course_id,
         fallback_counter=lambda: len(db.fetch_threads_for_course(course_id)),
     )
+    # Build lectureTitles map from all lecture_refs across threads
+    all_lecture_ids = set()
+    for t in threads:
+        refs = t.get("lecture_refs") or []
+        if isinstance(refs, list):
+            all_lecture_ids.update(refs)
+    lecture_titles: dict[str, str] = {}
+    for lid in all_lecture_ids:
+        lec = db.fetch_lecture(lid)
+        if lec:
+            lecture_titles[lid] = lec.get("title", lid)
     return {
         "courseId": course_id,
         "threads": threads,
+        "lectureTitles": lecture_titles,
         "pagination": _pagination_payload(
             limit=limit,
             offset=offset,
             count=len(threads),
             total=total,
         ),
+    }
+
+
+@app.get("/threads/{thread_id}")
+def get_thread_detail(thread_id: str) -> dict:
+    db = get_database()
+    thread = db.fetch_thread_by_id(thread_id)
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    occurrences = db.fetch_thread_occurrences(thread_id)
+    updates = db.fetch_thread_updates_for_thread(thread_id)
+    # Build lectureTitles from thread refs + occurrence/update lecture_ids
+    all_lecture_ids = set()
+    refs = thread.get("lecture_refs") or []
+    if isinstance(refs, list):
+        all_lecture_ids.update(refs)
+    for occ in occurrences:
+        all_lecture_ids.add(occ["lecture_id"])
+    for upd in updates:
+        all_lecture_ids.add(upd["lecture_id"])
+    lecture_titles: dict[str, str] = {}
+    for lid in all_lecture_ids:
+        lec = db.fetch_lecture(lid)
+        if lec:
+            lecture_titles[lid] = lec.get("title", lid)
+    return {
+        "thread": thread,
+        "occurrences": occurrences,
+        "updates": updates,
+        "lectureTitles": lecture_titles,
     }
 
 
@@ -1413,6 +1463,20 @@ def transcribe_lecture(
     return response_payload
 
 
+def _estimate_generation_tokens(db, lecture_id: str) -> int:
+    """Estimate the total tokens needed for generation based on transcript length."""
+    lecture = db.fetch_lecture(lecture_id)
+    transcript_path = lecture.get("transcript_path") if lecture else None
+    if not transcript_path:
+        return 50000  # conservative default
+    try:
+        text = load_json_payload(transcript_path).get("text", "")
+        input_tokens = max(len(text) // 4, 1000)
+        return int(input_tokens * 3 * 1.2)  # input + 2x output + 20% buffer
+    except Exception:
+        return 50000
+
+
 @app.post("/lectures/{lecture_id}/generate")
 def generate_artifacts(request: Request, lecture_id: str, payload: GenerateRequest) -> dict:
     _enforce_write_auth(request)
@@ -1430,10 +1494,36 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
     if payload.preset_id:
         _ensure_valid_preset_id(payload.preset_id)
 
+    # Extract user_id from JWT if authenticated (optional — don't break unauthenticated usage)
+    current_user = get_current_user(request)
+    user_id = current_user["id"] if current_user else None
+
     db = get_database()
+
+    # Token balance enforcement (only for authenticated users)
+    estimated_tokens = None
+    if user_id:
+        estimated_tokens = _estimate_generation_tokens(db, lecture_id)
+        reservation = db.check_and_reserve_tokens(user_id, estimated_tokens)
+        if not reservation.get("ok"):
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "insufficient_balance",
+                    "available": reservation.get("available", 0),
+                    "required": reservation.get("required", estimated_tokens),
+                },
+            )
+
     course_id, preset_id = _resolve_generation_identifiers(db, lecture_id, payload)
     active_job = _find_active_job_for_lecture(db, lecture_id, "generation")
     if active_job:
+        # Refund reserved tokens if we're deduplicating
+        if user_id and estimated_tokens:
+            try:
+                db.refund_reserved_tokens(user_id, estimated_tokens, active_job.get("id", "dedup"))
+            except Exception:
+                pass
         response_payload = {
             "jobId": active_job.get("id"),
             "status": active_job.get("status", "queued"),
@@ -1454,6 +1544,8 @@ def generate_artifacts(request: Request, lecture_id: str, payload: GenerateReque
         preset_id,
         payload.llm_provider or os.getenv("PLC_LLM_PROVIDER", "openai"),
         payload.llm_model or os.getenv("PLC_LLM_MODEL", "gpt-4o-mini"),
+        user_id=user_id,
+        estimated_tokens=estimated_tokens,
     )
     job = db.fetch_job(job_id)
     response_payload = {
@@ -2460,3 +2552,340 @@ def get_dice_states_summary(request: Request):
         "facetDistribution": facet_distribution,
         "statusDistribution": status_distribution,
     }
+
+
+# =========================================================================
+# Auth endpoints
+# =========================================================================
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    display_name: Optional[str] = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/auth/signup")
+def auth_signup(payload: SignupRequest):
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address.")
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+
+    db = get_database()
+    existing = db.fetch_user_by_email(email)
+    if existing:
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+
+    user_id = str(uuid4())
+    pw_hash = hash_password(payload.password)
+    user = db.create_user(user_id, email, pw_hash, payload.display_name)
+    token = create_jwt(user_id, email)
+    return {
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "displayName": user["display_name"],
+        },
+    }
+
+
+@app.post("/auth/login")
+def auth_login(payload: LoginRequest):
+    email = payload.email.strip().lower()
+    db = get_database()
+    user = db.fetch_user_by_email(email)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    token = create_jwt(user["id"], user["email"])
+    return {
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "displayName": user["display_name"],
+        },
+    }
+
+
+@app.get("/auth/me")
+def auth_me(request: Request):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+
+    db = get_database()
+    user = db.fetch_user_by_id(current_user["id"])
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found.")
+
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "displayName": user["display_name"],
+        "createdAt": user["created_at"].isoformat() if user["created_at"] else None,
+    }
+
+
+# =========================================================================
+# OAuth endpoints (Apple + Google Sign-In)
+# =========================================================================
+
+class AppleAuthRequest(BaseModel):
+    identity_token: str
+    full_name: Optional[str] = None
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
+
+@app.post("/auth/apple")
+def auth_apple(payload: AppleAuthRequest):
+    try:
+        apple_user = verify_apple_token(payload.identity_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    email = apple_user["email"].lower()
+    db = get_database()
+    user = db.find_or_create_oauth_user(
+        user_id=str(uuid4()),
+        email=email,
+        auth_provider="apple",
+        provider_user_id=apple_user["sub"],
+        display_name=payload.full_name,
+    )
+    token = create_jwt(user["id"], user["email"])
+    return {
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "displayName": user["display_name"],
+        },
+    }
+
+
+@app.post("/auth/google")
+def auth_google(payload: GoogleAuthRequest):
+    try:
+        google_user = verify_google_token(payload.id_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    email = google_user["email"].lower()
+    db = get_database()
+    user = db.find_or_create_oauth_user(
+        user_id=str(uuid4()),
+        email=email,
+        auth_provider="google",
+        provider_user_id=google_user["sub"],
+        display_name=google_user.get("name"),
+    )
+    token = create_jwt(user["id"], user["email"])
+    return {
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "displayName": user["display_name"],
+        },
+    }
+
+
+# =========================================================================
+# Credits endpoints
+# =========================================================================
+
+@app.get("/credits/summary")
+def credits_summary(request: Request):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    db = get_database()
+    return db.fetch_user_credits_summary(current_user["id"])
+
+
+@app.get("/credits/history")
+def credits_history(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    db = get_database()
+    return {"entries": db.fetch_user_credit_history(current_user["id"], limit, offset)}
+
+
+# =========================================================================
+# Token Balance endpoints
+# =========================================================================
+
+@app.get("/tokens/balance")
+def token_balance(request: Request):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    db = get_database()
+    return db.get_user_token_balance(current_user["id"])
+
+
+@app.get("/tokens/transactions")
+def token_transactions(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    db = get_database()
+    return {"transactions": db.fetch_user_token_transactions(current_user["id"], limit, offset)}
+
+
+# =========================================================================
+# Products & Purchases endpoints
+# =========================================================================
+
+@app.get("/products")
+def list_products():
+    return {"products": get_product_list()}
+
+
+class ApplePurchaseRequest(BaseModel):
+    transaction_id: str
+    receipt_data: str
+
+
+class GooglePurchaseRequest(BaseModel):
+    purchase_token: str
+    product_id: str
+
+
+@app.post("/purchases/verify-apple")
+def verify_apple_purchase(request: Request, payload: ApplePurchaseRequest):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+
+    user_id = current_user["id"]
+    db = get_database()
+
+    # Idempotency: check if we already processed this transaction
+    existing = db.fetch_purchase_receipt_by_txn_id(payload.transaction_id)
+    if existing:
+        return {
+            "status": "already_processed",
+            "tokensGranted": existing["tokens_granted"],
+            "balance": db.get_user_token_balance(user_id),
+        }
+
+    # Validate receipt with Apple
+    result = validate_apple_receipt(payload.transaction_id, payload.receipt_data)
+    if not result.get("valid"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Invalid receipt"))
+
+    product_id = result["product_id"]
+    tokens = get_product_tokens(product_id)
+    if not tokens:
+        raise HTTPException(status_code=400, detail=f"Unknown product: {product_id}")
+
+    price_usd = PRODUCT_CATALOG[product_id]["price_usd"]
+    receipt_id = str(uuid4())
+
+    # Store receipt and grant tokens
+    db.insert_purchase_receipt(
+        receipt_id=receipt_id,
+        user_id=user_id,
+        platform="apple",
+        product_id=product_id,
+        transaction_id=result["transaction_id"],
+        receipt_data=payload.receipt_data,
+        tokens_granted=tokens,
+        price_usd=price_usd,
+    )
+    balance = db.grant_purchased_tokens(user_id, tokens, receipt_id)
+
+    return {
+        "status": "success",
+        "tokensGranted": tokens,
+        "balance": balance,
+    }
+
+
+@app.post("/purchases/verify-google")
+def verify_google_purchase(request: Request, payload: GooglePurchaseRequest):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+
+    user_id = current_user["id"]
+    db = get_database()
+
+    # Validate receipt with Google
+    result = validate_google_receipt(payload.purchase_token, payload.product_id)
+    if not result.get("valid"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Invalid receipt"))
+
+    order_id = result["order_id"]
+
+    # Idempotency
+    existing = db.fetch_purchase_receipt_by_txn_id(order_id)
+    if existing:
+        return {
+            "status": "already_processed",
+            "tokensGranted": existing["tokens_granted"],
+            "balance": db.get_user_token_balance(user_id),
+        }
+
+    product_id = result["product_id"]
+    tokens = get_product_tokens(product_id)
+    if not tokens:
+        raise HTTPException(status_code=400, detail=f"Unknown product: {product_id}")
+
+    price_usd = PRODUCT_CATALOG[product_id]["price_usd"]
+    receipt_id = str(uuid4())
+
+    db.insert_purchase_receipt(
+        receipt_id=receipt_id,
+        user_id=user_id,
+        platform="google",
+        product_id=product_id,
+        transaction_id=order_id,
+        receipt_data=payload.purchase_token,
+        tokens_granted=tokens,
+        price_usd=price_usd,
+    )
+    balance = db.grant_purchased_tokens(user_id, tokens, receipt_id)
+
+    return {
+        "status": "success",
+        "tokensGranted": tokens,
+        "balance": balance,
+    }
+
+
+@app.get("/purchases/history")
+def purchase_history(
+    request: Request,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    current_user = get_current_user(request)
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Not authenticated.")
+    db = get_database()
+    return {"purchases": db.fetch_user_purchases(current_user["id"], limit, offset)}

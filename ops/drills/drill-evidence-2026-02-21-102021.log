@@ -1,0 +1,71 @@
+[2026-02-21 10:20:21] ================================================================
+[2026-02-21 10:20:21] BACKUP/RESTORE DRILL — started at Sat 21 Feb 2026 10:20:21 GMT
+[2026-02-21 10:20:21] Project: delta-student-486911-n5
+[2026-02-21 10:20:21] Instance: pegasus-db-eu
+[2026-02-21 10:20:21] Bucket: delta-student-486911-n5-pegasus-storage-eu
+[2026-02-21 10:20:21] ================================================================
+[2026-02-21 10:20:21] 
+[2026-02-21 10:20:21] STEP 1: Creating on-demand Cloud SQL backup...
+Backing up Cloud SQL instance...
+......done.
+[https://sqladmin.googleapis.com/sql/v1beta4/projects/delta-student-486911-n5/instances/pegasus-db-eu] backed up.
+[2026-02-21 10:21:16] STEP 1: PASS — Backup created successfully.
+[2026-02-21 10:21:16] 
+[2026-02-21 10:21:16] STEP 2: Listing Cloud SQL backups (most recent 5)...
+ID: 1771669222589
+WINDOW_START_TIME: 2026-02-21T10:20:22.589+00:00
+ERROR: -
+STATUS: SUCCESSFUL
+INSTANCE: pegasus-db-eu
+
+ID: 1771669106393
+WINDOW_START_TIME: 2026-02-21T10:18:26.393+00:00
+ERROR: -
+STATUS: SUCCESSFUL
+INSTANCE: pegasus-db-eu
+
+ID: 1771668935300
+WINDOW_START_TIME: 2026-02-21T10:15:35.300+00:00
+ERROR: -
+STATUS: SUCCESSFUL
+INSTANCE: pegasus-db-eu
+[2026-02-21 10:21:17] STEP 2: PASS — Backup list retrieved.
+[2026-02-21 10:21:17] 
+[2026-02-21 10:21:17] STEP 3: Checking GCS object versioning on gs://delta-student-486911-n5-pegasus-storage-eu...
+True
+[2026-02-21 10:21:18] STEP 3: PASS — Object versioning is enabled.
+[2026-02-21 10:21:18] 
+[2026-02-21 10:21:18] STEP 4: GCS object lifecycle test (write → delete → restore from version)...
+Copying file://- to gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-102021.txt
+  
+
+[2026-02-21 10:21:20]   4a: Test object uploaded to gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-102021.txt
+[2026-02-21 10:21:20]   4b: Listing object versions...
+        47  2026-02-21T10:21:20Z  gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-102021.txt#1771669280020681  metageneration=1
+TOTAL: 1 objects, 47 bytes (47.00B)
+Removing objects:
+  
+Removing gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-102021.txt...
+.
+[2026-02-21 10:21:24]   4c: Test object deleted.
+[2026-02-21 10:21:24]   4d: Listing versions after delete (should show non-current version if versioning enabled)...
+        47  2026-02-21T10:21:20Z  gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-102021.txt#1771669280020681  metageneration=1
+TOTAL: 1 objects, 47 bytes (47.00B)
+[2026-02-21 10:21:26]   4e: Restoring from generation 1771669280020681...
+Copying gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-102021.txt#1771669280020681 to gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-102021.txt
+  
+.
+[2026-02-21 10:21:29]   STEP 4: PASS — Object restored from version.
+Removing objects:
+  
+Removing gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/drills/drill-test-2026-02-21-102021.txt...
+..
+[2026-02-21 10:21:33]   Cleanup: Drill test object removed.
+[2026-02-21 10:21:33] 
+[2026-02-21 10:21:33] STEP 5: Hitting /health endpoint to confirm API is healthy...
+HTTP status: 200
+[2026-02-21 10:21:33] STEP 5: PASS — API returned HTTP 200.
+[2026-02-21 10:21:33] ================================================================
+[2026-02-21 10:21:33] DRILL COMPLETE — Sat 21 Feb 2026 10:21:33 GMT
+[2026-02-21 10:21:33] Evidence log: ops/drills/drill-evidence-2026-02-21-102021.log
+[2026-02-21 10:21:33] ================================================================

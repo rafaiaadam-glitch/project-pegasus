@@ -41,7 +41,7 @@ steps:
       - '--allow-unauthenticated'
       - '--memory=2Gi'
       - '--cpu=2'
-      - '--set-secrets=DATABASE_URL=pegasus-db-url:latest,OPENAI_API_KEY=openai-api-key:latest,DEEPGRAM_API_KEY=deepgram-api-key:latest'
+      - '--set-secrets=DATABASE_URL=pegasus-db-url:latest,OPENAI_API_KEY=openai-api-key:latest,DEEPGRAM_API_KEY=deepgram-api-key:latest,PLC_JWT_SECRET=plc-jwt-secret:latest'
       - '--set-env-vars=STORAGE_MODE=gcs,GCS_BUCKET=$PROJECT_ID-pegasus-storage-eu,GCS_PREFIX=pegasus,PLC_LLM_PROVIDER=openai,GCP_PROJECT_ID=$PROJECT_ID,GCP_REGION=europe-west1,PLC_INLINE_JOBS=1'
       - '--set-cloudsql-instances=$PROJECT_ID:europe-west1:pegasus-db-eu'
       - '--min-instances=0'

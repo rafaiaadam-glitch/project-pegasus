@@ -1,6 +1,7 @@
 // API Client for Pegasus Backend
 import { Platform } from 'react-native';
-import { Course, Lecture, Preset, Artifact, Job, LectureProgress } from '../types';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Course, Lecture, Preset, Artifact, Job, LectureProgress, ThreadDetail, TokenBalance, TokenTransaction, Product, PurchaseReceipt } from '../types';
 
 const getApiBaseUrl = () => {
   const productionUrl = process.env.EXPO_PUBLIC_API_URL;
@@ -21,10 +22,21 @@ class ApiClient {
     this.baseUrl = baseUrl;
   }
 
+  private _cachedJwt: string | null = null;
+
+  async refreshAuthToken(): Promise<void> {
+    this._cachedJwt = await AsyncStorage.getItem('@pegasus/auth-token');
+  }
+
   private getAuthHeaders(): Record<string, string> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
-    if (writeToken) headers['Authorization'] = `Bearer ${writeToken}`;
+    // Prefer JWT from auth, fall back to global write token
+    if (this._cachedJwt) {
+      headers['Authorization'] = `Bearer ${this._cachedJwt}`;
+    } else {
+      const writeToken = process.env.EXPO_PUBLIC_WRITE_API_TOKEN;
+      if (writeToken) headers['Authorization'] = `Bearer ${writeToken}`;
+    }
     return headers;
   }
 
@@ -41,7 +53,12 @@ class ApiClient {
       });
       if (!response.ok) {
         const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(error.detail || `HTTP ${response.status}`);
+        const err = new Error(
+          typeof error.detail === 'string' ? error.detail : error.detail?.error || `HTTP ${response.status}`
+        ) as any;
+        err.status = response.status;
+        err.detail = error.detail;
+        throw err;
       }
       return await response.json();
     } catch (error) {
@@ -147,6 +164,22 @@ class ApiClient {
     });
   }
 
+  // --- Auth (OAuth) ---
+
+  async authApple(identityToken: string, fullName?: string): Promise<{ token: string; user: any }> {
+    return this.request('/auth/apple', {
+      method: 'POST',
+      body: JSON.stringify({ identity_token: identityToken, full_name: fullName || null }),
+    });
+  }
+
+  async authGoogle(idToken: string): Promise<{ token: string; user: any }> {
+    return this.request('/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ id_token: idToken }),
+    });
+  }
+
   // Health
   async healthCheck(): Promise<{ status: string }> {
     return this.request('/health');
@@ -163,6 +196,10 @@ class ApiClient {
 
   async createCourse(data: { title: string; description?: string }): Promise<Course> {
     return this.request('/courses', { method: 'POST', body: JSON.stringify(data) });
+  }
+
+  async deleteCourse(courseId: string): Promise<void> {
+    return this.request(`/courses/${courseId}`, { method: 'DELETE' });
   }
 
   // Lectures
@@ -228,9 +265,8 @@ class ApiClient {
   }
 
   async transcribeLecture(lectureId: string): Promise<any> {
-    const languageCode = process.env.EXPO_PUBLIC_STT_LANGUAGE || 'en-US';
     return this.request(
-      `/lectures/${lectureId}/transcribe?provider=google&language_code=${encodeURIComponent(languageCode)}`,
+      `/lectures/${lectureId}/transcribe`,
       { method: 'POST' }
     );
   }
@@ -253,6 +289,10 @@ class ApiClient {
   // Threads
   async getCourseThreads(courseId: string, limit = 50, offset = 0): Promise<any> {
     return this.request(`/courses/${courseId}/threads?limit=${limit}&offset=${offset}`);
+  }
+
+  async getThreadDetail(threadId: string): Promise<ThreadDetail> {
+    return this.request(`/threads/${threadId}`);
   }
 
   async getCourseThreadTree(courseId: string): Promise<any> {
@@ -286,6 +326,47 @@ class ApiClient {
       body: JSON.stringify({ messages, ...options }),
     });
     return result.content;
+  }
+
+  // Credits
+  async getCreditsSummary(): Promise<any> {
+    return this.request('/credits/summary');
+  }
+
+  async getCreditsHistory(limit = 20, offset = 0): Promise<any> {
+    return this.request(`/credits/history?limit=${limit}&offset=${offset}`);
+  }
+
+  // Token Balance
+  async getTokenBalance(): Promise<TokenBalance> {
+    return this.request('/tokens/balance');
+  }
+
+  async getTokenTransactions(limit = 20, offset = 0): Promise<{ transactions: TokenTransaction[] }> {
+    return this.request(`/tokens/transactions?limit=${limit}&offset=${offset}`);
+  }
+
+  // Products & Purchases
+  async getProducts(): Promise<{ products: Product[] }> {
+    return this.request('/products');
+  }
+
+  async verifyApplePurchase(transactionId: string, receiptData: string): Promise<any> {
+    return this.request('/purchases/verify-apple', {
+      method: 'POST',
+      body: JSON.stringify({ transaction_id: transactionId, receipt_data: receiptData }),
+    });
+  }
+
+  async verifyGooglePurchase(purchaseToken: string, productId: string): Promise<any> {
+    return this.request('/purchases/verify-google', {
+      method: 'POST',
+      body: JSON.stringify({ purchase_token: purchaseToken, product_id: productId }),
+    });
+  }
+
+  async getPurchaseHistory(limit = 20, offset = 0): Promise<{ purchases: PurchaseReceipt[] }> {
+    return this.request(`/purchases/history?limit=${limit}&offset=${offset}`);
   }
 }
 

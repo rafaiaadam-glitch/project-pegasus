@@ -19,6 +19,7 @@ import {
   IconButton,
   Snackbar,
 } from 'react-native-paper';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import api from '../services/api';
 import { useTheme } from '../theme';
 import NetworkErrorView from '../components/NetworkErrorView';
@@ -55,6 +56,8 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const [exportingType, setExportingType] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generatingStage, setGeneratingStage] = useState('');
+  const [transcript, setTranscript] = useState<{ text: string; segments: any[] } | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [retryingStage, setRetryingStage] = useState<string | null>(null);
   const [snackbar, setSnackbar] = useState<{ visible: boolean; message: string }>({ visible: false, message: '' });
@@ -104,6 +107,20 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
   const handleRefresh = () => {
     setRefreshing(true);
     loadData();
+    if (activeTab === 'transcript') loadTranscript();
+  };
+
+  const loadTranscript = async () => {
+    if (transcript) return; // already loaded
+    try {
+      setTranscriptLoading(true);
+      const data = await api.getTranscript(lectureId);
+      setTranscript({ text: data.text, segments: data.segments || [] });
+    } catch {
+      setTranscript(null);
+    } finally {
+      setTranscriptLoading(false);
+    }
   };
 
   const handleGenerate = async () => {
@@ -132,7 +149,21 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
       await loadData();
       setActiveTab('artifacts');
     } catch (error: any) {
-      Alert.alert('Generation Failed', humanizeError(error.message));
+      if (error.status === 402 || error.detail?.error === 'insufficient_balance') {
+        const available = error.detail?.available ?? 0;
+        const required = error.detail?.required ?? 0;
+        const formatTok = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(0)}K` : String(n);
+        Alert.alert(
+          'Insufficient Tokens',
+          `This generation requires ~${formatTok(required)} tokens but you only have ${formatTok(available)} available.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Buy Tokens', onPress: () => navigation.navigate('PurchaseTokens') },
+          ],
+        );
+      } else {
+        Alert.alert('Generation Failed', humanizeError(error.message));
+      }
     } finally {
       setGenerating(false);
       setGeneratingStage('');
@@ -162,14 +193,14 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
           await ExportUtils.exportAllArtifacts(
             arts,
             lectureTitle,
-            route.params.courseTitle
+            route.params?.courseTitle
           );
           break;
         case 'summary':
           await ExportUtils.exportSummary(
             arts.summary,
             lectureTitle,
-            route.params.courseTitle
+            route.params?.courseTitle
           );
           break;
         case 'flashcards':
@@ -182,7 +213,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
           await ExportUtils.exportExamQuestions(
             arts['exam-questions'],
             lectureTitle,
-            route.params.courseTitle
+            route.params?.courseTitle
           );
           break;
       }
@@ -221,9 +252,9 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
     if (!progress) return null;
 
     const stages = [
-      { key: 'transcription', icon: '📝', label: 'Transcribe' },
-      { key: 'generation', icon: '🧠', label: 'Generate' },
-      { key: 'export', icon: '📦', label: 'Export' },
+      { key: 'transcription', icon: '📝', label: 'Transcribe', isAI: false },
+      { key: 'generation', icon: '✨', label: 'AI Generate', isAI: true },
+      { key: 'export', icon: '📦', label: 'Export', isAI: false },
     ];
 
     return (
@@ -329,7 +360,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
     if (!artifacts || !artifacts.artifacts) {
       return (
         <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-          <Text style={{ fontSize: 48, marginBottom: 12 }}>📄</Text>
+          <MaterialCommunityIcons name="creation" size={48} color={theme.colors.primary} style={{ marginBottom: 12 }} />
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             No artifacts generated yet
           </Text>
@@ -348,7 +379,9 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             mode="elevated"
           >
             <Card.Content>
-              <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>SUMMARY</Chip>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <Chip compact style={{ marginRight: 6 }} icon="creation">SUMMARY</Chip>
+              </View>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Lecture Summary</Text>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }} numberOfLines={3}>
                 {arts.summary.overview}
@@ -367,7 +400,9 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             mode="elevated"
           >
             <Card.Content>
-              <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>OUTLINE</Chip>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <Chip compact style={{ marginRight: 6 }} icon="creation">OUTLINE</Chip>
+              </View>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Lecture Outline</Text>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
                 {arts.outline.outline?.length || arts.outline.sections?.length || 0} sections
@@ -386,7 +421,9 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             mode="elevated"
           >
             <Card.Content>
-              <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>KEY TERMS</Chip>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <Chip compact style={{ marginRight: 6 }} icon="creation">KEY TERMS</Chip>
+              </View>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Key Terms</Text>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
                 {arts['key-terms'].terms?.length || 0} terms
@@ -407,7 +444,9 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             mode="elevated"
           >
             <Card.Content>
-              <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>FLASHCARDS</Chip>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <Chip compact style={{ marginRight: 6 }} icon="creation">FLASHCARDS</Chip>
+              </View>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Study Flashcards</Text>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
                 {arts.flashcards.cards?.length || 0} flashcards
@@ -428,7 +467,9 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             mode="elevated"
           >
             <Card.Content>
-              <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>EXAM PREP</Chip>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <Chip compact style={{ marginRight: 6 }} icon="creation">EXAM PREP</Chip>
+              </View>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Practice Questions</Text>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
                 {arts['exam-questions'].questions?.length || 0} questions
@@ -453,7 +494,9 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             mode="elevated"
           >
             <Card.Content>
-              <Chip compact style={{ alignSelf: 'flex-start', marginBottom: 8 }}>THREADS</Chip>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                <Chip compact style={{ marginRight: 6 }} icon="creation">THREADS</Chip>
+              </View>
               <Text variant="titleMedium" style={{ marginBottom: 8 }}>Conceptual Threads</Text>
               <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
                 {arts.threads.length} concepts tracked across lectures
@@ -464,6 +507,63 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             </Card.Content>
           </Card>
         )}
+      </View>
+    );
+  };
+
+  const renderTranscript = () => {
+    if (transcriptLoading) {
+      return (
+        <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+          <ActivityIndicator size="large" />
+          <Text variant="bodyMedium" style={{ marginTop: 12, color: theme.colors.onSurfaceVariant }}>
+            Loading transcript...
+          </Text>
+        </View>
+      );
+    }
+
+    if (!transcript?.text) {
+      const status = summary?.lecture?.status;
+      const isProcessing = status === 'uploaded' || status === 'transcribing';
+      return (
+        <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+          <MaterialCommunityIcons
+            name={isProcessing ? 'microphone' : 'text-box-outline'}
+            size={48}
+            color={theme.colors.onSurfaceVariant}
+            style={{ marginBottom: 12 }}
+          />
+          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center', paddingHorizontal: 32 }}>
+            {isProcessing
+              ? 'Transcript is still being generated. Pull to refresh.'
+              : 'No transcript available for this lecture.'}
+          </Text>
+        </View>
+      );
+    }
+
+    return (
+      <View>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Text variant="titleMedium">Transcript</Text>
+          {transcript.segments?.length > 0 && (
+            <Chip compact icon="clock-outline">
+              {transcript.segments.length} segments
+            </Chip>
+          )}
+        </View>
+        <Card mode="elevated" style={{ marginBottom: 16 }}>
+          <Card.Content>
+            <Text
+              variant="bodyMedium"
+              style={{ lineHeight: 24, color: theme.colors.onSurface }}
+              selectable
+            >
+              {transcript.text}
+            </Text>
+          </Card.Content>
+        </Card>
       </View>
     );
   };
@@ -542,7 +642,7 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             onPress={handleGenerate}
             loading={generating}
             disabled={generating}
-            icon="brain"
+            icon="creation"
             style={{ flex: 1 }}
           >
             {generating ? (generatingStage || 'Starting...') : 'Generate'}
@@ -563,20 +663,10 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
             }}
             loading={generating}
             disabled={generating}
-            icon="refresh"
+            icon="creation"
             style={{ flex: 1 }}
           >
             {generating ? (generatingStage || 'Starting...') : 'Regenerate'}
-          </Button>
-        )}
-        {(summary?.lecture?.status === 'transcribed' || artifacts?.artifactRecords?.length > 0) && (
-          <Button
-            mode="outlined"
-            onPress={() => navigation.navigate('DiceAnalysis', { lectureId, lectureTitle })}
-            icon="cube-outline"
-            style={{ flex: 1 }}
-          >
-            Dice Analysis
           </Button>
         )}
         <Button
@@ -590,20 +680,31 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
         </Button>
       </View>
       {!artifacts?.artifacts && (
-        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center', paddingHorizontal: 16, paddingBottom: 4 }}>
-          Generate study materials to enable export.
-        </Text>
+        <View style={{ alignItems: 'center', paddingHorizontal: 16, paddingBottom: 4, gap: 2 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <MaterialCommunityIcons name="creation" size={14} color={theme.colors.onSurfaceVariant} />
+            <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+              Generate study materials to enable export.
+            </Text>
+          </View>
+          <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant, opacity: 0.7 }}>
+            Estimated cost: GPT-4o Mini ~$0.01 | Gemini Flash ~$0.005 | Gemini Pro ~$0.08
+          </Text>
+        </View>
       )}
 
       {/* Transcription-in-progress banner */}
       {(summary?.lecture?.status === 'uploaded' || summary?.lecture?.status === 'transcribing') && (
         <View style={{ backgroundColor: theme.colors.tertiaryContainer, paddingVertical: 8, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <ActivityIndicator size="small" />
-          <Text variant="labelMedium" style={{ color: theme.colors.onTertiaryContainer }}>
+          {(progress?.currentStage === 'generation' || progress?.currentStage === 'export') && (
+            <MaterialCommunityIcons name="creation" size={18} color={theme.colors.primary} />
+          )}
+          <Text variant="labelMedium" style={{ color: theme.colors.onTertiaryContainer, flex: 1 }}>
             {progress?.currentStage === 'transcription'
               ? 'Transcribing your lecture... this takes a few seconds'
               : progress?.currentStage === 'generation'
-              ? 'Generating study materials...'
+              ? 'AI is generating study materials...'
               : progress?.currentStage === 'export'
               ? 'Preparing exports...'
               : 'Processing your lecture...'}
@@ -615,9 +716,13 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
       <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
         <SegmentedButtons
           value={activeTab}
-          onValueChange={setActiveTab}
+          onValueChange={(val) => {
+            setActiveTab(val);
+            if (val === 'transcript') loadTranscript();
+          }}
           buttons={[
             { value: 'artifacts', label: 'Study Guide' },
+            { value: 'transcript', label: 'Transcript' },
             { value: 'progress', label: 'Progress' },
           ]}
         />
@@ -632,7 +737,11 @@ export default function LectureDetailScreen({ navigation, route }: Props) {
         }
       >
         {renderProgressBar()}
-        {activeTab === 'artifacts' ? renderArtifacts() : renderProgressDetails()}
+        {activeTab === 'artifacts'
+          ? renderArtifacts()
+          : activeTab === 'transcript'
+          ? renderTranscript()
+          : renderProgressDetails()}
       </ScrollView>
 
       {/* Export Menu Dialog */}

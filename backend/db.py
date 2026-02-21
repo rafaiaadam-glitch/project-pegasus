@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -395,10 +396,10 @@ class Database:
                     """
                     insert into threads (
                         id, course_id, title, summary, status, complexity_level,
-                        lecture_refs, face, created_at
+                        lecture_refs, face, evolution_notes, created_at
                     ) values (
                         %(id)s, %(course_id)s, %(title)s, %(summary)s, %(status)s,
-                        %(complexity_level)s, %(lecture_refs)s, %(face)s, %(created_at)s
+                        %(complexity_level)s, %(lecture_refs)s, %(face)s, %(evolution_notes)s, %(created_at)s
                     )
                     on conflict (id) do update set
                         title = excluded.title,
@@ -406,12 +407,14 @@ class Database:
                         status = excluded.status,
                         complexity_level = excluded.complexity_level,
                         lecture_refs = excluded.lecture_refs,
-                        face = excluded.face;
+                        face = excluded.face,
+                        evolution_notes = excluded.evolution_notes;
                     """,
                     {
                         **payload,
                         "lecture_refs": Jsonb(payload.get("lecture_refs")),
                         "face": payload.get("face"),
+                        "evolution_notes": Jsonb(payload.get("evolution_notes")) if payload.get("evolution_notes") else None,
                     },
                 )
 
@@ -520,6 +523,107 @@ class Database:
                 )
                 return len(cur.fetchall())
 
+    def fetch_thread_by_id(self, thread_id: str) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("select * from threads where id = %s;", (thread_id,))
+                return cur.fetchone()
+
+    def insert_thread_occurrences(self, occurrences: list[Dict[str, Any]]) -> int:
+        if not occurrences:
+            return 0
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                inserted = 0
+                for occ in occurrences:
+                    cur.execute(
+                        """
+                        insert into thread_occurrences (
+                            id, thread_id, course_id, lecture_id, artifact_id,
+                            evidence, confidence, captured_at
+                        ) values (
+                            %(id)s, %(thread_id)s, %(course_id)s, %(lecture_id)s,
+                            %(artifact_id)s, %(evidence)s, %(confidence)s, %(captured_at)s
+                        ) on conflict (id) do nothing;
+                        """,
+                        occ,
+                    )
+                    inserted += cur.rowcount
+                return inserted
+
+    def insert_thread_updates(self, updates: list[Dict[str, Any]]) -> int:
+        if not updates:
+            return 0
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                inserted = 0
+                for upd in updates:
+                    cur.execute(
+                        """
+                        insert into thread_updates (
+                            id, thread_id, course_id, lecture_id, change_type,
+                            summary, details, captured_at
+                        ) values (
+                            %(id)s, %(thread_id)s, %(course_id)s, %(lecture_id)s,
+                            %(change_type)s, %(summary)s, %(details)s, %(captured_at)s
+                        ) on conflict (id) do nothing;
+                        """,
+                        {
+                            **upd,
+                            "details": Jsonb(upd.get("details")) if upd.get("details") else None,
+                        },
+                    )
+                    inserted += cur.rowcount
+                return inserted
+
+    def fetch_thread_occurrences(self, thread_id: str) -> list[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select o.*, l.title as lecture_title
+                    from thread_occurrences o
+                    left join lectures l on o.lecture_id = l.id
+                    where o.thread_id = %s
+                    order by o.captured_at asc;
+                    """,
+                    (thread_id,),
+                )
+                return cur.fetchall()
+
+    def fetch_thread_updates_for_thread(self, thread_id: str) -> list[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select u.*, l.title as lecture_title
+                    from thread_updates u
+                    left join lectures l on u.lecture_id = l.id
+                    where u.thread_id = %s
+                    order by u.captured_at asc;
+                    """,
+                    (thread_id,),
+                )
+                return cur.fetchall()
+
+    def delete_thread_occurrences_for_lecture(self, lecture_id: str) -> int:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "delete from thread_occurrences where lecture_id = %s;",
+                    (lecture_id,),
+                )
+                return cur.rowcount
+
+    def delete_thread_updates_for_lecture(self, lecture_id: str) -> int:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "delete from thread_updates where lecture_id = %s;",
+                    (lecture_id,),
+                )
+                return cur.rowcount
+
     def update_lecture_storage_paths(
         self,
         lecture_id: str,
@@ -544,6 +648,8 @@ class Database:
     def delete_lecture_records(self, lecture_id: str) -> dict[str, int]:
         with self.connect() as conn:
             with conn.cursor() as cur:
+                cur.execute("delete from thread_occurrences where lecture_id = %s;", (lecture_id,))
+                cur.execute("delete from thread_updates where lecture_id = %s;", (lecture_id,))
                 cur.execute("delete from artifacts where lecture_id = %s;", (lecture_id,))
                 artifacts_deleted = cur.rowcount
                 cur.execute("delete from exports where lecture_id = %s;", (lecture_id,))
@@ -565,7 +671,539 @@ class Database:
                 cur.execute("delete from courses where id = %s;", (course_id,))
                 return cur.rowcount
 
+    # =========================================================================
+    # Users (Auth)
+    # =========================================================================
 
+    def create_user(
+        self,
+        user_id: str,
+        email: str,
+        password_hash: str,
+        display_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO users (id, email, password_hash, display_name, created_at, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING id, email, display_name, created_at, updated_at;
+                    """,
+                    (user_id, email, password_hash, display_name, now, now),
+                )
+                return cur.fetchone()
+
+    def fetch_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, password_hash, display_name, created_at, updated_at FROM users WHERE email = %s;",
+                    (email,),
+                )
+                return cur.fetchone()
+
+    def fetch_user_by_id(self, user_id: str) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, display_name, auth_provider, created_at, updated_at FROM users WHERE id = %s;",
+                    (user_id,),
+                )
+                return cur.fetchone()
+
+    def find_or_create_oauth_user(
+        self,
+        user_id: str,
+        email: str,
+        auth_provider: str,
+        provider_user_id: str,
+        display_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO users (id, email, password_hash, display_name, auth_provider, provider_user_id, created_at, updated_at)
+                    VALUES (%s, %s, NULL, %s, %s, %s, %s, %s)
+                    ON CONFLICT (email) DO UPDATE SET
+                        auth_provider = EXCLUDED.auth_provider,
+                        provider_user_id = EXCLUDED.provider_user_id,
+                        display_name = COALESCE(NULLIF(EXCLUDED.display_name, ''), users.display_name),
+                        updated_at = EXCLUDED.updated_at
+                    RETURNING id, email, display_name, auth_provider, created_at, updated_at;
+                    """,
+                    (user_id, email, display_name, auth_provider, provider_user_id, now, now),
+                )
+                return cur.fetchone()
+
+    # =========================================================================
+    # Credit Ledger
+    # =========================================================================
+
+    def insert_credit_entry(
+        self,
+        entry_id: str,
+        user_id: str,
+        lecture_id: str,
+        job_id: str,
+        llm_provider: str,
+        llm_model: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        estimated_cost_usd: float,
+    ) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO credit_ledger (
+                        id, user_id, lecture_id, job_id,
+                        llm_provider, llm_model,
+                        prompt_tokens, completion_tokens, total_tokens,
+                        estimated_cost_usd
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    """,
+                    (
+                        entry_id, user_id, lecture_id, job_id,
+                        llm_provider, llm_model,
+                        prompt_tokens, completion_tokens, total_tokens,
+                        estimated_cost_usd,
+                    ),
+                )
+
+    def fetch_user_credits_summary(self, user_id: str) -> Dict[str, Any]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                # Total usage
+                cur.execute(
+                    """
+                    SELECT
+                        COALESCE(SUM(prompt_tokens), 0) AS total_prompt_tokens,
+                        COALESCE(SUM(completion_tokens), 0) AS total_completion_tokens,
+                        COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                        COALESCE(SUM(estimated_cost_usd), 0) AS total_cost_usd,
+                        COUNT(*) AS generation_count
+                    FROM credit_ledger WHERE user_id = %s;
+                    """,
+                    (user_id,),
+                )
+                totals = cur.fetchone()
+
+                # Per-model breakdown
+                cur.execute(
+                    """
+                    SELECT
+                        llm_model,
+                        COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+                        COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+                        COALESCE(SUM(total_tokens), 0) AS total_tokens,
+                        COALESCE(SUM(estimated_cost_usd), 0) AS cost_usd,
+                        COUNT(*) AS count
+                    FROM credit_ledger WHERE user_id = %s
+                    GROUP BY llm_model ORDER BY cost_usd DESC;
+                    """,
+                    (user_id,),
+                )
+                per_model = cur.fetchall()
+
+        return {
+            "totalPromptTokens": totals["total_prompt_tokens"],
+            "totalCompletionTokens": totals["total_completion_tokens"],
+            "totalTokens": totals["total_tokens"],
+            "totalCostUsd": round(float(totals["total_cost_usd"]), 6),
+            "generationCount": totals["generation_count"],
+            "perModel": [
+                {
+                    "model": row["llm_model"],
+                    "promptTokens": row["prompt_tokens"],
+                    "completionTokens": row["completion_tokens"],
+                    "totalTokens": row["total_tokens"],
+                    "costUsd": round(float(row["cost_usd"]), 6),
+                    "count": row["count"],
+                }
+                for row in per_model
+            ],
+        }
+
+    def fetch_user_credit_history(
+        self, user_id: str, limit: int = 20, offset: int = 0
+    ) -> list[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, lecture_id, job_id, llm_provider, llm_model,
+                           prompt_tokens, completion_tokens, total_tokens,
+                           estimated_cost_usd, created_at
+                    FROM credit_ledger
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s;
+                    """,
+                    (user_id, limit, offset),
+                )
+                rows = cur.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "lectureId": row["lecture_id"],
+                "jobId": row["job_id"],
+                "llmProvider": row["llm_provider"],
+                "llmModel": row["llm_model"],
+                "promptTokens": row["prompt_tokens"],
+                "completionTokens": row["completion_tokens"],
+                "totalTokens": row["total_tokens"],
+                "estimatedCostUsd": round(float(row["estimated_cost_usd"]), 6),
+                "createdAt": row["created_at"].isoformat() if row["created_at"] else None,
+            }
+            for row in rows
+        ]
+
+    # =========================================================================
+    # Token Balance
+    # =========================================================================
+
+    FREE_MONTHLY_TOKENS = int(os.getenv("PLC_FREE_MONTHLY_TOKENS", "100000"))
+
+    def _connect_transactional(self):
+        return psycopg.connect(self.dsn, row_factory=dict_row, autocommit=False)
+
+    def get_user_token_balance(self, user_id: str) -> Dict[str, Any]:
+        with self._connect_transactional() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT free_token_balance, purchased_token_balance, free_tokens_reset_at FROM users WHERE id = %s FOR UPDATE;",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError(f"User {user_id} not found")
+
+                # Lazy monthly reset: if 30+ days since last reset, grant fresh free tokens
+                reset_at = row["free_tokens_reset_at"]
+                now = datetime.now(timezone.utc)
+                if reset_at and (now - reset_at).days >= 30:
+                    cur.execute(
+                        """
+                        UPDATE users
+                        SET free_token_balance = %s, free_tokens_reset_at = %s
+                        WHERE id = %s;
+                        """,
+                        (self.FREE_MONTHLY_TOKENS, now, user_id),
+                    )
+                    # Log the reset
+                    txn_id = str(__import__("uuid").uuid4())
+                    cur.execute(
+                        """
+                        INSERT INTO token_transactions (id, user_id, transaction_type, token_amount,
+                            balance_after_free, balance_after_purchased, reference_id, description, created_at)
+                        VALUES (%s, %s, 'free_grant', %s, %s, %s, NULL, 'Monthly free token reset', %s);
+                        """,
+                        (txn_id, user_id, self.FREE_MONTHLY_TOKENS,
+                         self.FREE_MONTHLY_TOKENS, row["purchased_token_balance"], now),
+                    )
+                    conn.commit()
+                    return {
+                        "freeBalance": self.FREE_MONTHLY_TOKENS,
+                        "purchasedBalance": row["purchased_token_balance"],
+                        "totalBalance": self.FREE_MONTHLY_TOKENS + row["purchased_token_balance"],
+                        "freeResetsAt": (now.isoformat()),
+                        "freeMonthlyAllowance": self.FREE_MONTHLY_TOKENS,
+                    }
+
+                conn.commit()
+                free = row["free_token_balance"]
+                purchased = row["purchased_token_balance"]
+                return {
+                    "freeBalance": free,
+                    "purchasedBalance": purchased,
+                    "totalBalance": free + purchased,
+                    "freeResetsAt": reset_at.isoformat() if reset_at else None,
+                    "freeMonthlyAllowance": self.FREE_MONTHLY_TOKENS,
+                }
+
+    def check_and_reserve_tokens(self, user_id: str, estimated_tokens: int) -> Dict[str, Any]:
+        with self._connect_transactional() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT free_token_balance, purchased_token_balance FROM users WHERE id = %s FOR UPDATE;",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return {"ok": False, "error": "user_not_found"}
+
+                free = row["free_token_balance"]
+                purchased = row["purchased_token_balance"]
+                total = free + purchased
+
+                if total < estimated_tokens:
+                    conn.rollback()
+                    return {
+                        "ok": False,
+                        "available": total,
+                        "required": estimated_tokens,
+                    }
+
+                # Deduct free first, then purchased
+                deduct_free = min(free, estimated_tokens)
+                deduct_purchased = estimated_tokens - deduct_free
+                new_free = free - deduct_free
+                new_purchased = purchased - deduct_purchased
+
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET free_token_balance = %s, purchased_token_balance = %s
+                    WHERE id = %s;
+                    """,
+                    (new_free, new_purchased, user_id),
+                )
+
+                txn_id = str(__import__("uuid").uuid4())
+                now = datetime.now(timezone.utc)
+                cur.execute(
+                    """
+                    INSERT INTO token_transactions (id, user_id, transaction_type, token_amount,
+                        balance_after_free, balance_after_purchased, reference_id, description, created_at)
+                    VALUES (%s, %s, 'generation_reserve', %s, %s, %s, NULL, 'Token reservation for generation', %s);
+                    """,
+                    (txn_id, user_id, -estimated_tokens, new_free, new_purchased, now),
+                )
+                conn.commit()
+                return {
+                    "ok": True,
+                    "reserved": estimated_tokens,
+                    "deductedFree": deduct_free,
+                    "deductedPurchased": deduct_purchased,
+                    "balanceAfterFree": new_free,
+                    "balanceAfterPurchased": new_purchased,
+                }
+
+    def deduct_tokens(
+        self,
+        user_id: str,
+        actual_tokens: int,
+        estimated_tokens: int,
+        reference_id: str,
+        description: str = "Generation token reconciliation",
+    ) -> None:
+        refund = estimated_tokens - actual_tokens
+        if refund <= 0:
+            # Actual usage >= estimate, no refund needed. Log final deduction.
+            with self.connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT free_token_balance, purchased_token_balance FROM users WHERE id = %s;",
+                        (user_id,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        txn_id = str(__import__("uuid").uuid4())
+                        cur.execute(
+                            """
+                            INSERT INTO token_transactions (id, user_id, transaction_type, token_amount,
+                                balance_after_free, balance_after_purchased, reference_id, description, created_at)
+                            VALUES (%s, %s, 'generation_deduct', %s, %s, %s, %s, %s, NOW());
+                            """,
+                            (txn_id, user_id, -actual_tokens, row["free_token_balance"],
+                             row["purchased_token_balance"], reference_id, description),
+                        )
+            return
+
+        # Refund over-reservation back to purchased_token_balance
+        with self._connect_transactional() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET purchased_token_balance = purchased_token_balance + %s
+                    WHERE id = %s;
+                    """,
+                    (refund, user_id),
+                )
+                cur.execute(
+                    "SELECT free_token_balance, purchased_token_balance FROM users WHERE id = %s;",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                txn_id = str(__import__("uuid").uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO token_transactions (id, user_id, transaction_type, token_amount,
+                        balance_after_free, balance_after_purchased, reference_id, description, created_at)
+                    VALUES (%s, %s, 'generation_refund', %s, %s, %s, %s, %s, NOW());
+                    """,
+                    (txn_id, user_id, refund, row["free_token_balance"],
+                     row["purchased_token_balance"], reference_id,
+                     f"Refund {refund} tokens (estimated {estimated_tokens}, actual {actual_tokens})"),
+                )
+                conn.commit()
+
+    def refund_reserved_tokens(self, user_id: str, estimated_tokens: int, reference_id: str) -> None:
+        with self._connect_transactional() as conn:
+            with conn.cursor() as cur:
+                # Refund to purchased balance (simplest — user keeps their free tokens priority)
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET purchased_token_balance = purchased_token_balance + %s
+                    WHERE id = %s;
+                    """,
+                    (estimated_tokens, user_id),
+                )
+                cur.execute(
+                    "SELECT free_token_balance, purchased_token_balance FROM users WHERE id = %s;",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                txn_id = str(__import__("uuid").uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO token_transactions (id, user_id, transaction_type, token_amount,
+                        balance_after_free, balance_after_purchased, reference_id, description, created_at)
+                    VALUES (%s, %s, 'generation_refund', %s, %s, %s, %s, 'Full refund — generation failed', NOW());
+                    """,
+                    (txn_id, user_id, estimated_tokens, row["free_token_balance"],
+                     row["purchased_token_balance"], reference_id),
+                )
+                conn.commit()
+
+    def fetch_user_token_transactions(
+        self, user_id: str, limit: int = 20, offset: int = 0,
+    ) -> list[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, transaction_type, token_amount, balance_after_free,
+                           balance_after_purchased, reference_id, description, created_at
+                    FROM token_transactions
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s;
+                    """,
+                    (user_id, limit, offset),
+                )
+                rows = cur.fetchall()
+        return [
+            {
+                "id": r["id"],
+                "transactionType": r["transaction_type"],
+                "tokenAmount": r["token_amount"],
+                "balanceAfterFree": r["balance_after_free"],
+                "balanceAfterPurchased": r["balance_after_purchased"],
+                "referenceId": r["reference_id"],
+                "description": r["description"],
+                "createdAt": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ]
+
+    # =========================================================================
+    # Purchase Receipts
+    # =========================================================================
+
+    def insert_purchase_receipt(
+        self,
+        receipt_id: str,
+        user_id: str,
+        platform: str,
+        product_id: str,
+        transaction_id: str,
+        receipt_data: str,
+        tokens_granted: int,
+        price_usd: float,
+    ) -> None:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO purchase_receipts (id, user_id, platform, product_id,
+                        transaction_id, receipt_data, tokens_granted, price_usd)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (transaction_id) DO NOTHING;
+                    """,
+                    (receipt_id, user_id, platform, product_id,
+                     transaction_id, receipt_data, tokens_granted, price_usd),
+                )
+
+    def fetch_purchase_receipt_by_txn_id(self, transaction_id: str) -> Optional[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM purchase_receipts WHERE transaction_id = %s;",
+                    (transaction_id,),
+                )
+                return cur.fetchone()
+
+    def grant_purchased_tokens(self, user_id: str, tokens: int, purchase_id: str) -> Dict[str, Any]:
+        with self._connect_transactional() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET purchased_token_balance = purchased_token_balance + %s
+                    WHERE id = %s;
+                    """,
+                    (tokens, user_id),
+                )
+                cur.execute(
+                    "SELECT free_token_balance, purchased_token_balance FROM users WHERE id = %s;",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+                txn_id = str(__import__("uuid").uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO token_transactions (id, user_id, transaction_type, token_amount,
+                        balance_after_free, balance_after_purchased, reference_id, description, created_at)
+                    VALUES (%s, %s, 'purchase', %s, %s, %s, %s, 'In-app purchase token grant', NOW());
+                    """,
+                    (txn_id, user_id, tokens, row["free_token_balance"],
+                     row["purchased_token_balance"], purchase_id),
+                )
+                conn.commit()
+                return {
+                    "freeBalance": row["free_token_balance"],
+                    "purchasedBalance": row["purchased_token_balance"],
+                    "totalBalance": row["free_token_balance"] + row["purchased_token_balance"],
+                }
+
+    def fetch_user_purchases(
+        self, user_id: str, limit: int = 20, offset: int = 0,
+    ) -> list[Dict[str, Any]]:
+        with self.connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, platform, product_id, transaction_id,
+                           tokens_granted, price_usd, status, created_at
+                    FROM purchase_receipts
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT %s OFFSET %s;
+                    """,
+                    (user_id, limit, offset),
+                )
+                rows = cur.fetchall()
+        return [
+            {
+                "id": r["id"],
+                "platform": r["platform"],
+                "productId": r["product_id"],
+                "transactionId": r["transaction_id"],
+                "tokensGranted": r["tokens_granted"],
+                "priceUsd": round(float(r["price_usd"]), 2),
+                "status": r["status"],
+                "createdAt": r["created_at"].isoformat() if r["created_at"] else None,
+            }
+            for r in rows
+        ]
 
     def create_deletion_audit_event(self, payload: Dict[str, Any]) -> None:
         with self.connect() as conn:

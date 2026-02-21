@@ -13,6 +13,7 @@ export interface Lecture {
   course_id: string;
   title: string;
   preset_id: string;
+  source_type?: 'audio' | 'pdf';
   status: 'uploaded' | 'processing' | 'generated' | 'failed';
   duration_sec?: number;
   created_at: string;
@@ -51,6 +52,36 @@ export interface Thread {
   created_at?: string;
 }
 
+export interface ThreadOccurrence {
+  id: string;
+  thread_id: string;
+  course_id: string;
+  lecture_id: string;
+  evidence: string;
+  confidence: number;
+  lecture_title?: string;
+  captured_at: string;
+}
+
+export interface ThreadUpdate {
+  id: string;
+  thread_id: string;
+  course_id: string;
+  lecture_id: string;
+  change_type: 'refinement' | 'contradiction' | 'complexity';
+  summary: string;
+  details?: string[];
+  lecture_title?: string;
+  captured_at: string;
+}
+
+export interface ThreadDetail {
+  thread: Thread;
+  occurrences: ThreadOccurrence[];
+  updates: ThreadUpdate[];
+  lectureTitles: Record<string, string>;
+}
+
 export interface Job {
   id: string;
   lecture_id: string;
@@ -87,6 +118,43 @@ export interface LectureProgress {
 export interface StageStatus {
   status: 'not_started' | 'queued' | 'processing' | 'completed' | 'failed';
   job?: Job;
+}
+
+export interface TokenBalance {
+  freeBalance: number;
+  purchasedBalance: number;
+  totalBalance: number;
+  freeResetsAt: string | null;
+  freeMonthlyAllowance: number;
+}
+
+export interface TokenTransaction {
+  id: string;
+  transactionType: string;
+  tokenAmount: number;
+  balanceAfterFree: number;
+  balanceAfterPurchased: number;
+  referenceId?: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface Product {
+  productId: string;
+  tokens: number;
+  priceUsd: number;
+  label: string;
+}
+
+export interface PurchaseReceipt {
+  id: string;
+  platform: string;
+  productId: string;
+  transactionId: string;
+  tokensGranted: number;
+  priceUsd: number;
+  status: string;
+  createdAt: string;
 }
 
 export interface ApiResponse<T> {

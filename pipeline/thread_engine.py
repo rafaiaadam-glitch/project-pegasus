@@ -63,6 +63,7 @@ VALID_FACES = {"RED", "ORANGE", "YELLOW", "GREEN", "BLUE", "PURPLE"}
 _last_metrics = None
 _last_quality_score = None
 _last_artifacts = None
+_last_usage = None
 
 
 # ---------------------------------------------------------------------------
@@ -478,12 +479,22 @@ def _call_openai(
                 f"OpenAI returned invalid JSON: {body[:200]}"
             ) from je
 
+        # Extract usage from OpenAI responses API format
+        usage_raw = raw.get("usage", {})
+        usage_info = {
+            "prompt_tokens": usage_raw.get("input_tokens", 0),
+            "completion_tokens": usage_raw.get("output_tokens", 0),
+            "total_tokens": usage_raw.get("input_tokens", 0) + usage_raw.get("output_tokens", 0),
+        }
+
         # Extract text from OpenAI responses API format
         for output in raw.get("output", []):
             for content in output.get("content", []):
                 if "text" in content:
                     try:
-                        return json.loads(content["text"])
+                        parsed = json.loads(content["text"])
+                        parsed["_usage"] = usage_info
+                        return parsed
                     except json.JSONDecodeError as je:
                         raise NonRetryableError(
                             f"OpenAI returned non-JSON text: {content['text'][:200]}"
@@ -578,8 +589,20 @@ def _call_gemini(
             if not response_text.strip():
                 raise NonRetryableError("Gemini returned empty response")
 
+            # Extract usage from Gemini response
+            usage_info = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                um = response.usage_metadata
+                usage_info = {
+                    "prompt_tokens": getattr(um, "prompt_token_count", 0) or 0,
+                    "completion_tokens": getattr(um, "candidates_token_count", 0) or 0,
+                    "total_tokens": getattr(um, "total_token_count", 0) or 0,
+                }
+
             try:
-                return json.loads(response_text)
+                parsed = json.loads(response_text)
+                parsed["_usage"] = usage_info
+                return parsed
             except json.JSONDecodeError as je:
                 raise NonRetryableError(
                     f"Gemini returned non-JSON text: {response_text[:200]}"
@@ -945,8 +968,9 @@ def generate_thread_records(
         existing = store.load()
         existing_list = list(existing.values())
 
-    global _last_artifacts
+    global _last_artifacts, _last_usage
     _last_artifacts = None
+    _last_usage = None
 
     provider_key = (llm_provider or "openai").strip().lower()
     model_name = llm_model or openai_model
@@ -1011,6 +1035,9 @@ def generate_thread_records(
                 detection_method = "openai"
             api_response_time_ms = (time.time() - start_time) * 1000
 
+            # Extract usage info attached by _call_openai/_call_gemini
+            _last_usage = llm_result.pop("_usage", None)
+
             threads, occurrences, updates = _process_llm_output(
                 llm_result, existing, course_id, lecture_id, generated_at
             )
@@ -1052,7 +1079,7 @@ def generate_thread_records(
             model_name=model_name if detection_method != "fallback" else None,
             llm_provider=provider_key if detection_method != "fallback" else None,
             api_response_time_ms=api_response_time_ms,
-            token_usage=None,  # TODO: Extract from API response
+            token_usage=_last_usage,
             retry_count=retry_count,
             success=success,
             error_message=error_message,
@@ -1086,6 +1113,15 @@ def get_last_metrics():
         Tuple of (metrics, quality_score) or (None, None) if no metrics available
     """
     return _last_metrics, _last_quality_score
+
+
+def get_last_usage() -> Optional[Dict[str, int]]:
+    """Get the token usage from the last LLM call.
+
+    Returns:
+        Dict with prompt_tokens, completion_tokens, total_tokens or None.
+    """
+    return _last_usage
 
 
 # Global storage for last rotation state

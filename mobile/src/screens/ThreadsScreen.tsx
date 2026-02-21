@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   SectionList,
   RefreshControl,
   StyleSheet,
+  TouchableOpacity,
 } from 'react-native';
 import {
   Text,
@@ -40,6 +41,7 @@ export default function ThreadsScreen({ navigation, route }: Props) {
   const { theme, isDark } = useTheme();
   const { courseId, courseTitle } = route.params;
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [lectureTitles, setLectureTitles] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -55,6 +57,7 @@ export default function ThreadsScreen({ navigation, route }: Props) {
       setLoadError(false);
       const data = await api.getCourseThreads(courseId);
       setThreads(data.threads || []);
+      setLectureTitles(data.lectureTitles || {});
     } catch (error) {
       console.error('Error loading threads:', error);
       setLoadError(true);
@@ -111,42 +114,64 @@ export default function ThreadsScreen({ navigation, route }: Props) {
     const face: DiceFace = (item.face && FACE_ORDER.includes(item.face)) ? item.face : 'ORANGE';
     const meta = FACE_META[face];
     const accentColor = isDark ? meta.darkColor : meta.color;
-    const lectureCount = (item.lecture_refs || []).length;
+    const refs: string[] = item.lecture_refs || [];
+    const lectureCount = refs.length;
+    const isMultiLecture = lectureCount >= 2;
+
+    // Show lecture titles (up to 2) instead of just count
+    const lectureNames = refs
+      .slice(0, 2)
+      .map((lid) => lectureTitles[lid] || 'Lecture')
+      .join(', ');
+    const lectureLabel = lectureCount > 2
+      ? `${lectureNames} +${lectureCount - 2} more`
+      : lectureNames || `${lectureCount} lecture${lectureCount !== 1 ? 's' : ''}`;
 
     return (
-      <View style={[styles.threadRow, { backgroundColor: theme.colors.surface }]}>
-        <View style={[styles.colorBar, { backgroundColor: accentColor }]} />
-        <View style={styles.threadContent}>
-          <Text variant="bodyLarge" numberOfLines={1}>
-            {item.title}
-          </Text>
-          {item.summary ? (
-            <Text
-              variant="bodySmall"
-              numberOfLines={2}
-              style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}
-            >
-              {item.summary}
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => navigation.navigate('ThreadDetail', { threadId: item.id })}
+      >
+        <View style={[styles.threadRow, { backgroundColor: theme.colors.surface }]}>
+          <View style={[styles.colorBar, { backgroundColor: accentColor }]} />
+          <View style={styles.threadContent}>
+            <Text variant="bodyLarge" numberOfLines={1}>
+              {item.title}
             </Text>
-          ) : null}
-          <View style={styles.chipRow}>
-            <Chip compact textStyle={{ fontSize: 10 }}>
-              {item.status === 'foundational' ? 'Core' : 'Advanced'}
-            </Chip>
-            {(item.complexity_level || 0) > 0 && (
-              <Chip compact textStyle={{ fontSize: 10 }} style={{ marginLeft: 6 }}>
-                L{item.complexity_level}
+            {item.summary ? (
+              <Text
+                variant="bodySmall"
+                numberOfLines={2}
+                style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}
+              >
+                {item.summary}
+              </Text>
+            ) : null}
+            <View style={styles.chipRow}>
+              <Chip compact textStyle={{ fontSize: 10 }}>
+                {item.status === 'foundational' ? 'Core' : 'Advanced'}
               </Chip>
-            )}
-            <Text
-              variant="labelSmall"
-              style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8 }}
-            >
-              {lectureCount} lecture{lectureCount !== 1 ? 's' : ''}
-            </Text>
+              {(item.complexity_level || 0) > 0 && (
+                <Chip compact textStyle={{ fontSize: 10 }} style={{ marginLeft: 6 }}>
+                  L{item.complexity_level}
+                </Chip>
+              )}
+              {isMultiLecture && (
+                <View style={[styles.multiLectureBadge, { backgroundColor: accentColor }]}>
+                  <Text style={styles.multiLectureBadgeText}>{lectureCount}L</Text>
+                </View>
+              )}
+              <Text
+                variant="labelSmall"
+                numberOfLines={1}
+                style={{ color: theme.colors.onSurfaceVariant, marginLeft: 8, flex: 1 }}
+              >
+                {lectureLabel}
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -270,6 +295,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 6,
+  },
+  multiLectureBadge: {
+    marginLeft: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  multiLectureBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
   },
   emptyContainer: {
     flex: 1,

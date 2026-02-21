@@ -718,6 +718,18 @@ def run_transcription_job(
                 LOGGER.warning("Failed to clean up temporary file %s: %s", temp_file_path, cleanup_exc)
 
 
+PRICING = {
+    "gpt-4o-mini": {"input": 0.15e-6, "output": 0.60e-6},
+    "gemini-2.5-flash": {"input": 0.075e-6, "output": 0.30e-6},
+    "gemini-2.5-pro": {"input": 1.25e-6, "output": 5.00e-6},
+}
+
+
+def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
+    rates = PRICING.get(model, PRICING.get("gpt-4o-mini", {"input": 0.15e-6, "output": 0.60e-6}))
+    return prompt_tokens * rates["input"] + completion_tokens * rates["output"]
+
+
 def run_generation_job(
     job_id: str,
     lecture_id: str,
@@ -725,6 +737,8 @@ def run_generation_job(
     preset_id: str,
     llm_provider: str,
     llm_model: str,
+    user_id: Optional[str] = None,
+    estimated_tokens: Optional[int] = None,
 ) -> Dict[str, Any]:
     _log_job_event("job.run.start", job_id=job_id, lecture_id=lecture_id, job_type="generation")
     _update_job(job_id, "running", job_type="generation")
@@ -843,9 +857,58 @@ def run_generation_job(
                         "complexity_level": thread["complexityLevel"],
                         "lecture_refs": thread.get("lectureRefs", []),
                         "face": thread.get("face"),
+                        "evolution_notes": thread.get("evolutionNotes"),
                         "created_at": now,
                     }
                 )
+
+        # Persist thread occurrences
+        try:
+            occ_path = artifacts_dir / "thread-occurrences.json"
+            if occ_path.exists():
+                db.delete_thread_occurrences_for_lecture(lecture_id)
+                occ_data = json.loads(occ_path.read_text(encoding="utf-8"))
+                rows = []
+                for occ in occ_data.get("occurrences", []):
+                    rows.append({
+                        "id": occ["id"],
+                        "thread_id": occ["threadId"],
+                        "course_id": occ["courseId"],
+                        "lecture_id": occ["lectureId"],
+                        "artifact_id": occ.get("artifactId", "unknown"),
+                        "evidence": occ["evidence"],
+                        "confidence": occ.get("confidence", 0.0),
+                        "captured_at": occ["capturedAt"],
+                    })
+                if rows:
+                    count = db.insert_thread_occurrences(rows)
+                    LOGGER.info("Saved %d thread occurrences for lecture %s", count, lecture_id)
+        except Exception as e:
+            LOGGER.warning("Failed to save thread occurrences: %s", e)
+
+        # Persist thread updates
+        try:
+            upd_path = artifacts_dir / "thread-updates.json"
+            if upd_path.exists():
+                db.delete_thread_updates_for_lecture(lecture_id)
+                upd_data = json.loads(upd_path.read_text(encoding="utf-8"))
+                rows = []
+                for upd in upd_data.get("updates", []):
+                    rows.append({
+                        "id": upd["id"],
+                        "thread_id": upd["threadId"],
+                        "course_id": upd["courseId"],
+                        "lecture_id": upd["lectureId"],
+                        "change_type": upd["changeType"],
+                        "summary": upd["summary"],
+                        "details": upd.get("details"),
+                        "captured_at": upd["capturedAt"],
+                    })
+                if rows:
+                    count = db.insert_thread_updates(rows)
+                    LOGGER.info("Saved %d thread updates for lecture %s", count, lecture_id)
+        except Exception as e:
+            LOGGER.warning("Failed to save thread updates: %s", e)
 
         # Save thread detection metrics
         try:
@@ -882,6 +945,48 @@ def run_generation_job(
                 print(f"[Job] Saved thread metrics: quality={quality_score}/100")
         except Exception as e:
             print(f"[Job] WARNING: Failed to save thread metrics: {e}")
+
+        # Log credit usage if user is authenticated
+        try:
+            from pipeline.thread_engine import get_last_usage
+            usage = get_last_usage()
+            if usage and user_id:
+                prompt_tokens = usage.get("prompt_tokens", 0)
+                completion_tokens = usage.get("completion_tokens", 0)
+                total_tokens = usage.get("total_tokens", 0)
+                cost = _estimate_cost(llm_model, prompt_tokens, completion_tokens)
+                db.insert_credit_entry(
+                    entry_id=str(uuid.uuid4()),
+                    user_id=user_id,
+                    lecture_id=lecture_id,
+                    job_id=job_id,
+                    llm_provider=llm_provider,
+                    llm_model=llm_model,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                    estimated_cost_usd=cost,
+                )
+                LOGGER.info(
+                    "Logged credit: user=%s model=%s tokens=%d cost=$%.6f",
+                    user_id, llm_model, total_tokens, cost,
+                )
+
+                # Reconcile token reservation: refund over-estimate
+                if estimated_tokens and total_tokens > 0:
+                    try:
+                        db.deduct_tokens(
+                            user_id, total_tokens, estimated_tokens, job_id,
+                            f"Generation for lecture {lecture_id} (model={llm_model})",
+                        )
+                        LOGGER.info(
+                            "Token reconciliation: user=%s actual=%d estimated=%d",
+                            user_id, total_tokens, estimated_tokens,
+                        )
+                    except Exception as tok_err:
+                        LOGGER.warning("Token reconciliation failed: %s", tok_err)
+        except Exception as e:
+            LOGGER.warning("Failed to log credit entry: %s", e)
 
         # Save dice rotation state if present
         try:
@@ -923,6 +1028,16 @@ def run_generation_job(
     except Exception as exc:
         _update_job(job_id, "failed", error=str(exc), job_type="generation")
         _log_job_event("job.run.failed", job_id=job_id, lecture_id=lecture_id, job_type="generation", error=str(exc))
+
+        # Refund reserved tokens on generation failure
+        if user_id and estimated_tokens:
+            try:
+                db = get_database()
+                db.refund_reserved_tokens(user_id, estimated_tokens, job_id)
+                LOGGER.info("Refunded %d tokens to user %s after generation failure", estimated_tokens, user_id)
+            except Exception as refund_err:
+                LOGGER.warning("Token refund failed: %s", refund_err)
+
         raise
 
 

@@ -56,7 +56,11 @@ export default function HomeScreen({ navigation }: Props) {
   };
 
   const handleLecturePress = (lecture: Lecture) => {
-    navigation.navigate('LectureDetail', { lectureId: lecture.id });
+    navigation.navigate('LectureDetail', {
+      lectureId: lecture.id,
+      lectureTitle: lecture.title || 'Untitled Lecture',
+      courseId: lecture.course_id,
+    });
   };
 
   const handleDeleteLecture = (lecture: Lecture) => {
@@ -284,7 +288,15 @@ export default function HomeScreen({ navigation }: Props) {
 
         {/* AI Chat */}
         <TouchableOpacity style={styles.navItem} onPress={handleChat}>
-          <MaterialCommunityIcons name="chat-outline" size={28} color={theme.colors.onSurfaceVariant} />
+          <View>
+            <MaterialCommunityIcons name="chat-outline" size={28} color={theme.colors.onSurfaceVariant} />
+            <MaterialCommunityIcons
+              name="creation"
+              size={14}
+              color={theme.colors.primary}
+              style={{ position: 'absolute', top: -4, right: -6 }}
+            />
+          </View>
           <Text style={[styles.navLabel, { color: theme.colors.onSurfaceVariant }]}>AI Chat</Text>
         </TouchableOpacity>
 

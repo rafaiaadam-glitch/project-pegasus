@@ -113,18 +113,22 @@ export const exportExamQuestionsAsMarkdown = (
         markdown += `**Points:** ${q.points}\n\n`;
       }
 
-      markdown += `${q.question}\n\n`;
+      markdown += `${q.prompt}\n\n`;
 
-      if (q.type === 'multiple-choice' && q.options) {
-        q.options.forEach((option: string, optIdx: number) => {
+      if (q.type === 'multiple-choice' && q.choices) {
+        q.choices.forEach((choice: string, optIdx: number) => {
           const letter = String.fromCharCode(65 + optIdx);
-          markdown += `${letter}) ${option}\n`;
+          markdown += `${letter}) ${choice}\n`;
         });
         markdown += '\n';
 
-        if (q.correctAnswer) {
-          markdown += `**Answer:** ${q.correctAnswer}\n\n`;
+        if (q.correctChoiceIndex != null) {
+          markdown += `**Answer:** ${String.fromCharCode(65 + q.correctChoiceIndex)}\n\n`;
         }
+      }
+
+      if (q.answer) {
+        markdown += `**Answer:** ${q.answer}\n\n`;
       }
 
       markdown += '---\n\n';

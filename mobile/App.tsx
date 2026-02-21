@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { StatusBar } from 'react-native';
+import { StatusBar, ActivityIndicator, View } from 'react-native';
 import { PaperProvider } from 'react-native-paper';
 import HomeScreen from './src/screens/HomeScreen';
 import CourseListScreen from './src/screens/CourseListScreen';
@@ -20,13 +20,30 @@ import DownloadsScreen from './src/screens/DownloadsScreen';
 import GestureSettingsScreen from './src/screens/GestureSettingsScreen';
 import WidgetsScreen from './src/screens/WidgetsScreen';
 import ThreadsScreen from './src/screens/ThreadsScreen';
+import ThreadDetailScreen from './src/screens/ThreadDetailScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import SummaryViewerScreen from './src/screens/SummaryViewerScreen';
 import OutlineViewerScreen from './src/screens/OutlineViewerScreen';
 import KeyTermsViewerScreen from './src/screens/KeyTermsViewerScreen';
-import DiceAnalysisScreen from './src/screens/DiceAnalysisScreen';
+import PurchaseTokensScreen from './src/screens/PurchaseTokensScreen';
 import { ThemeProvider, useTheme } from './src/theme';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import AuthScreen from './src/screens/AuthScreen';
+import { isAuthenticated } from './src/services/auth';
+import api from './src/services/api';
+import { initializePurchases, destroyPurchases } from './src/services/purchases';
+
+// Configure Google Sign-In — guarded because the native module is only
+// available in a custom dev client build (not Expo Go).
+try {
+  const { GoogleSignin } = require('@react-native-google-signin/google-signin');
+  GoogleSignin.configure({
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  });
+} catch {
+  // Native module not available (running in Expo Go) — Google Sign-In disabled
+}
 
 const Stack = createNativeStackNavigator();
 
@@ -165,6 +182,13 @@ function AppStack() {
         }}
       />
       <Stack.Screen
+        name="ThreadDetail"
+        component={ThreadDetailScreen}
+        options={{
+          title: 'Thread',
+        }}
+      />
+      <Stack.Screen
         name="Chat"
         component={ChatScreen}
         options={{
@@ -193,10 +217,10 @@ function AppStack() {
         }}
       />
       <Stack.Screen
-        name="DiceAnalysis"
-        component={DiceAnalysisScreen}
+        name="PurchaseTokens"
+        component={PurchaseTokensScreen}
         options={{
-          title: 'Dice Analysis',
+          title: 'Buy Tokens',
         }}
       />
     </Stack.Navigator>
@@ -205,13 +229,49 @@ function AppStack() {
 
 function AppNavigator() {
   const { theme, isDark } = useTheme();
+  const [authChecked, setAuthChecked] = useState(false);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const loggedIn = await isAuthenticated();
+      if (loggedIn) {
+        await api.refreshAuthToken();
+        initializePurchases(); // Initialize IAP after auth (non-blocking)
+      }
+      setAuthed(loggedIn);
+      setAuthChecked(true);
+    })();
+    return () => {
+      destroyPurchases();
+    };
+  }, []);
+
+  const handleAuthenticated = useCallback(() => {
+    setAuthed(true);
+  }, []);
+
+  if (!authChecked) {
+    return (
+      <PaperProvider theme={theme}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.background }}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+        </View>
+      </PaperProvider>
+    );
+  }
+
   return (
     <PaperProvider theme={theme}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <ErrorBoundary>
-        <NavigationContainer>
-          <AppStack />
-        </NavigationContainer>
+        {authed ? (
+          <NavigationContainer>
+            <AppStack />
+          </NavigationContainer>
+        ) : (
+          <AuthScreen onAuthenticated={handleAuthenticated} />
+        )}
       </ErrorBoundary>
     </PaperProvider>
   );

@@ -13,6 +13,8 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.pegasus.lecturecopilot",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app needs access to your microphone to record lectures.",
         "UIBackgroundModes": ["audio"]
@@ -35,7 +37,9 @@
         {
           "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone to record lectures."
         }
-      ]
+      ],
+      "expo-apple-authentication",
+      "@react-native-google-signin/google-signin"
     ]
   }
 }
