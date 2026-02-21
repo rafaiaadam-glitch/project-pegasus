@@ -1,0 +1,130 @@
+[2026-02-21 20:53:46] ================================================================
+[2026-02-21 20:53:46] CRITICAL-PATH INTEGRATION TEST DRILL — started at Sat 21 Feb 2026 20:53:46 GMT
+[2026-02-21 20:53:46] Repo root: temp-repo
+[2026-02-21 20:53:46] API URL:   https://pegasus-api-988514135894.europe-west1.run.app
+[2026-02-21 20:53:46] ================================================================
+[2026-02-21 20:53:46] 
+[2026-02-21 20:53:46] STEP 1: Running unit integration tests (pytest backend/tests/test_flow.py)...
+[2026-02-21 20:53:46] 
+============================= test session starts ==============================
+platform darwin -- Python 3.14.3, pytest-8.3.3, pluggy-1.6.0 -- /Library/Frameworks/Python.framework/Versions/3.14/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/rafaiaadam/project-pegasus/temp-repo
+plugins: anyio-4.12.1
+collecting ... collected 5 items
+
+backend/tests/test_flow.py::test_full_pipeline_flow PASSED               [ 20%]
+backend/tests/test_flow.py::test_transcription_preserves_existing_lecture_metadata PASSED [ 40%]
+backend/tests/test_flow.py::test_export_download[markdown-lecture-001.md] PASSED [ 60%]
+backend/tests/test_flow.py::test_export_download[anki-lecture-001.csv] PASSED [ 80%]
+backend/tests/test_flow.py::test_export_download[pdf-lecture-001.pdf] PASSED [100%]
+
+============================== 5 passed in 1.96s ===============================
+[2026-02-21 20:53:49] 
+[2026-02-21 20:53:49] STEP 1: Unit integration tests
+[2026-02-21 20:53:49]   RESULT: PASS
+[2026-02-21 20:53:49] 
+[2026-02-21 20:53:49] STEP 2: Running live E2E canary against https://pegasus-api-988514135894.europe-west1.run.app...
+[2026-02-21 20:53:49] 
+WARNING: PLC_WRITE_API_TOKEN not set — write operations may fail.
+
+Pegasus Canary E2E Flow
+  API:       https://pegasus-api-988514135894.europe-west1.run.app
+  Course:    canary-b75f70c2
+  Lecture:   canary-lec-b524a6a1
+  Preset:    exam-mode
+  Cleanup:   yes
+  Test PDF:  /var/folders/kl/_rnnk3x11r92704md_kbp_lh0000gn/T/tmpz0nfi_uv/canary_test.pdf (587 bytes)
+
+============================================================
+  STEP: Health Check
+============================================================
+  [PASS] GET /health returns status=ok
+  [PASS] GET /health/ready returns status
+  [PASS] Database is reachable
+
+============================================================
+  STEP: Presets
+============================================================
+  [PASS] GET /presets returns non-empty list
+  [PASS] GET /presets/exam-mode returns preset
+
+============================================================
+  STEP: Lecture Ingest (PDF Upload)
+============================================================
+  [PASS] Ingest returns lectureId
+  [PASS] Ingest detects PDF fileType
+
+============================================================
+  STEP: Verify Lecture Record
+============================================================
+  [PASS] GET /lectures/{id} returns lecture
+  [PASS] Lecture status is uploaded or later
+
+============================================================
+  STEP: Transcription Job
+============================================================
+    Found existing transcription job: 229678e0-1684-4541-a141-1ff09e66c42a
+    Transcription job 229678e0-1684-4541-a141-1ff09e66c42a: completed
+  [PASS] Transcription job completes
+
+============================================================
+  STEP: Generation Job
+============================================================
+  [PASS] Generate returns jobId
+    Generation job 1e33ec84-39b3-438f-ad83-497166fb310a: completed
+  [PASS] Generation job completes
+
+============================================================
+  STEP: Artifact Retrieval
+============================================================
+  [PASS] Artifacts endpoint returns data
+    Artifact types found: ['exam-questions', 'flashcards', 'key-terms', 'outline', 'summary']
+  [PASS] Artifact 'summary' exists
+  [PASS] Artifact 'flashcards' exists
+  [PASS] Artifact 'exam-questions' exists
+
+============================================================
+  STEP: Progress Tracking
+============================================================
+  [PASS] Progress endpoint returns data
+  [PASS] Progress percent > 0
+
+============================================================
+  STEP: Export Job
+============================================================
+  [PASS] Export returns jobId
+    Export job eb87afa3-7863-4606-888c-cc48dd94d0b6: completed
+  [PASS] Export job completes
+
+============================================================
+  STEP: Export Download
+============================================================
+  [PASS] Export 'markdown' downloadable
+
+============================================================
+  STEP: Course-Level Progress
+============================================================
+  [PASS] Course progress returns data
+  [PASS] Course has at least 1 lecture
+
+============================================================
+  STEP: Cleanup (delete canary data)
+============================================================
+  [PASS] DELETE /lectures/{id} succeeds
+  [PASS] DELETE /courses/{id} succeeds
+
+============================================================
+  RESULTS: 25 passed, 0 failed, 0 skipped (total 25)
+============================================================
+
+  CANARY PASSED
+[2026-02-21 20:54:11] 
+[2026-02-21 20:54:11] STEP 2: Live E2E canary
+[2026-02-21 20:54:11]   RESULT: PASS
+[2026-02-21 20:54:11] 
+[2026-02-21 20:54:11] ================================================================
+[2026-02-21 20:54:11] DRILL COMPLETE — Sat 21 Feb 2026 20:54:11 GMT
+[2026-02-21 20:54:11] Results: 2 passed, 0 failed (of 2 steps)
+[2026-02-21 20:54:11] Evidence log: ops/drills/critical-path-evidence-2026-02-21-205346.log
+[2026-02-21 20:54:11] ================================================================
