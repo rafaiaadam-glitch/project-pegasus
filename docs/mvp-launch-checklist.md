@@ -105,18 +105,18 @@ Before launch, all must be true:
 
 - [x] Critical-path integration tests pass (ingest → transcribe → generate → export)
 - [x] API and worker deploy from main with reproducible config
-- [ ] At least one mobile build (iOS/Android) validated end-to-end against staging
+- [x] At least one mobile build (iOS/Android) validated end-to-end against staging
 - [x] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
-- [ ] Monitoring + alerting verified by synthetic canary jobs
+- [x] Monitoring + alerting verified by synthetic canary jobs
 
 ---
 
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **34**
-- Items remaining: **2**
-- Completion: **94%**
+- Items marked complete: **36**
+- Items remaining: **0**
+- Completion: **100%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -199,4 +199,9 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 
 ### Still open before launch
 - ~~Mobile UX completion for a no-terminal first-time flow.~~ (Done — Section 4 complete)
-- Final launch gate rehearsal.
+- ~~Final launch gate rehearsal.~~ (Done — all 36/36 items complete)
+
+### Launch gate evidence (2026-02-21)
+- E2E canary against production: 25/25 checks passed (upload → transcribe → generate → artifacts → export → cleanup)
+- Synthetic canary jobs: Cloud Scheduler `pegasus-health-canary` + `pegasus-liveness-canary` (every 5 min, europe-west1)
+- GCP alert policies active: "Pegasus API Down", "Pegasus Failure Rate Spike (>10%)", "Pegasus Generation Failure Burst"
