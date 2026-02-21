@@ -12,7 +12,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip "wheel>=0.46.2" \
+    && pip install --no-cache-dir -r /app/requirements.txt \
+    && pip install --no-cache-dir --force-reinstall "jaraco.context>=6.1.0"
 
 COPY backend /app/backend
 COPY pipeline /app/pipeline

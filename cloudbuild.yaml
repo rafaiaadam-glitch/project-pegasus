@@ -15,6 +15,16 @@ steps:
       - 'push'
       - 'us-central1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest'
 
+  # Scan container image for vulnerabilities (non-blocking, exit-code 0)
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+        trivy image --exit-code 0 --severity HIGH,CRITICAL --ignore-unfixed \
+          us-central1-docker.pkg.dev/$PROJECT_ID/pegasus/api:latest
+
   # Deploy to Cloud Run (europe-west1)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud

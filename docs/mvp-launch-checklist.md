@@ -80,7 +80,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 - [x] Add secrets management guidance for each deploy target
 - [x] Add PII handling policy for transcripts and generated artifacts
 - [x] Add data deletion endpoint/workflow per lecture/course
-- [ ] Add dependency and container vulnerability scanning in CI
+- [x] Add dependency and container vulnerability scanning in CI
 
 **Definition of done:**
 - documented deletion flow and auditability for destructive operations
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **29**
-- Items remaining: **7**
-- Completion: **81%**
+- Items marked complete: **30**
+- Items remaining: **6**
+- Completion: **83%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -172,6 +172,7 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Secrets management guidance per deploy target (Render/Railway/Fly/GCP/local) → `docs/runbooks/secrets-management.md`
 - Deletion workflow with auditability (`DELETE /lectures/{lecture_id}`, `DELETE /courses/{course_id}`, `GET /ops/deletion-audit`) → `backend/app.py`, `backend/db.py`, `backend/migrations/002_deletion_audit.sql`, `backend/tests/test_delete_workflow.py`
 - PII handling policy for transcript/artifact data → `docs/PII_HANDLING_POLICY.md`
+- Dependency + container vulnerability scanning in CI → `.github/workflows/ci.yml` (pip-audit + trivy fs scan), `cloudbuild.yaml` (trivy container image scan)
 - Canonical deployment guide (Cloud Run production) → `docs/deployment-guide.md`
 - Health/readiness/liveness probes + Cloud Run config → `backend/app.py` (`/health/live`), `cloudbuild.yaml` (startup + liveness probes, scaling bounds)
 - Staging environment parity checklist → `docs/staging-parity-checklist.md`
