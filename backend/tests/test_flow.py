@@ -92,6 +92,15 @@ class FakeDB:
     def upsert_thread(self, payload: dict) -> None:
         self.threads[payload["id"]] = payload
 
+    def delete_threads_for_lecture(self, lecture_id: str) -> int:
+        to_delete = [
+            tid for tid, t in self.threads.items()
+            if lecture_id in (t.get("lecture_refs") or [])
+        ]
+        for tid in to_delete:
+            del self.threads[tid]
+        return len(to_delete)
+
     def fetch_threads(self, lecture_id: str):
         return [
             row
@@ -133,19 +142,15 @@ def test_full_pipeline_flow(monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "get_database", lambda: fake_db)
     monkeypatch.setattr(jobs_module, "get_database", lambda: fake_db)
 
-    class StubWhisperModel:
-        def transcribe(self, _path: str):
-            return {
-                "language": "en",
-                "text": "Sample transcript.",
-                "segments": [{"start": 0.0, "end": 1.0, "text": "Sample transcript."}],
-            }
+    def fake_transcribe_openai(audio_path, model="whisper-1"):
+        return {
+            "language": "en",
+            "text": "Sample transcript.",
+            "segments": [{"start": 0.0, "end": 1.0, "text": "Sample transcript."}],
+            "engine": {"provider": "openai", "model": model},
+        }
 
-    class StubWhisper:
-        def load_model(self, _model: str):
-            return StubWhisperModel()
-
-    monkeypatch.setattr(jobs_module, "_load_whisper", lambda: StubWhisper())
+    monkeypatch.setattr(jobs_module, "_transcribe_with_openai_api", fake_transcribe_openai)
 
     def fake_run_pipeline(transcript, context, output_dir, use_llm=False, openai_model="gpt-4o-mini", llm_provider="openai", llm_model=None):
         base = output_dir / context.lecture_id
@@ -343,21 +348,17 @@ def test_transcription_preserves_existing_lecture_metadata(monkeypatch, tmp_path
         }
     )
 
-    class StubWhisperModel:
-        def transcribe(self, _path: str):
-            return {
-                "language": "en",
-                "text": "Sample transcript.",
-                "segments": [{"start": 0.0, "end": 1.0, "text": "Sample transcript."}],
-            }
-
-    class StubWhisper:
-        def load_model(self, _model: str):
-            return StubWhisperModel()
+    def fake_transcribe_openai(audio_path, model="whisper-1"):
+        return {
+            "language": "en",
+            "text": "Sample transcript.",
+            "segments": [{"start": 0.0, "end": 1.0, "text": "Sample transcript."}],
+            "engine": {"provider": "openai", "model": model},
+        }
 
     monkeypatch.setenv("PLC_STORAGE_DIR", str(storage_dir))
     monkeypatch.setattr(jobs_module, "get_database", lambda: fake_db)
-    monkeypatch.setattr(jobs_module, "_load_whisper", lambda: StubWhisper())
+    monkeypatch.setattr(jobs_module, "_transcribe_with_openai_api", fake_transcribe_openai)
 
     def fake_save_transcript(payload: str, name: str) -> str:
         out = storage_dir / "transcripts"

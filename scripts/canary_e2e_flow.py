@@ -387,7 +387,7 @@ def test_artifacts():
     artifact_types = [r.get("artifact_type") for r in records]
     print(f"    Artifact types found: {artifact_types}")
 
-    for expected in ("summary", "flashcards", "exam"):
+    for expected in ("summary", "flashcards", "exam-questions"):
         check(
             f"Artifact '{expected}' exists",
             expected in artifact_types,
