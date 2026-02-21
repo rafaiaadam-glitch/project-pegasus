@@ -1,6 +1,6 @@
 #!/bin/bash
 # Production GCP Integration Verification Script
-# Verifies that Gemini (Vertex AI) and Google Speech-to-Text are properly configured
+# Verifies that OpenAI (LLM + Whisper STT) and Cloud Run are properly configured
 
 set -euo pipefail
 
@@ -35,8 +35,6 @@ echo ""
 # Check required APIs
 echo "📡 Checking required APIs..."
 REQUIRED_APIS=(
-  "speech.googleapis.com"
-  "aiplatform.googleapis.com"
   "run.googleapis.com"
   "storage.googleapis.com"
   "sqladmin.googleapis.com"
@@ -91,10 +89,8 @@ check_env_var() {
   fi
 }
 
-# Check critical env vars for Gemini
-check_env_var "PLC_LLM_PROVIDER" "gemini"
-check_env_var "GEMINI_API_KEY"
-check_env_var "GCP_PROJECT_ID" "${PROJECT_ID}"
+# Check critical env vars for OpenAI provider
+check_env_var "PLC_LLM_PROVIDER" "openai"
 check_env_var "GCP_REGION" "${REGION}"
 
 # Check storage configuration
@@ -102,11 +98,20 @@ check_env_var "STORAGE_MODE" "gcs"
 check_env_var "GCS_BUCKET"
 check_env_var "GCS_PREFIX" "pegasus"
 
-# Check optional STT configuration
+# Check that OPENAI_API_KEY is available via Secret Manager
 echo ""
-echo "📝 Optional Google Speech-to-Text env vars:"
-check_env_var "PLC_GCP_STT_MODEL" || echo "  ℹ️  PLC_GCP_STT_MODEL not set (will use default: latest_long)"
-check_env_var "PLC_STT_LANGUAGE" || echo "  ℹ️  PLC_STT_LANGUAGE not set (will use default: en-US)"
+echo "🔑 Checking secrets..."
+if gcloud run services describe "${SERVICE_NAME}" --region="${REGION}" --project="${PROJECT_ID}" --format="yaml" 2>/dev/null | grep -q "openai-api-key"; then
+  echo "  ✅ OPENAI_API_KEY secret reference found"
+else
+  echo "  ❌ OPENAI_API_KEY secret reference NOT found in Cloud Run config"
+fi
+
+if gcloud run services describe "${SERVICE_NAME}" --region="${REGION}" --project="${PROJECT_ID}" --format="yaml" 2>/dev/null | grep -q "pegasus-db-url"; then
+  echo "  ✅ DATABASE_URL secret reference found"
+else
+  echo "  ❌ DATABASE_URL secret reference NOT found in Cloud Run config"
+fi
 
 echo ""
 
@@ -123,16 +128,12 @@ echo "${ROLES}" | while read -r role; do
   echo "   - ${role}"
 done
 
-# Check for Speech and Vertex AI permissions
+# Check for storage permissions
 if echo "${ROLES}" | grep -q "storage"; then
   echo "   ✅ Has storage permissions"
 else
   echo "   ⚠️  No explicit storage roles (may use default compute permissions)"
 fi
-
-echo ""
-echo "💡 Note: Cloud Run services use the default compute service account which has"
-echo "   automatic access to Speech-to-Text and Vertex AI APIs when enabled."
 
 echo ""
 
@@ -153,14 +154,13 @@ echo ""
 echo "✅ All production environment checks passed!"
 echo ""
 echo "🎯 Summary:"
-echo "   • Gemini (Vertex AI) API: Enabled"
-echo "   • Google Speech-to-Text API: Enabled"
-echo "   • LLM Provider: gemini"
+echo "   • LLM Provider: openai (gpt-4o-mini)"
+echo "   • STT Provider: OpenAI Whisper (whisper-1)"
 echo "   • Storage Mode: gcs"
 echo "   • Service URL: ${SERVICE_URL}"
 echo ""
 echo "📚 Next steps:"
-echo "   1. Test transcription: POST ${SERVICE_URL}/lectures/{id}/transcribe?provider=google"
-echo "   2. Test generation: POST ${SERVICE_URL}/lectures/{id}/generate (uses Gemini by default)"
+echo "   1. Test transcription: POST ${SERVICE_URL}/lectures/{id}/transcribe"
+echo "   2. Test generation: POST ${SERVICE_URL}/lectures/{id}/generate"
 echo "   3. Monitor logs: gcloud run services logs read ${SERVICE_NAME} --region=${REGION}"
 echo ""

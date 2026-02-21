@@ -7,9 +7,9 @@ google-cloud-storage==2.14.0
 google-cloud-speech==2.27.0
 rq==1.16.2
 redis==5.0.7
-jsonschema>=4.20.0
-google-cloud-aiplatform>=1.79.0
-openai>=1.30.0
-google-genai>=1.0.0
-PyMuPDF>=1.24.0
-python-docx>=1.1.0
+jsonschema==4.26.0
+google-cloud-aiplatform==1.138.0
+openai==2.21.0
+google-genai==1.64.0
+PyMuPDF==1.27.1
+python-docx==1.2.0
