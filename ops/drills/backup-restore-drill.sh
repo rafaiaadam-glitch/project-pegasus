@@ -68,7 +68,7 @@ fi
 log ""
 log "STEP 3: Checking GCS object versioning on gs://${BUCKET}..."
 VERSIONING=$(gcloud storage buckets describe "gs://${BUCKET}" \
-  --format="value(versioning.enabled)" \
+  --format="value(versioning_enabled)" \
   --project="$PROJECT" 2>&1) || true
 echo "$VERSIONING" >> "$EVIDENCE_LOG"
 if [ "$VERSIONING" = "True" ]; then
@@ -90,7 +90,7 @@ log "  4a: Test object uploaded to gs://${BUCKET}/${DRILL_OBJECT}"
 
 # List versions before delete
 log "  4b: Listing object versions..."
-gcloud storage ls -la "gs://${BUCKET}/${DRILL_OBJECT}" 2>&1 | tee -a "$EVIDENCE_LOG" || true
+gcloud storage ls -l --all-versions "gs://${BUCKET}/${DRILL_OBJECT}" 2>&1 | tee -a "$EVIDENCE_LOG" || true
 
 # Delete the object
 gcloud storage rm "gs://${BUCKET}/${DRILL_OBJECT}" 2>&1 | tee -a "$EVIDENCE_LOG"
@@ -98,7 +98,7 @@ log "  4c: Test object deleted."
 
 # Check if we can see the deleted version (requires versioning)
 log "  4d: Listing versions after delete (should show non-current version if versioning enabled)..."
-VERSIONS_OUTPUT=$(gcloud storage ls -la "gs://${BUCKET}/${DRILL_OBJECT}" 2>&1) || true
+VERSIONS_OUTPUT=$(gcloud storage ls -l --all-versions "gs://${BUCKET}/${DRILL_OBJECT}" 2>&1) || true
 echo "$VERSIONS_OUTPUT" >> "$EVIDENCE_LOG"
 
 if echo "$VERSIONS_OUTPUT" | grep -q "generation"; then

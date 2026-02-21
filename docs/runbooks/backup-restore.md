@@ -86,7 +86,7 @@ gcloud run services update pegasus-api \
 
 ```bash
 gcloud storage buckets describe gs://delta-student-486911-n5-pegasus-storage-eu \
-  --format="value(versioning.enabled)"
+  --format="value(versioning_enabled)"
 ```
 
 ### Enable object versioning (if not already)
@@ -109,7 +109,7 @@ gcloud storage cp --recursive \
 
 ```bash
 # List versions of a specific object
-gcloud storage ls -la \
+gcloud storage ls -l --all-versions \
   "gs://delta-student-486911-n5-pegasus-storage-eu/pegasus/path/to/object"
 
 # Restore a specific version by copying it back
