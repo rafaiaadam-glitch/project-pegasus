@@ -13,6 +13,7 @@ from pipeline.dice_rotation.rotate import (
     rotate_next,
     get_rotation_summary,
     is_rotation_complete,
+    verify_schedule_integrity,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "rotate_next",
     "get_rotation_summary",
     "is_rotation_complete",
+    "verify_schedule_integrity",
 ]

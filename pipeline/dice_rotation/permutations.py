@@ -1,7 +1,7 @@
 """Permutation schedule generation for dice rotation."""
 
 from __future__ import annotations
-import random
+import secrets
 from typing import List
 from pipeline.dice_rotation.types import DiceFace
 
@@ -10,13 +10,22 @@ from pipeline.dice_rotation.types import DiceFace
 ALL_FACES: List[DiceFace] = ["RED", "ORANGE", "YELLOW", "GREEN", "BLUE", "PURPLE"]
 
 
+def _crypto_shuffle(lst: List) -> None:
+    """Fisher-Yates shuffle using cryptographic randomness (in-place)."""
+    for i in range(len(lst) - 1, 0, -1):
+        j = secrets.randbelow(i + 1)
+        lst[i], lst[j] = lst[j], lst[i]
+
+
 def generate_schedule(
     num_permutations: int = 6,
     preset_weights: dict | None = None,
-    seed: int | None = None,
 ) -> List[List[DiceFace]]:
     """
     Generate a permutation schedule for dice rotation.
+
+    Uses cryptographically secure randomness (secrets module / os.urandom)
+    to ensure unpredictable, tamper-evident permutation schedules.
 
     Strategy:
     1. Start with base permutation (preset order if provided, else canonical)
@@ -27,14 +36,10 @@ def generate_schedule(
     Args:
         num_permutations: Number of permutations to generate (default: 6)
         preset_weights: Optional preset dice weights to inform initial order
-        seed: Random seed for reproducibility
 
     Returns:
         List of permutations, each being a list of 6 DiceFaces
     """
-    if seed is not None:
-        random.seed(seed)
-
     schedule: List[List[DiceFace]] = []
 
     # First permutation: weighted order (if preset provided) or canonical
@@ -51,17 +56,17 @@ def generate_schedule(
 
     for i in range(1, num_permutations):
         if remaining_faces:
-            # Pick next face to prioritize
-            next_primary = random.choice(list(remaining_faces))
+            # Pick next face to prioritize (CSPRNG)
+            next_primary = secrets.choice(list(remaining_faces))
             remaining_faces.discard(next_primary)
         else:
-            # All faces prioritized, use weighted shuffle
-            next_primary = random.choice(ALL_FACES)
+            # All faces prioritized, use cryptographic shuffle
+            next_primary = secrets.choice(ALL_FACES)
 
         # Build permutation with this face first
         perm = [next_primary]
         others = [f for f in ALL_FACES if f != next_primary]
-        random.shuffle(others)
+        _crypto_shuffle(others)
         perm.extend(others)
 
         schedule.append(perm)

@@ -99,6 +99,8 @@ class RotationState:
     collapsed: bool  # Whether system has collapsed (imbalance detected)
     iteration_history: List[IterationResult] = field(default_factory=list)
     max_iterations: int = 6  # Safety limit
+    nonce: str = ""  # Random 32-byte hex nonce for HMAC commitment
+    schedule_hmac: str = ""  # HMAC-SHA256 of schedule, keyed by nonce
 
     def to_dict(self) -> Dict:
         """Convert to JSON-serializable dictionary."""
@@ -121,4 +123,6 @@ class RotationState:
                 for r in self.iteration_history
             ],
             "maxIterations": self.max_iterations,
+            "nonce": self.nonce,
+            "scheduleHmac": self.schedule_hmac,
         }

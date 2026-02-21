@@ -1,6 +1,10 @@
 """Main rotation engine for dice system."""
 
 from __future__ import annotations
+import hmac
+import hashlib
+import json
+import secrets
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Tuple
 from pipeline.dice_rotation.types import (
@@ -21,28 +25,60 @@ from pipeline.dice_rotation.facets import (
 )
 
 
+def _compute_schedule_hmac(schedule: List[List[DiceFace]], nonce: str) -> str:
+    """Compute HMAC-SHA256 of the serialized schedule, keyed by the nonce."""
+    return hmac.new(
+        nonce.encode(),
+        json.dumps(schedule).encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_schedule_integrity(state: RotationState) -> bool:
+    """
+    Verify that the schedule has not been tampered with.
+
+    Recomputes HMAC-SHA256 from state.schedule + state.nonce and
+    compares against state.schedule_hmac using constant-time comparison.
+
+    Args:
+        state: RotationState with nonce and schedule_hmac fields
+
+    Returns:
+        True if schedule is intact, False if tampered or missing HMAC
+    """
+    if not state.nonce or not state.schedule_hmac:
+        return False
+    expected = _compute_schedule_hmac(state.schedule, state.nonce)
+    return hmac.compare_digest(expected, state.schedule_hmac)
+
+
 def create_rotation_state(
     preset_weights: dict | None = None,
     max_iterations: int = 6,
-    seed: int | None = None,
 ) -> RotationState:
     """
-    Create initial rotation state.
+    Create initial rotation state with HMAC commitment.
+
+    Uses cryptographically secure randomness for schedule generation
+    and produces an HMAC-SHA256 commitment for tamper detection.
 
     Args:
         preset_weights: Optional preset dice weights
         max_iterations: Maximum number of rotation iterations
-        seed: Random seed for permutation generation
 
     Returns:
-        Initial RotationState
+        Initial RotationState with nonce and schedule_hmac set
     """
-    # Generate permutation schedule
+    # Generate permutation schedule (CSPRNG-backed)
     schedule = generate_schedule(
         num_permutations=max_iterations,
         preset_weights=preset_weights,
-        seed=seed,
     )
+
+    # Generate HMAC commitment
+    nonce = secrets.token_hex(32)
+    schedule_hmac = _compute_schedule_hmac(schedule, nonce)
 
     # Initialize state
     state = RotationState(
@@ -54,6 +90,8 @@ def create_rotation_state(
         collapsed=False,
         iteration_history=[],
         max_iterations=max_iterations,
+        nonce=nonce,
+        schedule_hmac=schedule_hmac,
     )
 
     return state

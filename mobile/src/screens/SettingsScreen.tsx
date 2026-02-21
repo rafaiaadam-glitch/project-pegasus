@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, ScrollView, Alert, Switch, Linking } from 'react-native';
+import { View, ScrollView, Alert, Switch, Linking, Image } from 'react-native';
 import {
   List,
   Text,
@@ -122,7 +122,10 @@ export default function SettingsScreen({ navigation }: Props) {
       <View style={{ paddingBottom: 40 }}>
         {/* App Info */}
         <View style={{ alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20 }}>
-          <Text style={{ fontSize: 64, marginBottom: 12 }}>🦅</Text>
+          <Image
+            source={require('../../assets/pegasus-logo.png')}
+            style={{ width: 80, height: 80, borderRadius: 20, marginBottom: 12 }}
+          />
           <Text variant="headlineMedium" style={{ marginBottom: 4 }}>Pegasus</Text>
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}>
             Version 1.0.0

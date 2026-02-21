@@ -12,6 +12,7 @@ from pipeline.dice_rotation import (
     rotate_next,
     get_rotation_summary,
     is_rotation_complete,
+    verify_schedule_integrity,
 )
 from pipeline.dice_rotation.permutations import generate_schedule
 from pipeline.dice_rotation.facets import score_facets, calculate_entropy, calculate_equilibrium_gap
@@ -34,7 +35,7 @@ def test_permutation_generation():
         "why": 0.15,
     }
 
-    schedule = generate_schedule(num_permutations=6, preset_weights=exam_weights, seed=42)
+    schedule = generate_schedule(num_permutations=6, preset_weights=exam_weights)
 
     print(f"Generated {len(schedule)} permutations:")
     print()
@@ -112,12 +113,16 @@ def test_rotation_state():
         "why": 0.20,
     }
 
-    state = create_rotation_state(preset_weights=seminar_weights, max_iterations=4, seed=42)
+    state = create_rotation_state(preset_weights=seminar_weights, max_iterations=4)
 
     print("Initial State:")
     print(f"  Schedule: {len(state.schedule)} permutations")
     print(f"  Active Index: {state.active_index}")
     print(f"  Max Iterations: {state.max_iterations}")
+    print(f"  Nonce: {state.nonce[:16]}...")
+    print(f"  HMAC:  {state.schedule_hmac[:16]}...")
+    assert verify_schedule_integrity(state), "HMAC verification failed on fresh state"
+    print(f"  HMAC Verified: True")
     print()
 
     # Simulate iterations
@@ -224,7 +229,7 @@ def test_full_rotation_cycle():
     print()
 
     # Create state
-    state = create_rotation_state(max_iterations=6, seed=42)
+    state = create_rotation_state(max_iterations=6)
 
     print("Simulating full rotation cycle...")
     print()
@@ -262,9 +267,23 @@ def test_full_rotation_cycle():
     print(f"  Balanced: {summary['balanced']}")
     print()
 
+    # Verify HMAC integrity
+    assert verify_schedule_integrity(state), "HMAC verification failed after rotation"
+    print(f"  HMAC integrity: verified")
+
+    # Test tamper detection
+    import copy
+    tampered = copy.deepcopy(state)
+    tampered.schedule[0][0], tampered.schedule[0][1] = tampered.schedule[0][1], tampered.schedule[0][0]
+    assert not verify_schedule_integrity(tampered), "Tamper detection failed"
+    print(f"  Tamper detection: working")
+    print()
+
     # Convert to dict (for API)
     state_dict = state.to_dict()
     print(f"State dictionary keys: {list(state_dict.keys())}")
+    assert "nonce" in state_dict, "nonce missing from to_dict()"
+    assert "scheduleHmac" in state_dict, "scheduleHmac missing from to_dict()"
     print()
 
     print("✅ Full rotation cycle complete")
