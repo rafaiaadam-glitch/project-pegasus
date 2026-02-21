@@ -67,8 +67,8 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 - [x] Define SLOs (ingest success, generation success, p95 processing time)
 - [x] Emit metrics for queue depth, job latency, failure rate, retries
-- [ ] Add alerting for sustained failure spikes and queue backlogs
-- [ ] Add dashboards for per-stage pipeline timings
+- [x] Add alerting for sustained failure spikes and queue backlogs
+- [x] Add dashboards for per-stage pipeline timings
 
 **Definition of done:**
 - on-call can identify failing stage within 5 minutes
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **27**
-- Items remaining: **9**
-- Completion: **75%**
+- Items marked complete: **29**
+- Items remaining: **7**
+- Completion: **81%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -166,6 +166,9 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Metrics endpoints + instrumentation (JSON + Prometheus for queue depth, latency/failures/retries) → `backend/observability.py`, `backend/app.py`, `backend/jobs.py`, `backend/tests/test_observability_metrics.py`
 - Alert policy baseline for sustained queue backlog + failure spikes → `ops/monitoring/prometheus-alert-rules.yml`, `docs/runbooks/alerting-verification.md`, `backend/tests/test_alert_rules_config.py`
 - Dashboard baseline for per-stage pipeline timings → `ops/monitoring/grafana-pipeline-dashboard.json`, `docs/runbooks/pipeline-dashboard.md`, `backend/tests/test_monitoring_assets.py`
+- GCP Cloud Monitoring alerting (API Down, Failure Rate >10%, Generation Burst) → `ops/monitoring/setup-gcp-monitoring.sh`, `ops/monitoring/teardown-gcp-monitoring.sh`
+- GCP Cloud Monitoring dashboard (request count/latency, instance count, job failures/completions) → `ops/monitoring/gcp-dashboard.json`
+- Structured JSON logging for Cloud Run → `backend/logging_config.py` (wired in `backend/app.py` lifespan)
 - Secrets management guidance per deploy target (Render/Railway/Fly/GCP/local) → `docs/runbooks/secrets-management.md`
 - Deletion workflow with auditability (`DELETE /lectures/{lecture_id}`, `DELETE /courses/{course_id}`, `GET /ops/deletion-audit`) → `backend/app.py`, `backend/db.py`, `backend/migrations/002_deletion_audit.sql`, `backend/tests/test_delete_workflow.py`
 - PII handling policy for transcript/artifact data → `docs/PII_HANDLING_POLICY.md`
@@ -194,5 +197,4 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 ### Still open before launch
 - Complete backup/restore and rollback drills in staging (runbooks are documented; drill evidence still needed).
 - ~~Mobile UX completion for a no-terminal first-time flow.~~ (Done — Section 4 complete)
-- Dashboards and alerting.
 - Security/compliance baseline work and final launch gate rehearsal.

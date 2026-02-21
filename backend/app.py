@@ -53,6 +53,8 @@ from backend.storage import (
 
 @asynccontextmanager
 async def app_lifespan(_: FastAPI) -> AsyncIterator[None]:
+    from backend.logging_config import configure_logging
+    configure_logging()
     validate_runtime_environment("api")
     yield
 
