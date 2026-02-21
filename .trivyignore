@@ -1,0 +1,3 @@
+# Transitive dev dependencies in React Native / Jest — not runtime exploitable
+CVE-2026-26996
+CVE-2026-26960
