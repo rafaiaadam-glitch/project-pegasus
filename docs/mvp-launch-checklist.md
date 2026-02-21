@@ -104,7 +104,7 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 Before launch, all must be true:
 
 - [x] Critical-path integration tests pass (ingest → transcribe → generate → export)
-- [ ] API and worker deploy from main with reproducible config
+- [x] API and worker deploy from main with reproducible config
 - [ ] At least one mobile build (iOS/Android) validated end-to-end against staging
 - [x] Incident response runbook exists (queue outage, OpenAI outage, storage outage)
 - [ ] Monitoring + alerting verified by synthetic canary jobs
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **33**
-- Items remaining: **3**
-- Completion: **92%**
+- Items marked complete: **34**
+- Items remaining: **2**
+- Completion: **94%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -178,6 +178,7 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Staging environment parity checklist → `docs/staging-parity-checklist.md`
 - Release checklist with rollback procedure → `docs/release-checklist.md`
 - Critical-path integration tests (ingest → transcribe → generate → export) → `backend/tests/test_flow.py` (unit integration), `scripts/canary_e2e_flow.py` (live E2E canary), `ops/drills/critical-path-e2e.sh` (drill wrapper)
+- Reproducible deploy from main (pinned Dockerfile + deps, env var verification, drill) → `backend/Dockerfile` (pinned `python:3.11.9-slim`), `backend/requirements.txt` (all 15 deps `==`), `scripts/verify-gcp-production.sh` (OpenAI provider checks), `ops/drills/deploy-reproducibility-drill.sh`
 - Navigation fix (mic → CourseList flow) → `mobile/src/screens/HomeScreen.tsx`
 - Upload hardening (file validation, connectivity check, cancel) → `mobile/src/screens/RecordLectureScreen.tsx`
 - Lecture detail polish (humanized errors, processing spinner, regenerate, export guards) → `mobile/src/screens/LectureDetailScreen.tsx`

@@ -1,0 +1,109 @@
+[2026-02-21 11:59:03] ================================================================
+[2026-02-21 11:59:03] DEPLOY REPRODUCIBILITY DRILL — started at Sat 21 Feb 2026 11:59:03 GMT
+[2026-02-21 11:59:03] Project: delta-student-486911-n5
+[2026-02-21 11:59:03] Region: europe-west1
+[2026-02-21 11:59:03] Service: pegasus-api
+[2026-02-21 11:59:03] ================================================================
+[2026-02-21 11:59:03] 
+[2026-02-21 11:59:03] STEP 1: Checking latest Cloud Build matches main branch...
+831ee8e4-7b50-4790-b75a-3bf73608efa5	SUCCESS	delta-student-486911-n5_cloudbuild	2026-02-21T10:09:53+00:00
+[2026-02-21 11:59:04]   PASS — Latest Cloud Build completed successfully.
+[2026-02-21 11:59:04]   Build info: 831ee8e4-7b50-4790-b75a-3bf73608efa5	SUCCESS	delta-student-486911-n5_cloudbuild	2026-02-21T10:09:53+00:00
+Active revision: pegasus-api-00111-g87
+[2026-02-21 11:59:05]   Active revision: pegasus-api-00111-g87
+[2026-02-21 11:59:05] 
+[2026-02-21 11:59:05] STEP 2: Running scripts/verify-gcp-production.sh...
+🔍 Verifying Pegasus GCP Production Configuration
+Project: delta-student-486911-n5
+Region: europe-west1
+Service: pegasus-api
+
+✅ Authenticated with gcloud
+✅ Using project: delta-student-486911-n5
+
+📡 Checking required APIs...
+  ✅ run.googleapis.com
+  ✅ storage.googleapis.com
+  ✅ sqladmin.googleapis.com
+
+🏃 Checking Cloud Run service...
+✅ Cloud Run service exists
+   URL: https://pegasus-api-ui64fwvjyq-ew.a.run.app
+
+🔧 Checking environment variables...
+  ✅ PLC_LLM_PROVIDER=openai
+  ✅ GCP_REGION=europe-west1
+  ✅ STORAGE_MODE=gcs
+  ✅ GCS_BUCKET=delta-student-486911-n5-pegasus-storage-eu
+  ✅ GCS_PREFIX=pegasus
+
+🔑 Checking secrets...
+  ✅ OPENAI_API_KEY secret reference found
+  ✅ DATABASE_URL secret reference found
+
+🔐 Checking service account permissions...
+   Service Account: 988514135894-compute@developer.gserviceaccount.com
+
+   Assigned roles:
+   - roles/aiplatform.user
+   - roles/aiplatform.user
+   - roles/artifactregistry.writer
+   - roles/cloudaicompanion.serviceAgent
+   - roles/cloudsql.admin
+   - roles/cloudsql.client
+   - roles/cloudsql.client
+   - roles/eventarc.eventReceiver
+   - roles/iam.serviceAccountTokenCreator
+   - roles/iam.serviceAccountUser
+   - roles/logging.logWriter
+   - roles/owner
+   - roles/run.admin
+   - roles/speech.admin
+   - roles/speech.client
+   - roles/storage.admin
+   - roles/storage.objectAdmin
+   ✅ Has storage permissions
+
+🏥 Testing health endpoint...
+✅ Health check passed
+   Response: {"status":"ok","time":"2026-02-21T11:59:20.195415+00:00"}
+
+✅ All production environment checks passed!
+
+🎯 Summary:
+   • LLM Provider: openai (gpt-4o-mini)
+   • STT Provider: OpenAI Whisper (whisper-1)
+   • Storage Mode: gcs
+   • Service URL: https://pegasus-api-ui64fwvjyq-ew.a.run.app
+
+📚 Next steps:
+   1. Test transcription: POST https://pegasus-api-ui64fwvjyq-ew.a.run.app/lectures/{id}/transcribe
+   2. Test generation: POST https://pegasus-api-ui64fwvjyq-ew.a.run.app/lectures/{id}/generate
+   3. Monitor logs: gcloud run services logs read pegasus-api --region=europe-west1
+
+[2026-02-21 11:59:20]   PASS — GCP production verification passed.
+[2026-02-21 11:59:20] 
+[2026-02-21 11:59:20] STEP 3: Checking Dockerfile for pinned Python base image...
+  FROM line: FROM python:3.11.9-slim
+[2026-02-21 11:59:20]   FROM line: FROM python:3.11.9-slim
+[2026-02-21 11:59:20]   PASS — Dockerfile uses patch-pinned base image: FROM python:3.11.9-slim
+[2026-02-21 11:59:20] 
+[2026-02-21 11:59:20] STEP 4: Checking requirements.txt for pinned dependencies...
+[2026-02-21 11:59:20]   Total dependencies: 15
+[2026-02-21 11:59:20]   Pinned (==): 15
+[2026-02-21 11:59:20]   Unpinned: 0
+[2026-02-21 11:59:20]   PASS — All 15 dependencies are pinned with ==.
+[2026-02-21 11:59:20] 
+[2026-02-21 11:59:20] STEP 5: Canary health and artifact type check...
+  Health HTTP status: 200
+[2026-02-21 11:59:20]   PASS — Health endpoint returned HTTP 200.
+  Health body: {"status":"ok","time":"2026-02-21T11:59:20.415159+00:00"}
+[2026-02-21 11:59:20]   PASS — Health response includes status field.
+[2026-02-21 11:59:20]   Artifact types endpoint returned HTTP 404 (non-critical).
+[2026-02-21 11:59:20] ================================================================
+[2026-02-21 11:59:20] 
+[2026-02-21 11:59:20] DRILL COMPLETE — Sat 21 Feb 2026 11:59:20 GMT
+[2026-02-21 11:59:20] 
+[2026-02-21 11:59:20] Results: 6 passed, 0 failed, 0 warnings
+[2026-02-21 11:59:20] Evidence log: ops/drills/deploy-repro-evidence-2026-02-21-115903.log
+[2026-02-21 11:59:20] ================================================================
