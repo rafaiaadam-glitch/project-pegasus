@@ -26,8 +26,8 @@ Status policy: checkboxes represent launch-readiness for the specific item (impl
 
 ## 2) Data & storage reliability
 
-- [ ] Add backup/restore procedure for Postgres and object storage
-- [ ] Add migration rollback guidance for production incidents
+- [x] Add backup/restore procedure for Postgres and object storage
+- [x] Add migration rollback guidance for production incidents
 - [x] Enforce retention lifecycle for raw uploads and intermediate artifacts
 - [x] Add integrity checks for artifact files referenced in DB records
 
@@ -114,9 +114,9 @@ Before launch, all must be true:
 ## Current completion snapshot (checklist-only)
 
 - Total launch checklist items: **36**
-- Items marked complete: **30**
-- Items remaining: **6**
-- Completion: **83%**
+- Items marked complete: **32**
+- Items remaining: **4**
+- Completion: **89%**
 
 > Scope note: this percentage is checklist-tracking only and does not represent product quality or effort-weighted progress.
 
@@ -154,8 +154,8 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - Failed-job replay endpoint (`POST /jobs/{job_id}/replay`) → `backend/tests/test_job_replay.py`
 - Dead-letter listing + batch replay endpoints (`GET /jobs/dead-letter`, `POST /jobs/dead-letter/replay`) → `backend/tests/test_dead_letter_workflow.py`, `docs/runbooks/dead-letter-queue.md`
 - Artifact path integrity checks (`GET /lectures/{lecture_id}/integrity`) → `backend/tests/test_integrity_endpoint.py`
-- Backup/restore procedure runbook → `docs/runbooks/backup-restore.md`
-- Migration rollback guidance runbook → `docs/runbooks/migration-rollback.md`
+- Backup/restore procedure runbook (GCP Cloud SQL + GCS) → `docs/runbooks/backup-restore.md`, drill script → `ops/drills/backup-restore-drill.sh`
+- Migration rollback guidance (Cloud SQL PITR + Cloud Run revision rollback) → `docs/runbooks/migration-rollback.md`
 - Retention cleanup automation (`python -m backend.retention`) → `backend/retention.py`, `backend/tests/test_retention.py`, `docs/deploy.md`
 - Golden-output preset snapshots → `pipeline/tests/test_preset_summary_snapshots.py` + `pipeline/tests/snapshots/`
 - Schema drift checks → `pipeline/tests/test_schema_drift_check.py`
@@ -196,6 +196,5 @@ Last verified by targeted test run in this repo: backend hardening + pipeline qu
 - This checklist treats launch-readiness as requiring both implementation **and** operational readiness (runbooks/drills), so any item missing operational artifacts remains unchecked.
 
 ### Still open before launch
-- Complete backup/restore and rollback drills in staging (runbooks are documented; drill evidence still needed).
 - ~~Mobile UX completion for a no-terminal first-time flow.~~ (Done — Section 4 complete)
-- Security/compliance baseline work and final launch gate rehearsal.
+- Final launch gate rehearsal.
